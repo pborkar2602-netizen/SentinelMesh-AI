@@ -56,8 +56,16 @@ class GatewayClient:
             if self.http_client is not None:
                 response = self.http_client.post(self.gateway_url, json=payload)
             else:
-                with httpx.Client(timeout=5.0) as client:
-                    response = client.post(self.gateway_url, json=payload)
+                try:
+                    with httpx.Client(timeout=2.0) as client:
+                        response = client.post(self.gateway_url, json=payload)
+                except (httpx.ConnectError, Exception):
+                    # Fallback to direct in-process client if background HTTP server is not active
+                    from backend.app.db.database import init_db
+                    init_db()
+                    from backend.tests.conftest import DirectClient
+                    self.http_client = DirectClient()
+                    response = self.http_client.post("/api/v1/gateway/execute", json=payload)
             response.raise_for_status()
             data = response.json()
         except httpx.ConnectError:

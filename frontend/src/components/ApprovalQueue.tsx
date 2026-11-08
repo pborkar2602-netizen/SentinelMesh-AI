@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { ApprovalRequest } from '../types';
 
+// In-memory JWT storage to avoid persisting credentials in localStorage
+let inMemoryJwtToken: string | null = null;
+
 interface ApprovalQueueProps {
   onApprovalResolved?: () => void;
 }
@@ -37,8 +40,8 @@ export const ApprovalQueue: React.FC<ApprovalQueueProps> = ({ onApprovalResolved
     setLoading(true);
     setError(null);
     try {
-      // Login as analyst demo user if no token
-      let token = localStorage.getItem('sentinel_jwt_token');
+      // Login as analyst demo user if no token in memory
+      let token = inMemoryJwtToken;
       if (!token) {
         const loginRes = await fetch('/api/v1/auth/login', {
           method: 'POST',
@@ -48,7 +51,7 @@ export const ApprovalQueue: React.FC<ApprovalQueueProps> = ({ onApprovalResolved
         if (loginRes.ok) {
           const authData = await loginRes.json();
           token = authData.access_token;
-          if (token) localStorage.setItem('sentinel_jwt_token', token);
+          inMemoryJwtToken = token;
         }
       }
 

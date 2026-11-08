@@ -28,14 +28,19 @@ async def lifespan(app: FastAPI):
     demo_mode = os.getenv("DEMO_MODE", "false").lower() in ("true", "1", "yes")
     vault_key = os.getenv("SENTINEL_VAULT_KEY")
     jwt_secret = os.getenv("SENTINEL_JWT_SECRET")
+    token_secret = os.getenv("SENTINEL_TOKEN_SECRET")
 
     if not demo_mode:
-        if not vault_key or not jwt_secret:
+        if not vault_key or not jwt_secret or not token_secret:
             err_msg = (
                 "FATAL: SentinelMesh AI refused to start. Production mode requires "
-                "SENTINEL_VAULT_KEY and SENTINEL_JWT_SECRET environment variables. "
+                "SENTINEL_VAULT_KEY, SENTINEL_JWT_SECRET, and SENTINEL_TOKEN_SECRET environment variables. "
                 "To run with ephemeral developer keys in non-production environments, set DEMO_MODE=true."
             )
+            logger.error(err_msg)
+            raise RuntimeError(err_msg)
+        if token_secret == jwt_secret:
+            err_msg = "FATAL: SENTINEL_TOKEN_SECRET and SENTINEL_JWT_SECRET must be separate cryptographic secrets."
             logger.error(err_msg)
             raise RuntimeError(err_msg)
     else:

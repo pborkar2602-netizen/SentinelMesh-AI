@@ -13,9 +13,13 @@ computes 95% Wilson Score confidence interval, and tests zero-MAD edge cases.
 """
 
 import math
+import sys
 import random
+from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Any, Tuple
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from backend.app.baseline.profiler import BaselineProfiler, calculate_mad, calculate_median
 from backend.app.baseline.anomaly_detector import AnomalyDetector
@@ -204,6 +208,42 @@ def run_evaluation() -> Dict[str, Any]:
     )
     assert score_ben006 < 70, f"BEN-006 must pass learned baseline without escalation, got score {score_ben006} ({reasons_ben006})"
 
+    # Verify detection of bulk reads on queries that do NOT contain special words (dump/export/backup)
+    bulk_test_cases = [
+        {
+            "desc": "High LIMIT query without special words",
+            "query": "SELECT full_name, national_id, salary FROM salaries LIMIT 1000",
+            "args": {"query": "SELECT full_name, national_id, salary FROM salaries LIMIT 1000"}
+        },
+        {
+            "desc": "Tool result size (rows_returned) without special words",
+            "query": "SELECT candidate_id, email, phone FROM applicant_records",
+            "args": {"query": "SELECT candidate_id, email, phone FROM applicant_records", "rows_returned": 850}
+        },
+        {
+            "desc": "Structural unconstrained query (no WHERE, no LIMIT) without special words",
+            "query": "SELECT * FROM enterprise_payroll",
+            "args": {"query": "SELECT * FROM enterprise_payroll"}
+        }
+    ]
+
+    sim_biz = datetime(2026, 11, 4, 14, 0, 0, tzinfo=timezone.utc)
+    bulk_results = []
+    for tc in bulk_test_cases:
+        b_score, b_reasons, _ = AnomalyDetector.evaluate(
+            agent_id="hr-agent",
+            tool_name="db_query",
+            arguments=tc["args"],
+            sim_datetime=sim_biz
+        )
+        assert b_score >= 70, f"Bulk read '{tc['desc']}' failed to trigger anomaly threshold: score={b_score}, reasons={b_reasons}"
+        bulk_results.append({
+            "test_case": tc["desc"],
+            "score": b_score,
+            "detected": True,
+            "reasons": b_reasons
+        })
+
     report = {
         "total_sessions": total_sessions,
         "total_calls": total_calls,
@@ -215,6 +255,7 @@ def run_evaluation() -> Dict[str, Any]:
         "zero_mad_verified": True,
         "ben006_passed": True,
         "ben006_anomaly_score": score_ben006,
+        "bulk_reads_without_special_words": bulk_results,
         "anomalous_calls": anomalous_calls
     }
     return report
@@ -231,4 +272,7 @@ if __name__ == "__main__":
     print(f"Wilson 95% Confidence Interval:    {rep['wilson_95_ci_percentage']}")
     print(f"Zero-MAD Edge Case Robust Floor:  Verified (MAD floor >= 1.0)")
     print(f"BEN-006 Month-End Query Result:    PASSED (Score: {rep['ben006_anomaly_score']}/100, purely via learned distribution)")
+    print("\nDetection of Bulk Reads on Queries WITHOUT Special Words (dump/export/backup):")
+    for b in rep["bulk_reads_without_special_words"]:
+        print(f"  [+] {b['test_case']}: Score={b['score']}/100 | Detected={b['detected']}")
     print("=" * 80)

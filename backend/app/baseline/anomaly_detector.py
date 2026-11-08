@@ -33,27 +33,31 @@ class AnomalyDetector:
         weekday = now_dt.strftime("%A")
 
         # 1. Bulk Record Dump Evaluation
-        records_count = 0
-        if "records_returned" in arguments:
-            records_count = float(arguments["records_returned"])
-        elif "count" in arguments:
-            records_count = float(arguments["count"])
-        elif tool_name == "db_query":
+        # Estimate records accessed from tool result size or structural heuristic (no WHERE and no LIMIT)
+        records_count = 0.0
+        for k in ["records_returned", "rows_returned", "count", "row_count", "records", "num_records", "num_rows"]:
+            if k in arguments and isinstance(arguments[k], (int, float)):
+                records_count = float(arguments[k])
+                break
+
+        if records_count == 0.0 and tool_name == "db_query":
             q = str(arguments.get("query") or "")
-            limit_m = re.search(r"\bLIMIT\s+(\d+)", q, re.IGNORECASE)
+            limit_m = re.search(r"\bLIMIT\s+(\d+)\b", q, re.IGNORECASE)
             if limit_m:
                 records_count = float(limit_m.group(1))
             else:
-                q_clean = q.lower().strip()
-                if any(w in q_clean for w in ["dump", "export", "backup", "into outfile"]):
-                    records_count = max(profile.threshold_records * 2.0, 500.0)
+                has_where = bool(re.search(r"\bWHERE\b", q, re.IGNORECASE))
+                is_select_all = bool(re.search(r"\bSELECT\s+\*\s+FROM\b", q, re.IGNORECASE))
+                if not has_where and is_select_all:
+                    # Structural heuristic: unconstrained SELECT * full table dump without WHERE filter and without LIMIT
+                    records_count = max(profile.threshold_records * 3.0, 500.0)
                 else:
                     records_count = 1.0
 
         if records_count > profile.threshold_records:
             median = max(profile.median_records, 1.0)
             ratio = records_count / median
-            score_add = min(60, int(30 + ratio * 3))
+            score_add = min(85, int(30 + ratio * 3))
             total_anomaly_score += score_add
             reasons.append(f"Bulk record query: {int(records_count)} records ({ratio:.1f}x baseline median)")
             breakdown["bulk_dump"] = {"records": int(records_count), "ratio": round(ratio, 1)}

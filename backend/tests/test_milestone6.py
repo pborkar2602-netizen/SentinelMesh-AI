@@ -353,9 +353,9 @@ def test_policy_simulation_and_reevaluation(client, test_db):
     # Check that would_block event would change to 'block'
     assert any(c["simulated_decision"] == "block" for c in sim_data["changes"])
 
-def test_poisoned_invoice_require_approval_scenario(client, test_db):
+def test_atk003_vendor_invoice_routing_hijack_require_approval(client, test_db):
     """
-    Scenario ATK-015 / Poisoned Invoice:
+    Scenario ATK-003: Vendor Invoice Routing Hijack (Pair 3)
     1. Agent ingests an untrusted vendor invoice containing an altered bank routing number.
     2. Agent attempts a high-value payment to the new routing details.
     3. Gateway intercepts the sensitive egress and flags high sensitivity / taint, returning require_approval.
@@ -426,6 +426,80 @@ def test_poisoned_invoice_require_approval_scenario(client, test_db):
     # Step 5: Verify hash chain integrity
     verify_res = client.get("/api/v1/audit/verify")
     assert verify_res.json()["valid"] is True
+
+def test_token_minting_role_gating_and_secret_separation(client, test_db):
+    """
+    Verifies that:
+    1. Only analyst and privacy_officer roles can issue pre-approved tokens.
+    2. Agents / viewers cannot request tokens (rejected with 403 / 401).
+    3. Token signing secret (SENTINEL_TOKEN_SECRET) is strictly separate from JWT secret.
+    4. Forging a token using JWT secret fails cryptographic validation.
+    """
+    import hmac
+    import hashlib
+    import base64
+    import json
+    from datetime import datetime, timezone, timedelta
+    from backend.app.approvals.tokens import TOKEN_SECRET, verify_and_consume_approval_token, ApprovalTokenError
+    from backend.app.api.auth import JWT_SECRET
+
+    # Ensure token secret and JWT secret are cryptographically distinct
+    assert TOKEN_SECRET != JWT_SECRET.encode("utf-8")
+
+    # 1. Unauthenticated request (e.g. agent without user credentials) -> 401
+    unauth_res = client.post(
+        "/api/v1/approvals/tokens/preapprove",
+        json={"tool_name": "db_query", "arguments": {"query": "SELECT 1"}, "session_id": "sess-pre"}
+    )
+    assert unauth_res.status_code == 401
+
+    # 2. Viewer role attempting to mint pre-approved token -> 403 Forbidden
+    login_viewer = client.post("/api/v1/auth/login", json={"username": "viewer", "password": "viewer123"})
+    viewer_jwt = login_viewer.json()["access_token"]
+    viewer_res = client.post(
+        "/api/v1/approvals/tokens/preapprove",
+        json={"tool_name": "db_query", "arguments": {"query": "SELECT 1"}, "session_id": "sess-pre"},
+        headers={"Authorization": f"Bearer {viewer_jwt}"}
+    )
+    assert viewer_res.status_code == 403
+    assert "not authorized" in viewer_res.json()["detail"].lower()
+
+    # 3. Analyst role successfully mints pre-approved token -> 200 OK
+    login_analyst = client.post("/api/v1/auth/login", json={"username": "analyst", "password": "analyst123"})
+    analyst_jwt = login_analyst.json()["access_token"]
+    analyst_res = client.post(
+        "/api/v1/approvals/tokens/preapprove",
+        json={"tool_name": "external_api", "arguments": {"url": "https://partner.org/v1/sync"}, "session_id": "sess-pre", "ttl_seconds": 600},
+        headers={"Authorization": f"Bearer {analyst_jwt}"}
+    )
+    assert analyst_res.status_code == 200
+    token_data = analyst_res.json()
+    assert "approval_token" in token_data
+    assert token_data["status"] == "issued"
+
+    # 4. Attempting to sign an approval token using the JWT secret (cross-key confusion attack)
+    now = datetime.now(timezone.utc)
+    exp = now + timedelta(seconds=300)
+    payload = {
+        "tool_name": "external_api",
+        "action_hash": "dummyhash123",
+        "session_id": "sess-pre",
+        "nonce": "nonce-cross-key-1",
+        "iat": int(now.timestamp()),
+        "exp": int(exp.timestamp())
+    }
+    p_json = json.dumps(payload, sort_keys=True, separators=(',', ':'))
+    p_b64 = base64.urlsafe_b64encode(p_json.encode("utf-8")).decode("utf-8")
+    jwt_forged_sig = hmac.new(JWT_SECRET.encode("utf-8"), p_json.encode("utf-8"), hashlib.sha256).hexdigest()
+    cross_key_token = f"{p_b64}.{jwt_forged_sig}"
+
+    with pytest.raises(ApprovalTokenError, match="Forged token signature"):
+        verify_and_consume_approval_token(
+            token_str=cross_key_token,
+            tool_name="external_api",
+            arguments={"url": "https://partner.org/v1/sync"},
+            trace_id="trc-cross-key"
+        )
 
 def test_production_mode_refusal_when_unconfigured():
     """

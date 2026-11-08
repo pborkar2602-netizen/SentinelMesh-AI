@@ -12,6 +12,10 @@ services:
       - DATABASE_URL=sqlite:///./sentinelmesh.db
       - HOST=0.0.0.0
       - PORT=8000
+      - DEMO_MODE=true
+      - SENTINEL_JWT_SECRET=demo-sentinel-jwt-secret-key-32bytes!
+      - SENTINEL_TOKEN_SECRET=demo-sentinel-token-secret-key-32bytes!
+      - SENTINEL_VAULT_KEY=k_demo_vault_key_32bytes_placeholder!
     volumes:
       - sentinel-data:/app/data
     healthcheck:
