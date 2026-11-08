@@ -1,0 +1,66 @@
+{
+  "HTTP Transport & Serialization": {
+    "p50": 4.92,
+    "p90": 8.39,
+    "p95": 9.68,
+    "mean": 5.64,
+    "min": 3.06,
+    "max": 27.08
+  },
+  "Privacy Masking (Token/Vault)": {
+    "p50": 0.14,
+    "p90": 1.77,
+    "p95": 2.12,
+    "mean": 0.57,
+    "min": 0.06,
+    "max": 9.37
+  },
+  "Rules & Trust Labeling": {
+    "p50": 3.42,
+    "p90": 8.35,
+    "p95": 9.64,
+    "mean": 4.09,
+    "min": 0.99,
+    "max": 54.52
+  },
+  "Learned Baseline Detector": {
+    "p50": 8.43,
+    "p90": 73.25,
+    "p95": 77.74,
+    "mean": 23.81,
+    "min": 2.73,
+    "max": 328.46
+  },
+  "Intent Judge (Stub Replay)": {
+    "p50": 0.19,
+    "p90": 3.52,
+    "p95": 4.54,
+    "mean": 1.05,
+    "min": 0.05,
+    "max": 18.1
+  },
+  "DB Session & Agent State": {
+    "p50": 14.45,
+    "p90": 24.63,
+    "p95": 28.89,
+    "mean": 16.28,
+    "min": 7.22,
+    "max": 107.85
+  },
+  "Hash Chain & Append-Only Log": {
+    "p50": 66.8,
+    "p90": 130.82,
+    "p95": 141.21,
+    "mean": 75.68,
+    "min": 1.73,
+    "max": 318.84
+  },
+  "TOTAL REAL HTTP ROUND-TRIP": {
+    "p50": 139.83,
+    "p90": 223.75,
+    "p95": 242.69,
+    "mean": 127.12,
+    "min": 21.44,
+    "max": 449.33
+  }
+}

@@ -39,24 +39,37 @@ def get_fernet_key() -> bytes:
         digest = hashlib.sha256(b"sentinel-mesh-secure-default-vault-key-2026").digest()
         return base64.urlsafe_b64encode(digest)
 
+_fernet_instance: Optional[Fernet] = None
+_fernet_key_cached: Optional[bytes] = None
+_initialized_vault_dbs = set()
+
+def get_fernet() -> Fernet:
+    global _fernet_instance, _fernet_key_cached
+    key = get_fernet_key()
+    if _fernet_instance is None or _fernet_key_cached != key:
+        _fernet_instance = Fernet(key)
+        _fernet_key_cached = key
+    return _fernet_instance
+
 def encrypt_value(raw_str: str) -> str:
     """Standard Fernet symmetric encryption from cryptography package."""
-    f = Fernet(get_fernet_key())
-    return f.encrypt(raw_str.encode("utf-8")).decode("ascii")
+    return get_fernet().encrypt(raw_str.encode("utf-8")).decode("ascii")
 
 def decrypt_value(encrypted_b64: str) -> str:
     """Standard Fernet decryption from cryptography package."""
-    f = Fernet(get_fernet_key())
     try:
-        return f.decrypt(encrypted_b64.encode("ascii")).decode("utf-8")
+        return get_fernet().decrypt(encrypted_b64.encode("ascii")).decode("utf-8")
     except InvalidToken:
         raise ValueError("Vault ciphertext integrity verification failed (tampered data or wrong key)")
 
 def init_vault_db():
     """Initializes the isolated privacy_vault table in the database."""
     db_path = get_db_path()
+    if db_path in _initialized_vault_dbs:
+        return
     with sqlite3.connect(db_path, timeout=30.0) as conn:
         conn.execute("PRAGMA journal_mode = WAL;")
+        conn.execute("PRAGMA synchronous = NORMAL;")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS privacy_vault (
                 session_id TEXT NOT NULL,
@@ -71,6 +84,7 @@ def init_vault_db():
             CREATE INDEX IF NOT EXISTS idx_privacy_vault_session 
             ON privacy_vault(session_id);
         """)
+    _initialized_vault_dbs.add(db_path)
 
 class PrivacyVault:
     """
@@ -88,6 +102,7 @@ class PrivacyVault:
 
         with _vault_lock:
             with sqlite3.connect(db_path, timeout=30.0) as conn:
+                conn.execute("PRAGMA synchronous = NORMAL;")
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT token, encrypted_value FROM privacy_vault WHERE session_id = ?",
@@ -137,6 +152,7 @@ class PrivacyVault:
 
         with _vault_lock:
             with sqlite3.connect(db_path, timeout=30.0) as conn:
+                conn.execute("PRAGMA synchronous = NORMAL;")
                 cursor = conn.cursor()
                 if not tokens:
                     cursor.execute(

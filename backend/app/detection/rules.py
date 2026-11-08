@@ -124,47 +124,47 @@ def is_internal_destination(dest_str: str) -> bool:
         return True
     return any(is_domain_or_subdomain(host, approved) for approved in ["company.com", "internal.local", "sentinelmesh.internal"])
 
-# SSRF Cloud Metadata IP/Hosts
+# SSRF Cloud Metadata IP/Hosts (Precompiled)
 SSRF_TARGETS = [
-    r"169\.254\.169\.254",
-    r"metadata\.google\.internal",
-    r"100\.100\.100\.200",
-    r"fd00:ec2::254"
+    re.compile(r"169\.254\.169\.254", re.IGNORECASE),
+    re.compile(r"metadata\.google\.internal", re.IGNORECASE),
+    re.compile(r"100\.100\.100\.200", re.IGNORECASE),
+    re.compile(r"fd00:ec2::254", re.IGNORECASE)
 ]
 
-# SQL Injection Patterns (Only evaluated on database query tools)
+# SQL Injection Patterns (Precompiled)
 SQLI_PATTERNS = [
-    r"\bUNION\s+SELECT\b",
-    r"'\s*OR\s*['\"]?1['\"]?\s*=\s*['\"]?1",
-    r";\s*DROP\s+TABLE\b",
-    r";\s*DELETE\s+FROM\b",
-    r";\s*TRUNCATE\s+TABLE\b"
+    re.compile(r"\bUNION\s+SELECT\b", re.IGNORECASE),
+    re.compile(r"'\s*OR\s*['\"]?1['\"]?\s*=\s*['\"]?1", re.IGNORECASE),
+    re.compile(r";\s*DROP\s+TABLE\b", re.IGNORECASE),
+    re.compile(r";\s*DELETE\s+FROM\b", re.IGNORECASE),
+    re.compile(r";\s*TRUNCATE\s+TABLE\b", re.IGNORECASE)
 ]
 
-# Path Traversal Patterns
+# Path Traversal Patterns (Precompiled)
 PATH_TRAVERSAL_PATTERNS = [
-    r"\.\./",
-    r"\.\.\\",
-    r"/etc/shadow",
-    r"/etc/passwd",
-    r"c:\\windows\\system32"
+    re.compile(r"\.\./", re.IGNORECASE),
+    re.compile(r"\.\.\\", re.IGNORECASE),
+    re.compile(r"/etc/shadow", re.IGNORECASE),
+    re.compile(r"/etc/passwd", re.IGNORECASE),
+    re.compile(r"c:\\windows\\system32", re.IGNORECASE)
 ]
 
-# Credential / Secret Patterns
+# Credential / Secret Patterns (Precompiled)
 CREDENTIAL_PATTERNS = [
-    (r"\bAKIA[0-9A-Z]{16}\b", "AWS Access Key ID"),
-    (r"Bearer\s+[a-zA-Z0-9_\-\.]{25,}", "Bearer Token"),
-    (r"-----BEGIN [A-Z ]+PRIVATE KEY-----", "Private Key Header"),
-    (r"(?:api[_-]?key|secret[_-]?token)\s*[:=]\s*['\"][a-zA-Z0-9_\-]{20,}['\"]", "API Secret Assignment")
+    (re.compile(r"\bAKIA[0-9A-Z]{16}\b", re.IGNORECASE), "AWS Access Key ID"),
+    (re.compile(r"Bearer\s+[a-zA-Z0-9_\-\.]{25,}", re.IGNORECASE), "Bearer Token"),
+    (re.compile(r"-----BEGIN [A-Z ]+PRIVATE KEY-----", re.IGNORECASE), "Private Key Header"),
+    (re.compile(r"(?:api[_-]?key|secret[_-]?token)\s*[:=]\s*['\"][a-zA-Z0-9_\-]{20,}['\"]", re.IGNORECASE), "API Secret Assignment")
 ]
 
-# Overt Prompt Injection Patterns
+# Overt Prompt Injection Patterns (Precompiled)
 PROMPT_INJECTION_PATTERNS = [
-    r"ignore\s+(?:all\s+)?previous\s+instructions",
-    r"system\s+(?:instruction\s+)?override\s+(?:note|payload)",
-    r"system\s+prompt\s+override",
-    r"disregard\s+(?:all\s+)?prior\s+instructions",
-    r"you\s+must\s+immediately\s+bypass\s+normal"
+    re.compile(r"ignore\s+(?:all\s+)?previous\s+instructions", re.IGNORECASE),
+    re.compile(r"system\s+(?:instruction\s+)?override\s+(?:note|payload)", re.IGNORECASE),
+    re.compile(r"system\s+prompt\s+override", re.IGNORECASE),
+    re.compile(r"disregard\s+(?:all\s+)?prior\s+instructions", re.IGNORECASE),
+    re.compile(r"you\s+must\s+immediately\s+bypass\s+normal", re.IGNORECASE)
 ]
 
 def check_unapproved_email_recipient(tool_name: str, arguments: Dict[str, Any]) -> List[Finding]:
@@ -186,7 +186,7 @@ def check_ssrf_metadata(tool_name: str, arguments: Dict[str, Any]) -> List[Findi
     findings = []
     text_content = " ".join([str(v) for v in arguments.values()])
     for pat in SSRF_TARGETS:
-        match = re.search(pat, text_content, re.IGNORECASE)
+        match = pat.search(text_content)
         if match:
             findings.append(Finding(
                 name="ssrf_metadata_target",
@@ -202,7 +202,7 @@ def check_sql_injection(tool_name: str, arguments: Dict[str, Any]) -> List[Findi
     if tool_name == "db_query":
         query_text = arguments.get("query") or arguments.get("sql") or ""
         for pat in SQLI_PATTERNS:
-            match = re.search(pat, query_text, re.IGNORECASE)
+            match = pat.search(query_text)
             if match:
                 findings.append(Finding(
                     name="sql_injection_pattern",
@@ -216,7 +216,7 @@ def check_path_traversal(tool_name: str, arguments: Dict[str, Any]) -> List[Find
     findings = []
     text_content = " ".join([str(v) for v in arguments.values()])
     for pat in PATH_TRAVERSAL_PATTERNS:
-        match = re.search(pat, text_content, re.IGNORECASE)
+        match = pat.search(text_content)
         if match:
             findings.append(Finding(
                 name="path_traversal",
@@ -230,7 +230,7 @@ def check_credential_leak(tool_name: str, arguments: Dict[str, Any]) -> List[Fin
     findings = []
     text_content = " ".join([str(v) for v in arguments.values()])
     for pat, desc in CREDENTIAL_PATTERNS:
-        match = re.search(pat, text_content, re.IGNORECASE)
+        match = pat.search(text_content)
         if match:
             findings.append(Finding(
                 name="credential_leak",
@@ -253,7 +253,7 @@ def check_prompt_injection(context_sources: List[Any], arguments: Dict[str, Any]
 
     combined_text = " ".join(text_snippets)
     for pat in PROMPT_INJECTION_PATTERNS:
-        match = re.search(pat, combined_text, re.IGNORECASE)
+        match = pat.search(combined_text)
         if match:
             findings.append(Finding(
                 name="prompt_injection_phrase",

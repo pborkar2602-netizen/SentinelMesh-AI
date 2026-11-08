@@ -15,7 +15,8 @@ router = APIRouter(prefix="/gateway", tags=["Gateway"])
 def execute_tool_call(request: ToolCallRequest) -> GatewayDecisionResponse:
     start_time = time.perf_counter()
 
-    # 1. Ensure Agent exists
+    # 1 & 2. Ensure Agent and Session exist
+    t_db_start = time.perf_counter()
     agent = get_agent(request.agent_id)
     if not agent:
         save_agent({
@@ -27,7 +28,6 @@ def execute_tool_call(request: ToolCallRequest) -> GatewayDecisionResponse:
             "created_at": datetime.now(timezone.utc).isoformat()
         })
 
-    # 2. Ensure Session exists
     session = get_session(request.session_id)
     if not session:
         save_session({
@@ -39,20 +39,28 @@ def execute_tool_call(request: ToolCallRequest) -> GatewayDecisionResponse:
             "tainted_by": [],
             "started_at": datetime.now(timezone.utc).isoformat()
         })
+    db_write_ms = round((time.perf_counter() - t_db_start) * 1000, 3)
 
     # 3. Core Gateway Evaluation Pipeline (Trust Labeling + Taint + Rules + Risk + Policy)
     decision, reason, risk_score, risk_breakdown, normalized_sources, findings = GatewayCore.evaluate(request)
 
     # 4. Milestone 4 Privacy Engine: Session-Consistent Tokenization & Pre-Logging Masking
+    t_mask_start = time.perf_counter()
     from backend.app.privacy.masker import PrivacyEngine
     masked_arguments, _ = PrivacyEngine.mask_payload(request.session_id, request.arguments)
     masked_sources, _ = PrivacyEngine.mask_payload(request.session_id, [c.model_dump() for c in normalized_sources])
+    masking_ms = round((time.perf_counter() - t_mask_start) * 1000, 3)
 
     # 5. Measure gateway analysis latency
     latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
     now_utc = datetime.now(timezone.utc)
 
     # 6. Persist to Append-Only Audit Log with SHA-256 Hash Chaining (COVERING ONLY MASKED DATA)
+    t_hash_start = time.perf_counter()
+    stage_timings = risk_breakdown.setdefault("stage_timings_ms", {})
+    stage_timings["db_write"] = db_write_ms
+    stage_timings["masking"] = masking_ms
+
     event_dict = {
         "trace_id": request.trace_id,
         "agent_id": request.agent_id,
@@ -68,6 +76,8 @@ def execute_tool_call(request: ToolCallRequest) -> GatewayDecisionResponse:
         "timestamp": now_utc.isoformat()
     }
     event_id, event_hash = save_audit_event(event_dict)
+    hash_chain_ms = round((time.perf_counter() - t_hash_start) * 1000, 3)
+    stage_timings["hash_chain"] = hash_chain_ms
 
     # 7. Broadcast event over WebSocket to live dashboard
     broadcast_payload = {

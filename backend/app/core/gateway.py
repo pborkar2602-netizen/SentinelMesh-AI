@@ -1,3 +1,4 @@
+import time
 from typing import Tuple, List, Dict, Any
 from backend.app.schemas.gateway import ToolCallRequest, ContextSource
 from backend.app.core.trust_labeler import label_trust
@@ -61,6 +62,7 @@ class GatewayCore:
                 )
 
         # 1. Authoritative Server-side Trust Labeling (Provenance-based)
+        t_rules_start = time.perf_counter()
         normalized_sources, trust_warnings = label_trust(
             context_sources=request.context_sources,
             tool_name=request.tool_name,
@@ -79,6 +81,7 @@ class GatewayCore:
             arguments=request.arguments,
             context_sources=normalized_sources
         )
+        rules_ms = round((time.perf_counter() - t_rules_start) * 1000, 3)
 
         # 4. Privacy & PII Detection across arguments and context
         pii_findings: List[PiiFinding] = []
@@ -119,6 +122,7 @@ class GatewayCore:
             risk_score = max(risk_score, priv_score)
 
         # 7. Milestone 5: Learned Behavioral Baseline Anomaly Detection
+        t_base_start = time.perf_counter()
         session_events = list_session_events(request.session_id)
         anomaly_score, anomaly_reasons, anomaly_breakdown = AnomalyDetector.evaluate(
             agent_id=request.agent_id,
@@ -127,6 +131,7 @@ class GatewayCore:
             session_events=session_events,
             sim_datetime=request.timestamp
         )
+        baseline_ms = round((time.perf_counter() - t_base_start) * 1000, 3)
         if anomaly_score > 0:
             risk_breakdown["baseline_anomaly"] = anomaly_score
             risk_breakdown["anomaly_reasons"] = anomaly_reasons
@@ -134,6 +139,7 @@ class GatewayCore:
             risk_score = max(risk_score, anomaly_score)
 
         # 8. Intent-vs-Action LLM Judge (MASKED PAYLOADS ONLY with non-PII security context)
+        t_judge_start = time.perf_counter()
         masked_args_for_judge, _ = PrivacyEngine.mask_payload(request.session_id, request.arguments)
         
         # Extract destination domain for context
@@ -161,6 +167,7 @@ class GatewayCore:
             tainted_sources=tainted_by,
             data_class_counts=data_class_counts
         )
+        judge_ms = round((time.perf_counter() - t_judge_start) * 1000, 3)
         if judge_verdict:
             risk_breakdown["judge_mismatch"] = judge_verdict.mismatch_score
             risk_breakdown["judge_reasoning"] = judge_verdict.reasoning
@@ -169,6 +176,12 @@ class GatewayCore:
             risk_breakdown["judge_mode"] = judge_verdict.mode
             if judge_verdict.mismatch_score > 50:
                 risk_score = max(risk_score, judge_verdict.mismatch_score)
+
+        risk_breakdown["stage_timings_ms"] = {
+            "rules": rules_ms,
+            "baseline": baseline_ms,
+            "judge_stub": judge_ms
+        }
 
         # 9. Policy Engine Evaluation (Enforce vs Monitor mode, with Redact & Judge hooks)
         decision, reason = PolicyEngine.evaluate_policy(

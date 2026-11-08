@@ -27,6 +27,25 @@ class IntentJudge:
       - 'forced_aligned': Adversarial evaluation mode (forced 0 mismatch)
     """
     _mode: str = os.getenv("SENTINEL_JUDGE_MODE", "replay").lower()
+    _cassette_cache: Optional[Dict[str, Any]] = None
+
+    @classmethod
+    def get_cassette_data(cls) -> Dict[str, Any]:
+        """Loads and caches cassette JSON to avoid repeated disk reads."""
+        if cls._cassette_cache is None:
+            if CASSETTE_FILE.exists():
+                try:
+                    with open(CASSETTE_FILE, "r", encoding="utf-8") as f:
+                        cls._cassette_cache = json.load(f)
+                except Exception:
+                    cls._cassette_cache = {}
+            else:
+                cls._cassette_cache = {}
+        return cls._cassette_cache
+
+    @classmethod
+    def invalidate_cassette_cache(cls) -> None:
+        cls._cassette_cache = None
 
     @classmethod
     def get_mode(cls) -> str:
@@ -264,20 +283,14 @@ class IntentJudge:
                 }
                 with open(CASSETTE_FILE, "w", encoding="utf-8") as f:
                     json.dump(cassette_data, f, indent=2)
+                cls.invalidate_cassette_cache()
             except Exception as e:
                 logger.warning(f"Failed to persist recorded cassette: {e}")
             return verdict
 
         # 3. Replay Mode: Playback from recorded runs or test stubs
         if mode == "replay":
-            cassette_data = {}
-            if CASSETTE_FILE.exists():
-                try:
-                    with open(CASSETTE_FILE, "r", encoding="utf-8") as f:
-                        cassette_data = json.load(f)
-                except Exception:
-                    pass
-
+            cassette_data = cls.get_cassette_data()
             recorded_runs = cassette_data.get("recorded_runs", {})
             stubs = cassette_data.get("stubs", {})
 

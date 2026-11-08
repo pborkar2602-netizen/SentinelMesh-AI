@@ -47,7 +47,7 @@ def generate_ascii_report(
         "=" * 100,
         "ENVIRONMENT & HARDWARE",
         f"- Host Platform:       {sys_info['platform']} / {sys_info['processor']} / {sys_info['ram_gb']}GB RAM / Python {sys_info['python_version']}",
-        "- Test Suite Mode:     Deterministic Replay (judge_cassettes.json)",
+        "- Test Suite Mode:     Deterministic Replay (judge stub: hand-written verdicts, not LLM)",
         f"- Date & Time:         {now_utc}",
         "",
         "-" * 100,
@@ -107,7 +107,7 @@ def save_json_report(
         "metadata": {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "telemetry": get_system_telemetry(),
-            "mode": "deterministic_replay",
+            "mode": "deterministic_replay (judge stub: hand-written verdicts, not LLM)",
             "spec_version": "1.0",
         },
         "dev_set": dev_metrics,
