@@ -49,18 +49,16 @@ def execute_tool_call(request: ToolCallRequest) -> GatewayDecisionResponse:
     from backend.app.privacy.masker import PrivacyEngine
     masked_arguments, _ = PrivacyEngine.mask_payload(request.session_id, request.arguments)
     masked_sources, _ = PrivacyEngine.mask_payload(request.session_id, [c.model_dump() for c in normalized_sources])
+    # 5. Measure masking latency & record DB/masking timings
     masking_ms = round((time.perf_counter() - t_mask_start) * 1000, 3)
+    stage_timings = risk_breakdown.setdefault("stage_timings_ms", {})
+    stage_timings["db_session_lookup"] = db_write_ms
+    stage_timings["masking"] = masking_ms
 
-    # 5. Measure gateway analysis latency
-    latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
     now_utc = datetime.now(timezone.utc)
 
     # 6. Persist to Append-Only Audit Log with SHA-256 Hash Chaining (COVERING ONLY MASKED DATA)
     t_hash_start = time.perf_counter()
-    stage_timings = risk_breakdown.setdefault("stage_timings_ms", {})
-    stage_timings["db_write"] = db_write_ms
-    stage_timings["masking"] = masking_ms
-
     event_dict = {
         "trace_id": request.trace_id,
         "agent_id": request.agent_id,
@@ -72,7 +70,7 @@ def execute_tool_call(request: ToolCallRequest) -> GatewayDecisionResponse:
         "reason": reason,
         "risk_score": risk_score,
         "risk_breakdown": risk_breakdown,
-        "latency_ms": latency_ms,
+        "latency_ms": 0.0,
         "timestamp": now_utc.isoformat()
     }
     event_id, event_hash = save_audit_event(event_dict)
@@ -80,6 +78,7 @@ def execute_tool_call(request: ToolCallRequest) -> GatewayDecisionResponse:
     stage_timings["hash_chain"] = hash_chain_ms
 
     # 7. Broadcast event over WebSocket to live dashboard
+    t_ws_start = time.perf_counter()
     broadcast_payload = {
         "type": "AUDIT_EVENT",
         "id": event_id,
@@ -88,8 +87,11 @@ def execute_tool_call(request: ToolCallRequest) -> GatewayDecisionResponse:
         **event_dict
     }
     ws_manager.broadcast_sync(broadcast_payload)
+    ws_broadcast_ms = round((time.perf_counter() - t_ws_start) * 1000, 3)
+    stage_timings["ws_broadcast"] = ws_broadcast_ms
 
     # 8. Milestone 3 Attack Chain Reconstruction & Incident Builder
+    t_inc_start = time.perf_counter()
     from backend.app.core.incident_builder import IncidentBuilder
     incident = IncidentBuilder.process_event(event_dict, findings)
     if incident:
@@ -97,11 +99,19 @@ def execute_tool_call(request: ToolCallRequest) -> GatewayDecisionResponse:
             "type": "INCIDENT_ALERT",
             "incident": incident
         })
+    incident_builder_ms = round((time.perf_counter() - t_inc_start) * 1000, 3)
+    stage_timings["incident_builder"] = incident_builder_ms
 
     # In the audit log and dashboard event feed: decision is 'would_block'
     # But to the calling agent: gateway returns 'allow' so execution continues
     agent_decision = "allow" if decision == "would_block" else decision
     redacted_arguments = masked_arguments if decision == "redact" else None
+
+    # 9. Response serialization & total latency
+    total_latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+    sum_measured = sum(stage_timings.values())
+    response_serialization_ms = round(max(0.001, total_latency_ms - sum_measured), 3)
+    stage_timings["response_serialization"] = response_serialization_ms
 
     return GatewayDecisionResponse(
         trace_id=request.trace_id,
@@ -112,7 +122,7 @@ def execute_tool_call(request: ToolCallRequest) -> GatewayDecisionResponse:
         reason=reason,
         risk_score=risk_score,
         risk_breakdown=risk_breakdown,
-        latency_ms=latency_ms,
+        latency_ms=total_latency_ms,
         timestamp=now_utc,
         event_hash=event_hash,
         redacted_arguments=redacted_arguments,

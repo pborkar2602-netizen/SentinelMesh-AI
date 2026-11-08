@@ -86,21 +86,35 @@ class PolicyEngine:
                     f"Action would have been blocked. Session tainted by [{sources_str}]."
                 )
 
-        # Policy Rule 2: High-Sensitivity Data Egress to External Destination (Policy-Configurable)
-        # or tainted session performing sensitive external transaction
+        # Policy Rule 2: High-Sensitivity Data Egress or Tainted Financial Transaction to External Destination
         has_sensitive_pii = any(getattr(f, "pii_type", "") in ["SALARY", "NATIONAL_ID", "CREDIT_CARD", "IBAN", "API_KEY"] for f in (pii_findings or []))
-        if is_external_destination and has_sensitive_pii:
+        is_financial_transaction = any(k in arguments for k in ["amount", "bank_routing", "account_number", "wire_routing"])
+        if is_external_destination and (has_sensitive_pii or (is_tainted and is_financial_transaction)):
             if cls._high_sensitivity_external_action == "require_approval" or is_tainted:
                 if mode == "enforce":
                     return (
                         "require_approval",
-                        f"Policy 'High-Sensitivity External Egress': Outgoing transfer containing sensitive personal data to external destination requires human approval."
+                        f"Policy 'High-Sensitivity External Egress': Outgoing transfer containing sensitive personal/financial data to external destination requires human approval."
                     )
                 else:
                     return (
                         "would_block",
-                        f"Policy 'High-Sensitivity External Egress' [MONITOR MODE]: Outgoing transfer containing sensitive personal data would have required human approval."
+                        f"Policy 'High-Sensitivity External Egress' [MONITOR MODE]: Outgoing transfer containing sensitive personal/financial data would have required human approval."
                     )
+
+        # Policy Rule: Destructive Database Operation requires human approval
+        if any(f.name == "destructive_ddl_command" for f in findings):
+            top_ddl = next(f for f in findings if f.name == "destructive_ddl_command")
+            if mode == "enforce":
+                return (
+                    "require_approval",
+                    f"Policy 'Destructive Database Operation': {top_ddl.evidence}. Destructive DDL commands require authorized human approval."
+                )
+            else:
+                return (
+                    "would_block",
+                    f"Policy Alert [MONITOR MODE]: Destructive DDL command detected ({top_ddl.evidence})."
+                )
 
         # Policy Rule 3: Unapproved email recipient
         if has_unapproved_recipient:
@@ -152,6 +166,18 @@ class PolicyEngine:
         # Policy Rule 5: Behavioral Baseline Anomaly Escalation (Anomaly >= 70)
         if anomaly_score >= 70:
             anomaly_str = "; ".join(anomaly_reasons[:2]) if anomaly_reasons else "Significant behavioral outlier"
+            # Critical compound anomaly on tainted session (e.g. ATK-009 off-hours bulk dump from injected trigger)
+            if is_tainted and anomaly_score >= 85 and any("*" in str(v) for v in arguments.values()):
+                if mode == "enforce":
+                    return (
+                        "block",
+                        f"Baseline Anomaly Policy blocked action: Critical compound behavioral anomaly detected from tainted session ({anomaly_str}, Score: {anomaly_score}/100)."
+                    )
+                else:
+                    return (
+                        "would_block",
+                        f"Baseline Anomaly Alert [MONITOR MODE]: Would have blocked on critical compound anomaly ({anomaly_str})."
+                    )
             if mode == "enforce":
                 return (
                     "require_approval",

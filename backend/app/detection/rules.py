@@ -263,6 +263,28 @@ def check_prompt_injection(context_sources: List[Any], arguments: Dict[str, Any]
             ))
     return findings
 
+# Destructive Database DDL Patterns (Precompiled)
+DESTRUCTIVE_DDL_PATTERNS = [
+    re.compile(r"\bDROP\s+(?:TABLE|DATABASE|SCHEMA|VIEW)\b", re.IGNORECASE),
+    re.compile(r"\bTRUNCATE\s+(?:TABLE)?\b", re.IGNORECASE),
+    re.compile(r"\bALTER\s+TABLE\s+.+?\s+DROP\b", re.IGNORECASE)
+]
+
+def check_destructive_ddl(tool_name: str, arguments: Dict[str, Any]) -> List[Finding]:
+    findings = []
+    if tool_name == "db_query":
+        query_text = str(arguments.get("query") or arguments.get("sql") or "")
+        for pat in DESTRUCTIVE_DDL_PATTERNS:
+            match = pat.search(query_text)
+            if match:
+                findings.append(Finding(
+                    name="destructive_ddl_command",
+                    severity="critical",
+                    evidence=f"Database query contains destructive DDL operation: '{match.group(0)}'",
+                    owasp_category="LLM06: Excessive Agency"
+                ))
+    return findings
+
 def run_all_detectors(
     tool_name: str,
     arguments: Dict[str, Any],
@@ -275,6 +297,7 @@ def run_all_detectors(
     findings.extend(check_unapproved_email_recipient(tool_name, arguments))
     findings.extend(check_ssrf_metadata(tool_name, arguments))
     findings.extend(check_sql_injection(tool_name, arguments))
+    findings.extend(check_destructive_ddl(tool_name, arguments))
     findings.extend(check_path_traversal(tool_name, arguments))
     findings.extend(check_credential_leak(tool_name, arguments))
     findings.extend(check_prompt_injection(context_sources, arguments))

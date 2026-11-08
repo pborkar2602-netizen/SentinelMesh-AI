@@ -35,6 +35,7 @@ class AgentBaselineProfile:
         
         # Distributions
         self.records_per_query_dist: List[float] = []
+        self.records_per_session_dist: List[float] = []
         self.calls_per_session_dist: List[float] = []
         self.calls_per_minute_dist: List[float] = []
         
@@ -43,9 +44,14 @@ class AgentBaselineProfile:
         self.mad_records: float = 1.0
         self.threshold_records: float = 50.0
 
+        self.median_session_records: float = 0.0
+        self.mad_session_records: float = 1.0
+        self.threshold_session_records: float = 40.0
+
         self.median_calls_per_min: float = 0.0
         self.mad_calls_per_min: float = 1.0
         self.threshold_calls_per_min: float = 10.0
+        self.threshold_calls_per_hour: float = 30.0
 
         self.min_hour: int = 8
         self.max_hour: int = 18
@@ -68,6 +74,15 @@ class AgentBaselineProfile:
             self.median_calls_per_min = calculate_median(self.calls_per_minute_dist)
             self.mad_calls_per_min = calculate_mad(self.calls_per_minute_dist, self.median_calls_per_min)
             self.threshold_calls_per_min = max(self.median_calls_per_min + 3.5 * self.mad_calls_per_min, 6.0)
+
+        # 3. Cumulative records per session threshold
+        if self.records_per_session_dist:
+            self.median_session_records = calculate_median(self.records_per_session_dist)
+            self.mad_session_records = calculate_mad(self.records_per_session_dist, self.median_session_records)
+            self.threshold_session_records = max(self.median_session_records + 3.5 * self.mad_session_records, 20.0)
+
+        # 4. Hourly call rate threshold
+        self.threshold_calls_per_hour = max(self.threshold_calls_per_min * 20.0, 30.0)
 
 class BaselineProfiler:
     _profiles: Dict[str, AgentBaselineProfile] = {}
@@ -108,6 +123,7 @@ class BaselineProfiler:
                 prof.calls_per_minute_dist.append(cpm)
 
             prev_tool = None
+            sess_records = 0.0
             for ev in events:
                 tool = ev["tool_name"]
                 args = ev.get("arguments", {})
@@ -134,14 +150,21 @@ class BaselineProfiler:
                         prof.usual_destinations.add(parsed.hostname.lower())
 
                 # Records returned
+                rec_val = 0.0
                 if "records_returned" in args:
-                    prof.records_per_query_dist.append(float(args["records_returned"]))
+                    rec_val = float(args["records_returned"])
                 elif tool == "db_query":
                     import re
                     q = str(args.get("query") or "")
                     limit_match = re.search(r"LIMIT\s+(\d+)", q, re.IGNORECASE)
                     if limit_match:
-                        prof.records_per_query_dist.append(float(limit_match.group(1)))
+                        rec_val = float(limit_match.group(1))
+                    else:
+                        rec_val = 1.0
+                prof.records_per_query_dist.append(rec_val)
+                sess_records += rec_val
+
+            prof.records_per_session_dist.append(sess_records)
 
         # Finalize all profiles
         for p in profiles.values():

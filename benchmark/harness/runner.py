@@ -177,11 +177,56 @@ class BenchmarkRunner:
                 # Context sources apply on step 0, subsequent steps inherit session taint
                 step_sources = active_context_sources if step.step_index == 0 else []
 
+                # Handle dynamic cryptographic approval token testing placeholders
+                step_args = dict(step.arguments)
+                if "approval_token" in step_args:
+                    tok_val = str(step_args["approval_token"])
+                    from backend.app.approvals.tokens import issue_signed_approval_token
+                    clean_args = {k: v for k, v in step_args.items() if k != "approval_token"}
+                    if tok_val == "__MINT_VALID_TOKEN__":
+                        step_args["approval_token"] = issue_signed_approval_token(
+                            tool_name=step.tool_name,
+                            arguments=clean_args,
+                            session_id=session_id,
+                            ttl_seconds=300
+                        )
+                    elif tok_val == "__EXPIRED_TOKEN__":
+                        step_args["approval_token"] = issue_signed_approval_token(
+                            tool_name=step.tool_name,
+                            arguments=clean_args,
+                            session_id=session_id,
+                            ttl_seconds=-3600
+                        )
+                    elif tok_val == "__REPLAYED_TOKEN__":
+                        from backend.app.db.database import record_used_nonce
+                        r_nonce = f"replayed-nonce-{uuid.uuid4().hex[:8]}"
+                        step_args["approval_token"] = issue_signed_approval_token(
+                            tool_name=step.tool_name,
+                            arguments=clean_args,
+                            session_id=session_id,
+                            nonce=r_nonce
+                        )
+                        record_used_nonce(r_nonce, "action_hash_dummy", "trc-setup-replay")
+                    elif tok_val == "__WRONG_ACTION_TOKEN__":
+                        step_args["approval_token"] = issue_signed_approval_token(
+                            tool_name=step.tool_name,
+                            arguments={"query": "SELECT 1"},
+                            session_id=session_id
+                        )
+                    elif tok_val == "__FORGED_TOKEN__":
+                        valid_tok = issue_signed_approval_token(
+                            tool_name=step.tool_name,
+                            arguments=clean_args,
+                            session_id=session_id
+                        )
+                        payload_part = valid_tok.split(".")[0]
+                        step_args["approval_token"] = f"{payload_part}.0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
                 gateway_resp, latency_ms = self.execute_single_call(
                     agent_id=scenario.target_agent,
                     session_id=session_id,
                     tool_name=step.tool_name,
-                    arguments=step.arguments,
+                    arguments=step_args,
                     context_sources=step_sources,
                     task_description=scenario.agent_task,
                     timestamp=simulated_timestamp,

@@ -69,8 +69,8 @@ def main():
             "error",
         ],
         env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
 
     try:
@@ -95,7 +95,7 @@ def main():
 
         # 1. Warm-up Phase: 100 calls
         print("Executing 100 HTTP warm-up calls...")
-        with httpx.Client(timeout=10.0) as client:
+        with httpx.Client(timeout=30.0) as client:
             for i in range(100):
                 payload = {
                     "trace_id": f"trc-warm-{i}",
@@ -114,12 +114,17 @@ def main():
         # 2. Benchmark Phase: 1,000 calls
         http_latencies: List[float] = []
         rules_latencies: List[float] = []
+        privacy_latencies: List[float] = []
         baseline_latencies: List[float] = []
         judge_latencies: List[float] = []
+        policy_latencies: List[float] = []
         masking_latencies: List[float] = []
         db_write_latencies: List[float] = []
         hash_chain_latencies: List[float] = []
-        http_overhead_latencies: List[float] = []
+        ws_latencies: List[float] = []
+        incident_latencies: List[float] = []
+        response_latencies: List[float] = []
+        http_transport_latencies: List[float] = []
 
         tools_mix = [
             ("read_doc", {"file_path": "resume.pdf.txt"}, []),
@@ -128,7 +133,7 @@ def main():
             ("external_api", {"url": "https://partner.org/v1/sync", "action": "sync"}, []),
         ]
 
-        with httpx.Client(timeout=10.0) as client:
+        with httpx.Client(timeout=30.0) as client:
             for i in range(1000):
                 tool_name, args, sources = tools_mix[i % len(tools_mix)]
                 payload = {
@@ -159,27 +164,37 @@ def main():
                 http_latencies.append(total_http_ms)
 
                 res_json = resp.json()
+                server_reported_ms = res_json.get("latency_ms", 0.0)
                 rb = res_json.get("risk_breakdown", {})
                 st = rb.get("stage_timings_ms", {})
 
                 r_ms = st.get("rules", 0.0)
+                p_ms = st.get("privacy", 0.0)
                 b_ms = st.get("baseline", 0.0)
                 j_ms = st.get("judge_stub", 0.0)
+                pol_ms = st.get("policy", 0.0)
                 m_ms = st.get("masking", 0.0)
-                db_ms = st.get("db_write", 0.0)
+                db_ms = st.get("db_session_lookup", st.get("db_write", 0.0))
                 h_ms = st.get("hash_chain", 0.0)
+                ws_ms = st.get("ws_broadcast", 0.0)
+                inc_ms = st.get("incident_builder", 0.0)
+                resp_ms = st.get("response_serialization", 0.0)
 
                 rules_latencies.append(r_ms)
+                privacy_latencies.append(p_ms)
                 baseline_latencies.append(b_ms)
                 judge_latencies.append(j_ms)
+                policy_latencies.append(pol_ms)
                 masking_latencies.append(m_ms)
                 db_write_latencies.append(db_ms)
                 hash_chain_latencies.append(h_ms)
+                ws_latencies.append(ws_ms)
+                incident_latencies.append(inc_ms)
+                response_latencies.append(resp_ms)
 
-                # Total internal gateway processing
-                internal_ms = r_ms + b_ms + j_ms + m_ms + db_ms + h_ms
-                overhead_ms = max(0.0, total_http_ms - internal_ms)
-                http_overhead_latencies.append(overhead_ms)
+                # HTTP transport overhead (wire transit + uvicorn routing)
+                transport_ms = max(0.0, total_http_ms - server_reported_ms)
+                http_transport_latencies.append(transport_ms)
 
                 if (i + 1) % 200 == 0:
                     print(f"  Processed {i + 1} / 1,000 calls...")
@@ -188,24 +203,29 @@ def main():
         print("\n" + "=" * 80)
         print("PER-STAGE TIMING BREAKDOWN (N = 1,000 Calls across real HTTP Gateway)")
         print("=" * 80)
-        header = f"{'Pipeline Stage':<28} | {'p50 (ms)':<9} | {'p90 (ms)':<9} | {'p95 (ms)':<9} | {'Mean (ms)':<9}"
+        header = f"{'Pipeline Stage':<32} | {'p50 (ms)':<9} | {'p90 (ms)':<9} | {'p95 (ms)':<9} | {'Mean (ms)':<9}"
         print(header)
         print("-" * len(header))
 
         stages = [
-            ("HTTP Transport & Serialization", http_overhead_latencies),
-            ("Privacy Masking (Token/Vault)", masking_latencies),
-            ("Rules & Trust Labeling", rules_latencies),
-            ("Learned Baseline Detector", baseline_latencies),
-            ("Intent Judge (Stub Replay)", judge_latencies),
-            ("DB Session & Agent State", db_write_latencies),
-            ("Hash Chain & Append-Only Log", hash_chain_latencies),
+            ("1. HTTP Wire & Transport", http_transport_latencies),
+            ("2. DB Session & Agent State", db_write_latencies),
+            ("3. Rules & Trust Labeling", rules_latencies),
+            ("4. Privacy Detection & Risk", privacy_latencies),
+            ("5. Learned Baseline Detector", baseline_latencies),
+            ("6. Intent Judge (Stub Replay)", judge_latencies),
+            ("7. Policy Engine Evaluation", policy_latencies),
+            ("8. Masking & Tokenization", masking_latencies),
+            ("9. Hash Chain & Audit Log Write", hash_chain_latencies),
+            ("10. WebSocket Event Broadcast", ws_latencies),
+            ("11. Incident Builder Analysis", incident_latencies),
+            ("12. Response Serialization", response_latencies),
             ("TOTAL REAL HTTP ROUND-TRIP", http_latencies),
         ]
 
         for name, vals in stages:
             s = calc_stats(vals)
-            print(f"{name:<28} | {s['p50']:>9.2f} | {s['p90']:>9.2f} | {s['p95']:>9.2f} | {s['mean']:>9.2f}")
+            print(f"{name:<32} | {s['p50']:>9.2f} | {s['p90']:>9.2f} | {s['p95']:>9.2f} | {s['mean']:>9.2f}")
 
         print("=" * 80)
 
@@ -216,6 +236,38 @@ def main():
         with open(out_file, "w", encoding="utf-8") as f:
             json.dump(summary, f, indent=2)
         print(f"\n[+] Saved latency profile to {out_file}")
+
+        # 4. Generate Plot of Latency vs Call Index
+        try:
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+
+            fig, ax = plt.subplots(figsize=(10, 5))
+            indices = list(range(1, len(http_latencies) + 1))
+            ax.plot(indices, http_latencies, label="Total Real HTTP Round-Trip", color="#2563eb", alpha=0.7, linewidth=1)
+            ax.plot(indices, hash_chain_latencies, label="Hash Chain & DB Write", color="#dc2626", alpha=0.7, linewidth=1)
+            ax.plot(indices, baseline_latencies, label="Baseline Anomaly Detector", color="#16a34a", alpha=0.7, linewidth=1)
+
+            # Rolling 50-call average
+            window = 50
+            if len(http_latencies) >= window:
+                rolling_avg = [sum(http_latencies[max(0, k - window):k]) / min(k, window) for k in range(1, len(http_latencies) + 1)]
+                ax.plot(indices, rolling_avg, label=f"{window}-Call Moving Average", color="#1e293b", linewidth=2)
+
+            ax.set_title("Gateway Request Latency vs. Call Index (1 to 1,000 Calls)")
+            ax.set_xlabel("Sequential Gateway Call Index (Event Accumulation)")
+            ax.set_ylabel("Latency (ms)")
+            ax.grid(True, linestyle="--", alpha=0.5)
+            ax.legend(loc="upper right")
+
+            plot_path = PROJECT_ROOT / "benchmark" / "reports" / "latency_vs_call_index.png"
+            fig.tight_layout()
+            fig.savefig(plot_path, dpi=150)
+            plt.close(fig)
+            print(f"[+] Saved Latency vs Call Index plot to {plot_path}")
+        except Exception as e:
+            print(f"[-] Plot generation failed: {e}")
 
     finally:
         proc.terminate()

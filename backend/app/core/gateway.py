@@ -31,13 +31,15 @@ class GatewayCore:
         risk_breakdown: dict = {}
 
         # 0. Milestone 6: Verification of Signed Approval Token (if presented)
-        if getattr(request, "approval_token", None):
+        approval_tok = getattr(request, "approval_token", None) or request.arguments.get("approval_token")
+        if approval_tok:
             from backend.app.approvals.tokens import verify_and_consume_approval_token, ApprovalTokenError
+            clean_args = {k: v for k, v in request.arguments.items() if k != "approval_token"}
             try:
                 verified_payload = verify_and_consume_approval_token(
-                    token_str=request.approval_token,
+                    token_str=str(approval_tok),
                     tool_name=request.tool_name,
-                    arguments=request.arguments,
+                    arguments=clean_args,
                     trace_id=request.trace_id
                 )
                 risk_breakdown["approval_token_verified"] = True
@@ -61,6 +63,8 @@ class GatewayCore:
                     []
                 )
 
+        from backend.app.config import settings
+
         # 1. Authoritative Server-side Trust Labeling (Provenance-based)
         t_rules_start = time.perf_counter()
         normalized_sources, trust_warnings = label_trust(
@@ -70,27 +74,35 @@ class GatewayCore:
         )
 
         # 2. Session Taint Tracking
-        is_tainted, tainted_by, newly_tainted = track_session_taint(
-            session_id=request.session_id,
-            context_sources=normalized_sources
-        )
+        if settings.ENABLE_TAINT_TRACKER:
+            is_tainted, tainted_by, newly_tainted = track_session_taint(
+                session_id=request.session_id,
+                context_sources=normalized_sources
+            )
+        else:
+            is_tainted, tainted_by, newly_tainted = False, [], False
 
         # 3. Rule Detection
-        findings = run_all_detectors(
-            tool_name=request.tool_name,
-            arguments=request.arguments,
-            context_sources=normalized_sources
-        )
+        if settings.ENABLE_RULE_DETECTOR:
+            findings = run_all_detectors(
+                tool_name=request.tool_name,
+                arguments=request.arguments,
+                context_sources=normalized_sources
+            )
+        else:
+            findings = []
         rules_ms = round((time.perf_counter() - t_rules_start) * 1000, 3)
 
         # 4. Privacy & PII Detection across arguments and context
+        t_priv_start = time.perf_counter()
         pii_findings: List[PiiFinding] = []
-        for val in request.arguments.values():
-            if isinstance(val, str):
-                pii_findings.extend(cls._pii_detector.detect(val))
-        for src in normalized_sources:
-            if src.snippet:
-                pii_findings.extend(cls._pii_detector.detect(src.snippet))
+        if settings.ENABLE_PRIVACY_MODULE:
+            for val in request.arguments.values():
+                if isinstance(val, str):
+                    pii_findings.extend(cls._pii_detector.detect(val))
+            for src in normalized_sources:
+                if src.snippet:
+                    pii_findings.extend(cls._pii_detector.detect(src.snippet))
 
         # 5. Risk Scoring (0-100 Threat Signals)
         risk_score, risk_breakdown = compute_risk_score(
@@ -101,101 +113,117 @@ class GatewayCore:
         )
 
         # 6. Privacy Risk Scoring (0-100 Privacy Signals)
-        is_external = False
-        if request.tool_name == "send_email":
-            from backend.app.detection.rules import is_approved_email_domain
-            rec = request.arguments.get("to") or request.arguments.get("recipient") or ""
-            is_external = not is_approved_email_domain(str(rec))
-        elif request.tool_name == "external_api":
-            from backend.app.detection.rules import is_approved_api_host
-            url = str(request.arguments.get("url") or request.arguments.get("endpoint") or "")
-            is_external = not is_approved_api_host(url)
+        if settings.ENABLE_PRIVACY_MODULE:
+            is_external = False
+            if request.tool_name == "send_email":
+                from backend.app.detection.rules import is_approved_email_domain
+                rec = request.arguments.get("to") or request.arguments.get("recipient") or ""
+                is_external = not is_approved_email_domain(str(rec))
+            elif request.tool_name == "external_api":
+                from backend.app.detection.rules import is_approved_api_host
+                url = str(request.arguments.get("url") or request.arguments.get("endpoint") or "")
+                is_external = not is_approved_api_host(url)
 
-        priv_score, priv_breakdown = PrivacyEngine.calculate_privacy_risk(
-            pii_findings,
-            is_external=is_external,
-            is_tainted=is_tainted
-        )
-        if priv_score > 0:
-            risk_breakdown["privacy_score"] = priv_score
-            risk_breakdown["privacy_breakdown"] = priv_breakdown
-            risk_score = max(risk_score, priv_score)
+            priv_score, priv_breakdown = PrivacyEngine.calculate_privacy_risk(
+                pii_findings,
+                is_external=is_external,
+                is_tainted=is_tainted
+            )
+            if priv_score > 0:
+                risk_breakdown["privacy_score"] = priv_score
+                risk_breakdown["privacy_breakdown"] = priv_breakdown
+                risk_score = max(risk_score, priv_score)
+        privacy_ms = round((time.perf_counter() - t_priv_start) * 1000, 3)
 
         # 7. Milestone 5: Learned Behavioral Baseline Anomaly Detection
         t_base_start = time.perf_counter()
-        session_events = list_session_events(request.session_id)
-        anomaly_score, anomaly_reasons, anomaly_breakdown = AnomalyDetector.evaluate(
-            agent_id=request.agent_id,
-            tool_name=request.tool_name,
-            arguments=request.arguments,
-            session_events=session_events,
-            sim_datetime=request.timestamp
-        )
+        anomaly_score = 0
+        anomaly_reasons: List[str] = []
+        anomaly_breakdown: Dict[str, Any] = {}
+        if settings.ENABLE_BASELINE_ANOMALY:
+            session_events = list_session_events(request.session_id)
+            anomaly_score, anomaly_reasons, anomaly_breakdown = AnomalyDetector.evaluate(
+                agent_id=request.agent_id,
+                tool_name=request.tool_name,
+                arguments=request.arguments,
+                session_events=session_events,
+                sim_datetime=request.timestamp,
+                tool_result=getattr(request, "tool_result", None)
+            )
+            if anomaly_score > 0:
+                risk_breakdown["baseline_anomaly"] = anomaly_score
+                risk_breakdown["anomaly_reasons"] = anomaly_reasons
+                risk_breakdown["anomaly_breakdown"] = anomaly_breakdown
+                risk_score = max(risk_score, anomaly_score)
         baseline_ms = round((time.perf_counter() - t_base_start) * 1000, 3)
-        if anomaly_score > 0:
-            risk_breakdown["baseline_anomaly"] = anomaly_score
-            risk_breakdown["anomaly_reasons"] = anomaly_reasons
-            risk_breakdown["anomaly_breakdown"] = anomaly_breakdown
-            risk_score = max(risk_score, anomaly_score)
 
         # 8. Intent-vs-Action LLM Judge (MASKED PAYLOADS ONLY with non-PII security context)
         t_judge_start = time.perf_counter()
-        masked_args_for_judge, _ = PrivacyEngine.mask_payload(request.session_id, request.arguments)
-        
-        # Extract destination domain for context
-        dest_domain = None
-        if request.tool_name == "send_email":
-            email_val = str(request.arguments.get("to") or request.arguments.get("recipient") or "")
-            if "@" in email_val:
-                dest_domain = email_val.split("@")[-1].strip().lower()
-        elif request.tool_name == "external_api":
-            import urllib.parse
-            url_val = str(request.arguments.get("url") or request.arguments.get("endpoint") or "")
-            dest_domain = urllib.parse.urlparse(url_val).hostname
+        judge_verdict = None
+        if settings.ENABLE_INTENT_JUDGE:
+            masked_args_for_judge, _ = PrivacyEngine.mask_payload(request.session_id, request.arguments)
+            
+            # Extract destination domain for context
+            dest_domain = None
+            if request.tool_name == "send_email":
+                email_val = str(request.arguments.get("to") or request.arguments.get("recipient") or "")
+                if "@" in email_val:
+                    dest_domain = email_val.split("@")[-1].strip().lower()
+            elif request.tool_name == "external_api":
+                import urllib.parse
+                url_val = str(request.arguments.get("url") or request.arguments.get("endpoint") or "")
+                dest_domain = urllib.parse.urlparse(url_val).hostname
 
-        data_class_counts: Dict[str, int] = {}
-        for f in pii_findings:
-            data_class_counts[f.pii_type] = data_class_counts.get(f.pii_type, 0) + 1
+            data_class_counts: Dict[str, int] = {}
+            for f in pii_findings:
+                data_class_counts[f.pii_type] = data_class_counts.get(f.pii_type, 0) + 1
 
-        judge_verdict = IntentJudge.evaluate(
-            task_description=request.task_description or "Autonomous session task",
-            session_id=request.session_id,
-            tool_name=request.tool_name,
-            masked_arguments=masked_args_for_judge,
-            destination_domain=dest_domain,
-            is_tainted=is_tainted,
-            tainted_sources=tainted_by,
-            data_class_counts=data_class_counts
-        )
+            judge_verdict = IntentJudge.evaluate(
+                task_description=request.task_description or "Autonomous session task",
+                session_id=request.session_id,
+                tool_name=request.tool_name,
+                masked_arguments=masked_args_for_judge,
+                destination_domain=dest_domain,
+                is_tainted=is_tainted,
+                tainted_sources=tainted_by,
+                data_class_counts=data_class_counts
+            )
+            if judge_verdict:
+                risk_breakdown["judge_mismatch"] = judge_verdict.mismatch_score
+                risk_breakdown["judge_reasoning"] = judge_verdict.reasoning
+                risk_breakdown["judge_risk_level"] = judge_verdict.risk_level
+                risk_breakdown["judge_latency_ms"] = judge_verdict.latency_ms
+                risk_breakdown["judge_mode"] = judge_verdict.mode
+                if judge_verdict.mismatch_score > 50:
+                    risk_score = max(risk_score, judge_verdict.mismatch_score)
         judge_ms = round((time.perf_counter() - t_judge_start) * 1000, 3)
-        if judge_verdict:
-            risk_breakdown["judge_mismatch"] = judge_verdict.mismatch_score
-            risk_breakdown["judge_reasoning"] = judge_verdict.reasoning
-            risk_breakdown["judge_risk_level"] = judge_verdict.risk_level
-            risk_breakdown["judge_latency_ms"] = judge_verdict.latency_ms
-            risk_breakdown["judge_mode"] = judge_verdict.mode
-            if judge_verdict.mismatch_score > 50:
-                risk_score = max(risk_score, judge_verdict.mismatch_score)
+
+        # 9. Policy Engine Evaluation (Enforce vs Monitor mode, with Redact & Judge hooks)
+        t_pol_start = time.perf_counter()
+        if settings.ENABLE_POLICY_ENGINE:
+            decision, reason = PolicyEngine.evaluate_policy(
+                tool_name=request.tool_name,
+                arguments=request.arguments,
+                is_tainted=is_tainted,
+                tainted_by=tainted_by,
+                findings=findings,
+                risk_score=risk_score,
+                pii_findings=pii_findings,
+                judge_verdict=judge_verdict,
+                anomaly_score=anomaly_score,
+                anomaly_reasons=anomaly_reasons
+            )
+        else:
+            decision, reason = "allow", "Policy engine disabled (ablation mode)"
+        policy_ms = round((time.perf_counter() - t_pol_start) * 1000, 3)
 
         risk_breakdown["stage_timings_ms"] = {
             "rules": rules_ms,
+            "privacy": privacy_ms,
             "baseline": baseline_ms,
-            "judge_stub": judge_ms
+            "judge_stub": judge_ms,
+            "policy": policy_ms
         }
-
-        # 9. Policy Engine Evaluation (Enforce vs Monitor mode, with Redact & Judge hooks)
-        decision, reason = PolicyEngine.evaluate_policy(
-            tool_name=request.tool_name,
-            arguments=request.arguments,
-            is_tainted=is_tainted,
-            tainted_by=tainted_by,
-            findings=findings,
-            risk_score=risk_score,
-            pii_findings=pii_findings,
-            judge_verdict=judge_verdict,
-            anomaly_score=anomaly_score,
-            anomaly_reasons=anomaly_reasons
-        )
 
         # 10. Milestone 6: Approval Workflow & Simulated Reviewer
         if decision == "require_approval":

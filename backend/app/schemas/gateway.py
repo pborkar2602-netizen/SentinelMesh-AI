@@ -21,6 +21,7 @@ class ToolCallRequest(BaseModel):
     task_description: str | None = Field(default=None, description="Original stated task given to the agent")
     trace_id: str = Field(default_factory=lambda: f"trc-{uuid.uuid4().hex[:12]}", description="Distributed trace identifier")
     approval_token: str | None = Field(default=None, description="HMAC-signed approval token for pre-authorized or approved actions")
+    tool_result: Any | None = Field(default=None, description="Actual tool response/result object measured by gateway")
 
 class GatewayDecisionResponse(BaseModel):
     trace_id: str

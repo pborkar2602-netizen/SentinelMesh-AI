@@ -20,7 +20,8 @@ class AnomalyDetector:
         tool_name: str,
         arguments: Dict[str, Any],
         session_events: Optional[List[Dict[str, Any]]] = None,
-        sim_datetime: Optional[datetime] = None
+        sim_datetime: Optional[datetime] = None,
+        tool_result: Optional[Any] = None
     ) -> Tuple[int, List[str], Dict[str, Any]]:
         profile: AgentBaselineProfile = BaselineProfiler.get_profile(agent_id)
         reasons: List[str] = []
@@ -33,13 +34,25 @@ class AnomalyDetector:
         weekday = now_dt.strftime("%A")
 
         # 1. Bulk Record Dump Evaluation
-        # Estimate records accessed from tool result size or structural heuristic (no WHERE and no LIMIT)
+        # Prioritize actual result size measured directly by the gateway from tool response
         records_count = 0.0
-        for k in ["records_returned", "rows_returned", "count", "row_count", "records", "num_records", "num_rows"]:
-            if k in arguments and isinstance(arguments[k], (int, float)):
-                records_count = float(arguments[k])
-                break
+        if tool_result is not None:
+            if isinstance(tool_result, list):
+                records_count = float(len(tool_result))
+            elif isinstance(tool_result, dict):
+                for k in ["rows", "records", "data", "results", "items"]:
+                    if k in tool_result and isinstance(tool_result[k], list):
+                        records_count = float(len(tool_result[k]))
+                        break
+                if records_count == 0.0:
+                    for k in ["count", "rows_returned", "records_returned", "row_count"]:
+                        if k in tool_result and isinstance(tool_result[k], (int, float)):
+                            records_count = float(tool_result[k])
+                            break
+            elif isinstance(tool_result, (int, float)):
+                records_count = float(tool_result)
 
+        # Pre-execution structural heuristic for db_query:
         if records_count == 0.0 and tool_name == "db_query":
             q = str(arguments.get("query") or "")
             limit_m = re.search(r"\bLIMIT\s+(\d+)\b", q, re.IGNORECASE)
@@ -47,9 +60,10 @@ class AnomalyDetector:
                 records_count = float(limit_m.group(1))
             else:
                 has_where = bool(re.search(r"\bWHERE\b", q, re.IGNORECASE))
-                is_select_all = bool(re.search(r"\bSELECT\s+\*\s+FROM\b", q, re.IGNORECASE))
-                if not has_where and is_select_all:
-                    # Structural heuristic: unconstrained SELECT * full table dump without WHERE filter and without LIMIT
+                # Structural heuristic: unconstrained table scan (SELECT * or SELECT named columns from bulk/sensitive tables with no WHERE and no LIMIT)
+                is_unconstrained_star = bool(re.search(r"\bSELECT\s+\*\s+FROM\b", q, re.IGNORECASE))
+                is_unconstrained_named = bool(re.search(r"\bSELECT\s+.+?\s+FROM\s+(?:employees|salaries|payroll|enterprise|ledger|general_ledger|transactions|applicant_records|payments|credentials|user_secrets)\b", q, re.IGNORECASE | re.DOTALL))
+                if not has_where and (is_unconstrained_star or is_unconstrained_named):
                     records_count = max(profile.threshold_records * 3.0, 500.0)
                 else:
                     records_count = 1.0
@@ -61,6 +75,25 @@ class AnomalyDetector:
             total_anomaly_score += score_add
             reasons.append(f"Bulk record query: {int(records_count)} records ({ratio:.1f}x baseline median)")
             breakdown["bulk_dump"] = {"records": int(records_count), "ratio": round(ratio, 1)}
+
+        # Cumulative per-session counters (detects slow/low-volume exfiltration over multiple calls)
+        events = session_events or []
+        past_session_records = 0.0
+        for ev in events:
+            past_session_records += float(ev.get("records_accessed", 0) or 0.0)
+            if ev.get("tool_name") == "db_query":
+                bd = ev.get("risk_breakdown", {})
+                if "bulk_dump" in bd:
+                    past_session_records += float(bd["bulk_dump"].get("records", 0))
+                else:
+                    past_session_records += 1.0
+
+        cumulative_session_records = past_session_records + records_count
+        if cumulative_session_records > profile.threshold_session_records and len(events) >= 2:
+            score_add = min(75, int(35 + (cumulative_session_records / max(profile.median_session_records, 1.0)) * 2))
+            total_anomaly_score += score_add
+            reasons.append(f"Cumulative session records: {int(cumulative_session_records)} exceeds baseline threshold ({profile.threshold_session_records:.1f})")
+            breakdown["cumulative_records"] = {"records": int(cumulative_session_records), "threshold": profile.threshold_session_records}
 
         # 2. Off-Hours Anomaly Evaluation
         is_weekend = weekday in ["Saturday", "Sunday"]
