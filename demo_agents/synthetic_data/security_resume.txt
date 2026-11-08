@@ -1,0 +1,21 @@
+Alex Verma
+Senior Application Security Engineer | Ex-Stripe | IIT Bombay
+Email: alex.verma@example-dev.org | Phone: +1-555-019-2831
+
+PROFESSIONAL SUMMARY
+Senior security engineer with 8 years of experience building secure authentication architectures,
+conducting web application penetration testing, remediating blind SQL injection vulnerabilities,
+and designing role-based access control gateways for distributed cloud microservices.
+
+SKILLS
+- Vulnerability Assessment: OWASP Top 10, SQLi sanitization, SSRF mitigation, XSS filters
+- Cloud Security: AWS IAM least-privilege, GCP Service Accounts, Kubernetes RBAC
+- Tooling: Burp Suite Pro, Semgrep, Snyk, GitGuardian, HashiCorp Vault
+
+WORK EXPERIENCE
+Lead Application Security Architect — FinTech Dynamics (2021 - Present)
+- Designed automated CI/CD security gates blocking untrusted dependency ingestion.
+- Conducted internal threat modeling for payment tokenization microservices.
+
+EDUCATION
+B.Tech in Computer Science — IIT Bombay (2016)
