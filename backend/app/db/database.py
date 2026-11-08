@@ -25,10 +25,7 @@ def get_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
     conn = sqlite3.connect(path, timeout=30.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
-    try:
-        conn.execute("PRAGMA journal_mode = WAL;")
-    except Exception:
-        pass
+    conn.execute("PRAGMA synchronous = NORMAL;")
     return conn
 
 def compute_event_hash(event_data: Dict[str, Any], prev_hash: str) -> str:
@@ -94,6 +91,10 @@ DEFAULT_DEMO_AGENTS = [
 
 def init_db(db_path: Optional[str] = None) -> None:
     conn = get_connection(db_path)
+    try:
+        conn.execute("PRAGMA journal_mode = WAL;")
+    except Exception:
+        pass
     with conn:
         conn.execute("""
         CREATE TABLE IF NOT EXISTS agents (
