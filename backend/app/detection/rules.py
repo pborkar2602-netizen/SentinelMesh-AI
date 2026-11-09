@@ -270,6 +270,14 @@ DESTRUCTIVE_DDL_PATTERNS = [
     re.compile(r"\bALTER\s+TABLE\s+.+?\s+DROP\b", re.IGNORECASE)
 ]
 
+# Privileged Administrative Operations Patterns
+ADMIN_PRIVILEGED_PATTERNS = [
+    re.compile(r"\bUPDATE\s+system_configs\b", re.IGNORECASE),
+    re.compile(r"\bUPDATE\s+(?:users|permissions|roles|credentials|auth)\b", re.IGNORECASE),
+    re.compile(r"\bDELETE\s+FROM\s+(?:system_configs|users|permissions|roles)\b", re.IGNORECASE),
+    re.compile(r"\bINSERT\s+INTO\s+(?:system_configs|users|permissions|roles)\b", re.IGNORECASE),
+]
+
 def check_destructive_ddl(tool_name: str, arguments: Dict[str, Any]) -> List[Finding]:
     findings = []
     if tool_name == "db_query":
@@ -281,6 +289,21 @@ def check_destructive_ddl(tool_name: str, arguments: Dict[str, Any]) -> List[Fin
                     name="destructive_ddl_command",
                     severity="critical",
                     evidence=f"Database query contains destructive DDL operation: '{match.group(0)}'",
+                    owasp_category="LLM06: Excessive Agency"
+                ))
+    return findings
+
+def check_privileged_actions(tool_name: str, arguments: Dict[str, Any]) -> List[Finding]:
+    findings = []
+    if tool_name == "db_query":
+        query_text = str(arguments.get("query") or arguments.get("sql") or "")
+        for pat in ADMIN_PRIVILEGED_PATTERNS:
+            match = pat.search(query_text)
+            if match:
+                findings.append(Finding(
+                    name="privileged_administrative_action",
+                    severity="critical",
+                    evidence=f"Database query executes privileged administrative mutation: '{match.group(0)}'",
                     owasp_category="LLM06: Excessive Agency"
                 ))
     return findings
@@ -298,6 +321,7 @@ def run_all_detectors(
     findings.extend(check_ssrf_metadata(tool_name, arguments))
     findings.extend(check_sql_injection(tool_name, arguments))
     findings.extend(check_destructive_ddl(tool_name, arguments))
+    findings.extend(check_privileged_actions(tool_name, arguments))
     findings.extend(check_path_traversal(tool_name, arguments))
     findings.extend(check_credential_leak(tool_name, arguments))
     findings.extend(check_prompt_injection(context_sources, arguments))

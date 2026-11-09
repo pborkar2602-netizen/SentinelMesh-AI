@@ -130,18 +130,19 @@ class PolicyEngine:
                         "Policy 'High-Sensitivity External Egress' [MONITOR MODE]: Outgoing transfer containing sensitive personal data would have required human approval."
                     )
 
-        # Policy Rule: Destructive Database Operation requires human approval
-        if any(f.name == "destructive_ddl_command" for f in findings):
-            top_ddl = next(f for f in findings if f.name == "destructive_ddl_command")
+        # Policy Rule: Destructive Database Operation or Privileged Mutation requires authorized approval
+        priv_ops = [f for f in findings if f.name in ["destructive_ddl_command", "privileged_administrative_action"]]
+        if priv_ops:
+            top_op = priv_ops[0]
             if mode == "enforce":
                 return (
                     "require_approval",
-                    f"Policy 'Destructive Database Operation': {top_ddl.evidence}. Destructive DDL commands require authorized human approval."
+                    f"Policy 'Privileged Action Authorization': {top_op.evidence}. Privileged operations require verified approval token or human authorization."
                 )
             else:
                 return (
                     "would_block",
-                    f"Policy Alert [MONITOR MODE]: Destructive DDL command detected ({top_ddl.evidence})."
+                    f"Policy Alert [MONITOR MODE]: Privileged operation detected without approval token ({top_op.evidence})."
                 )
 
         # Policy Rule 3: Unapproved email recipient

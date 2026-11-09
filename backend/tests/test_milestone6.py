@@ -533,3 +533,56 @@ def test_production_mode_refusal_when_unconfigured():
             os.environ["SENTINEL_VAULT_KEY"] = old_vault
         if old_jwt is not None:
             os.environ["SENTINEL_JWT_SECRET"] = old_jwt
+
+def test_privileged_action_with_no_token_requires_approval(client, test_db):
+    """
+    Verifies that administrative/privileged database mutations (e.g. UPDATE system_configs)
+    executed with NO approval token are intercepted and require human approval (or block).
+    """
+    SimulatedReviewer.set_mode("disabled")
+    try:
+        resp = client.post("/api/v1/gateway/execute", json={
+            "trace_id": "trc-priv-notoken-1",
+            "agent_id": "ops-agent",
+            "session_id": "sess-priv-notoken-1",
+            "tool_name": "db_query",
+            "arguments": {
+                "query": "UPDATE system_configs SET firewall_enabled=0 WHERE service='auth'"
+            },
+            "context_sources": [],
+            "task_description": "Modify firewall config",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["decision"] == "require_approval"
+        assert "Privileged Action Authorization" in data["reason"]
+        assert data["approval_id"] is not None
+
+        # Now test with a valid signed token for this exact action -> should allow!
+        valid_token = issue_signed_approval_token(
+            tool_name="db_query",
+            arguments={"query": "UPDATE system_configs SET firewall_enabled=0 WHERE service='auth'"},
+            session_id="sess-priv-notoken-1",
+            ttl_seconds=300
+        )
+        resp2 = client.post("/api/v1/gateway/execute", json={
+            "trace_id": "trc-priv-withtoken-1",
+            "agent_id": "ops-agent",
+            "session_id": "sess-priv-notoken-1",
+            "tool_name": "db_query",
+            "arguments": {
+                "query": "UPDATE system_configs SET firewall_enabled=0 WHERE service='auth'",
+                "approval_token": valid_token
+            },
+            "context_sources": [],
+            "task_description": "Modify firewall config",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        })
+        assert resp2.status_code == 200
+        data2 = resp2.json()
+        assert data2["decision"] == "allow"
+        assert "verified one-time HMAC approval token" in data2["reason"]
+    finally:
+        SimulatedReviewer.set_mode("deny")
+
