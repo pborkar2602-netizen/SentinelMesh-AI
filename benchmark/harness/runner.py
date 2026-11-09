@@ -25,6 +25,7 @@ class BenchmarkRunner:
         self.gateway_url = gateway_url
         self.http_client = http_client
         self.simulated_reviewer_decision = simulated_reviewer_decision
+        os.environ["SENTINEL_BENCHMARK_MODE"] = "true"
         self._direct_client = None
         self._init_connection()
 

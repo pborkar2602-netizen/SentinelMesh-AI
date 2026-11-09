@@ -3,6 +3,7 @@ import json
 import sqlite3
 import logging
 import threading
+import contextvars
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
@@ -13,6 +14,29 @@ logger = logging.getLogger(__name__)
 
 GENESIS_PREV_HASH = "0" * 64
 _hash_chain_lock = threading.Lock()
+_request_conn: contextvars.ContextVar[Optional[sqlite3.Connection]] = contextvars.ContextVar("_request_conn", default=None)
+
+def set_request_connection(conn: Optional[sqlite3.Connection]):
+    """Binds an active SQLite connection to the current request context."""
+    return _request_conn.set(conn)
+
+def reset_request_connection(token):
+    """Resets the active SQLite connection context token."""
+    _request_conn.reset(token)
+
+def acquire_connection(conn: Optional[sqlite3.Connection] = None) -> Tuple[sqlite3.Connection, bool]:
+    """
+    Returns (connection, should_close).
+    If conn is explicitly passed, uses it (should_close=False).
+    Else if an active request connection exists in context, reuses it across the pipeline (should_close=False).
+    Else creates a new connection (should_close=True).
+    """
+    if conn is not None:
+        return conn, False
+    req_conn = _request_conn.get()
+    if req_conn is not None:
+        return req_conn, False
+    return get_connection(), True
 
 def get_db_path() -> str:
     url = settings.DATABASE_URL
@@ -256,10 +280,7 @@ def init_db(db_path: Optional[str] = None) -> None:
     logger.info("Database schema initialized and demo agents seeded.")
 
 def save_agent(agent_dict: Dict[str, Any], conn: Optional[sqlite3.Connection] = None) -> None:
-    close = False
-    if conn is None:
-        conn = get_connection()
-        close = True
+    conn, close = acquire_connection(conn)
     with conn:
         conn.execute(
             """
@@ -284,10 +305,7 @@ def save_agent(agent_dict: Dict[str, Any], conn: Optional[sqlite3.Connection] = 
         conn.close()
 
 def get_agent(agent_id: str, conn: Optional[sqlite3.Connection] = None) -> Optional[Dict[str, Any]]:
-    close = False
-    if conn is None:
-        conn = get_connection()
-        close = True
+    conn, close = acquire_connection(conn)
     cur = conn.execute("SELECT * FROM agents WHERE id = ?", (agent_id,))
     row = cur.fetchone()
     if close:
@@ -299,10 +317,7 @@ def get_agent(agent_id: str, conn: Optional[sqlite3.Connection] = None) -> Optio
     return d
 
 def list_agents(conn: Optional[sqlite3.Connection] = None) -> List[Dict[str, Any]]:
-    close = False
-    if conn is None:
-        conn = get_connection()
-        close = True
+    conn, close = acquire_connection(conn)
     cur = conn.execute("SELECT * FROM agents ORDER BY id ASC")
     rows = cur.fetchall()
     if close:
@@ -315,10 +330,7 @@ def list_agents(conn: Optional[sqlite3.Connection] = None) -> List[Dict[str, Any
     return res
 
 def save_session(session_dict: Dict[str, Any], conn: Optional[sqlite3.Connection] = None) -> None:
-    close = False
-    if conn is None:
-        conn = get_connection()
-        close = True
+    conn, close = acquire_connection(conn)
     tainted_by = session_dict.get("tainted_by", [])
     if isinstance(tainted_by, list):
         tainted_by_json = json.dumps(tainted_by)
@@ -350,10 +362,7 @@ def save_session(session_dict: Dict[str, Any], conn: Optional[sqlite3.Connection
         conn.close()
 
 def get_session(session_id: str, conn: Optional[sqlite3.Connection] = None) -> Optional[Dict[str, Any]]:
-    close = False
-    if conn is None:
-        conn = get_connection()
-        close = True
+    conn, close = acquire_connection(conn)
     cur = conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,))
     row = cur.fetchone()
     if close:
@@ -366,10 +375,7 @@ def get_session(session_id: str, conn: Optional[sqlite3.Connection] = None) -> O
     return d
 
 def mark_session_tainted(session_id: str, source_id: str, conn: Optional[sqlite3.Connection] = None) -> None:
-    close = False
-    if conn is None:
-        conn = get_connection()
-        close = True
+    conn, close = acquire_connection(conn)
     sess = get_session(session_id, conn=conn)
     if sess:
         tainted_by = set(sess.get("tainted_by", []))
@@ -395,10 +401,7 @@ def save_audit_event(event_dict: Dict[str, Any], conn: Optional[sqlite3.Connecti
     Executes prev_hash read + row insert + event_hash write in one atomic transaction.
     Returns (event_id, event_hash).
     """
-    close = False
-    if conn is None:
-        conn = get_connection()
-        close = True
+    conn, close = acquire_connection(conn)
 
     with _hash_chain_lock:
         old_isolation = conn.isolation_level
@@ -499,10 +502,7 @@ def list_audit_events(
     order: str = "asc",
     conn: Optional[sqlite3.Connection] = None
 ) -> List[Dict[str, Any]]:
-    close = False
-    if conn is None:
-        conn = get_connection()
-        close = True
+    conn, close = acquire_connection(conn)
 
     sort_order = "DESC" if order.lower() == "desc" else "ASC"
     if agent_id:
@@ -526,10 +526,7 @@ def list_audit_events(
     return events
 
 def list_session_events(session_id: str, conn: Optional[sqlite3.Connection] = None) -> List[Dict[str, Any]]:
-    close = False
-    if conn is None:
-        conn = get_connection()
-        close = True
+    conn, close = acquire_connection(conn)
     cur = conn.execute("SELECT * FROM audit_events WHERE session_id = ? ORDER BY id ASC", (session_id,))
     rows = cur.fetchall()
     if close:
@@ -548,10 +545,7 @@ def verify_chain(conn: Optional[sqlite3.Connection] = None) -> Tuple[bool, Optio
     Verifies the cryptographic integrity of the append-only audit event hash chain.
     Returns: (is_valid, tampered_event_id, message)
     """
-    close = False
-    if conn is None:
-        conn = get_connection()
-        close = True
+    conn, close = acquire_connection(conn)
 
     cur = conn.execute("SELECT * FROM audit_events ORDER BY id ASC")
     rows = cur.fetchall()
@@ -601,10 +595,7 @@ def verify_chain_detailed(conn: Optional[sqlite3.Connection] = None) -> Dict[str
     """
     Returns structured verification details of the audit log hash chain for the API and dashboard.
     """
-    close = False
-    if conn is None:
-        conn = get_connection()
-        close = True
+    conn, close = acquire_connection(conn)
 
     cur = conn.execute("SELECT * FROM audit_events ORDER BY id ASC")
     rows = cur.fetchall()
@@ -680,10 +671,7 @@ def verify_chain_detailed(conn: Optional[sqlite3.Connection] = None) -> Dict[str
     }
 
 def save_incident(incident_dict: Dict[str, Any], conn: Optional[sqlite3.Connection] = None) -> None:
-    close = False
-    if conn is None:
-        conn = get_connection()
-        close = True
+    conn, close = acquire_connection(conn)
 
     with conn:
         conn.execute(
@@ -726,10 +714,7 @@ def save_incident(incident_dict: Dict[str, Any], conn: Optional[sqlite3.Connecti
         conn.close()
 
 def get_incident(incident_id: str, conn: Optional[sqlite3.Connection] = None) -> Optional[Dict[str, Any]]:
-    close = False
-    if conn is None:
-        conn = get_connection()
-        close = True
+    conn, close = acquire_connection(conn)
     cur = conn.execute("SELECT * FROM incidents WHERE id = ?", (incident_id,))
     row = cur.fetchone()
     if close:
@@ -742,10 +727,7 @@ def get_incident(incident_id: str, conn: Optional[sqlite3.Connection] = None) ->
     return d
 
 def get_incident_by_session(session_id: str, conn: Optional[sqlite3.Connection] = None) -> Optional[Dict[str, Any]]:
-    close = False
-    if conn is None:
-        conn = get_connection()
-        close = True
+    conn, close = acquire_connection(conn)
     cur = conn.execute("SELECT * FROM incidents WHERE session_id = ?", (session_id,))
     row = cur.fetchone()
     if close:
@@ -764,10 +746,7 @@ def list_incidents(
     order: str = "desc",
     conn: Optional[sqlite3.Connection] = None
 ) -> List[Dict[str, Any]]:
-    close = False
-    if conn is None:
-        conn = get_connection()
-        close = True
+    conn, close = acquire_connection(conn)
 
     sort_order = "DESC" if order.lower() == "desc" else "ASC"
     clauses = []
@@ -802,10 +781,7 @@ def list_incidents(
 # ============================================================================
 
 def save_approval(approval_dict: Dict[str, Any], conn: Optional[sqlite3.Connection] = None) -> None:
-    close = False
-    if conn is None:
-        conn = get_connection()
-        close = True
+    conn, close = acquire_connection(conn)
 
     masked_args = approval_dict.get("masked_arguments", {})
     masked_args_str = json.dumps(masked_args) if isinstance(masked_args, (dict, list)) else str(masked_args)
@@ -842,10 +818,7 @@ def save_approval(approval_dict: Dict[str, Any], conn: Optional[sqlite3.Connecti
         conn.close()
 
 def get_approval(approval_id: str, conn: Optional[sqlite3.Connection] = None) -> Optional[Dict[str, Any]]:
-    close = False
-    if conn is None:
-        conn = get_connection()
-        close = True
+    conn, close = acquire_connection(conn)
 
     cur = conn.execute("SELECT * FROM approvals WHERE id = ?", (approval_id,))
     row = cur.fetchone()
@@ -867,10 +840,7 @@ def list_approvals(
     limit: int = 50,
     conn: Optional[sqlite3.Connection] = None
 ) -> List[Dict[str, Any]]:
-    close = False
-    if conn is None:
-        conn = get_connection()
-        close = True
+    conn, close = acquire_connection(conn)
 
     clauses = []
     params = []
@@ -909,10 +879,7 @@ def update_approval_status(
     approval_token: Optional[str] = None,
     conn: Optional[sqlite3.Connection] = None
 ) -> None:
-    close = False
-    if conn is None:
-        conn = get_connection()
-        close = True
+    conn, close = acquire_connection(conn)
 
     now_iso = datetime.now(timezone.utc).isoformat()
     conn.execute(
@@ -933,10 +900,7 @@ def record_used_nonce(
     trace_id: str,
     conn: Optional[sqlite3.Connection] = None
 ) -> None:
-    close = False
-    if conn is None:
-        conn = get_connection()
-        close = True
+    conn, close = acquire_connection(conn)
 
     now_iso = datetime.now(timezone.utc).isoformat()
     conn.execute(
@@ -951,10 +915,7 @@ def record_used_nonce(
         conn.close()
 
 def is_nonce_used(nonce: str, conn: Optional[sqlite3.Connection] = None) -> bool:
-    close = False
-    if conn is None:
-        conn = get_connection()
-        close = True
+    conn, close = acquire_connection(conn)
 
     cur = conn.execute("SELECT nonce FROM used_approval_nonces WHERE nonce = ?", (nonce,))
     row = cur.fetchone()
@@ -964,10 +925,7 @@ def is_nonce_used(nonce: str, conn: Optional[sqlite3.Connection] = None) -> bool
 
 def expire_timed_out_approvals(conn: Optional[sqlite3.Connection] = None) -> List[str]:
     """Scans pending approvals where expires_at < now, marks them timed_out (default deny)."""
-    close = False
-    if conn is None:
-        conn = get_connection()
-        close = True
+    conn, close = acquire_connection(conn)
 
     now_iso = datetime.now(timezone.utc).isoformat()
     cur = conn.execute(
@@ -996,10 +954,7 @@ def expire_timed_out_approvals(conn: Optional[sqlite3.Connection] = None) -> Lis
 
 def get_vendor_master(vendor_name: str, conn: Optional[sqlite3.Connection] = None) -> Optional[Dict[str, Any]]:
     """Retrieves verified master banking profile for a vendor."""
-    close = False
-    if conn is None:
-        conn = get_connection()
-        close = True
+    conn, close = acquire_connection(conn)
     try:
         cur = conn.execute(
             "SELECT vendor_name, bank_routing, account_number, authorized_endpoint FROM vendor_master WHERE LOWER(vendor_name) = LOWER(?)",
@@ -1019,10 +974,7 @@ def save_vendor_master(
     conn: Optional[sqlite3.Connection] = None
 ) -> None:
     """Inserts or updates verified vendor banking profile."""
-    close = False
-    if conn is None:
-        conn = get_connection()
-        close = True
+    conn, close = acquire_connection(conn)
     with conn:
         conn.execute(
             """

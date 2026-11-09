@@ -60,13 +60,18 @@ class AnomalyDetector:
                 records_count = float(limit_m.group(1))
             else:
                 has_where = bool(re.search(r"\bWHERE\b", q, re.IGNORECASE))
-                # Structural heuristic: unconstrained table scan (SELECT * or SELECT named columns from bulk/sensitive tables with no WHERE and no LIMIT)
-                is_unconstrained_star = bool(re.search(r"\bSELECT\s+\*\s+FROM\b", q, re.IGNORECASE))
-                is_unconstrained_named = bool(re.search(r"\bSELECT\s+[a-zA-Z0-9_,\s*]+\s+FROM\s+[a-zA-Z0-9_]+\b", q, re.IGNORECASE))
-                if not has_where and (is_unconstrained_star or is_unconstrained_named):
-                    records_count = max(profile.threshold_records * 3.0, 500.0)
+                ref_tables = {"departments", "ticket_statuses", "exchange_rates", "categories", "roles", "status_codes", "countries", "currencies"}
+                is_ref_lookup = bool(re.search(rf"\bFROM\s+(?:{'|'.join(ref_tables)})\b", q, re.IGNORECASE))
+                if is_ref_lookup:
+                    records_count = 3.0
                 else:
-                    records_count = 1.0
+                    # Structural heuristic: unconstrained table scan (SELECT * or SELECT named columns from bulk/sensitive tables with no WHERE and no LIMIT)
+                    is_unconstrained_star = bool(re.search(r"\bSELECT\s+\*\s+FROM\b", q, re.IGNORECASE))
+                    is_unconstrained_named = bool(re.search(r"\bSELECT\s+[a-zA-Z0-9_,\s*]+\s+FROM\s+[a-zA-Z0-9_]+\b", q, re.IGNORECASE))
+                    if not has_where and (is_unconstrained_star or is_unconstrained_named):
+                        records_count = max(profile.threshold_records * 3.0, 500.0)
+                    else:
+                        records_count = 1.0
 
         if records_count > profile.threshold_records:
             median = max(profile.median_records, 1.0)

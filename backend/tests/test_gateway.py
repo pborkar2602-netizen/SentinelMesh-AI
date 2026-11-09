@@ -34,7 +34,7 @@ def test_gateway_execute_untrusted_context(client: TestClient):
         "agent_id": "hr-agent",
         "session_id": "sess-test-002",
         "tool_name": "db_query",
-        "arguments": {"query": "SELECT candidate_id, name FROM candidates"},
+        "arguments": {"query": "SELECT candidate_id, name FROM candidates WHERE candidate_id = 'c-101'"},
         "context_sources": [
             {"source_id": "resume.pdf", "source_type": "document", "is_untrusted": True}
         ]

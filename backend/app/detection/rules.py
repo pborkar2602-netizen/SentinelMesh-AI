@@ -1,3 +1,4 @@
+import os
 import re
 import email.utils
 import urllib.parse
@@ -270,13 +271,24 @@ DESTRUCTIVE_DDL_PATTERNS = [
     re.compile(r"\bALTER\s+TABLE\s+.+?\s+DROP\b", re.IGNORECASE)
 ]
 
-# Privileged Administrative Operations Patterns
-ADMIN_PRIVILEGED_PATTERNS = [
-    re.compile(r"\bUPDATE\s+system_configs\b", re.IGNORECASE),
-    re.compile(r"\bUPDATE\s+(?:users|permissions|roles|credentials|auth)\b", re.IGNORECASE),
-    re.compile(r"\bDELETE\s+FROM\s+(?:system_configs|users|permissions|roles)\b", re.IGNORECASE),
-    re.compile(r"\bINSERT\s+INTO\s+(?:system_configs|users|permissions|roles)\b", re.IGNORECASE),
-]
+# Configurable Privileged Database Tables (Overridable via SENTINEL_PRIVILEGED_TABLES)
+DEFAULT_PRIVILEGED_TABLES = ["system_configs", "users", "permissions", "roles", "credentials", "auth"]
+
+def get_privileged_tables() -> List[str]:
+    raw = os.getenv("SENTINEL_PRIVILEGED_TABLES", "")
+    if raw.strip():
+        return [t.strip().lower() for t in raw.split(",") if t.strip()]
+    return DEFAULT_PRIVILEGED_TABLES
+
+def build_privileged_patterns() -> List[re.Pattern]:
+    tables_pipe = "|".join(re.escape(t) for t in get_privileged_tables())
+    return [
+        re.compile(rf"\bUPDATE\s+(?:{tables_pipe})\b", re.IGNORECASE),
+        re.compile(rf"\bDELETE\s+FROM\s+(?:{tables_pipe})\b", re.IGNORECASE),
+        re.compile(rf"\bINSERT\s+INTO\s+(?:{tables_pipe})\b", re.IGNORECASE),
+        re.compile(rf"\bDROP\s+TABLE\s+(?:{tables_pipe})\b", re.IGNORECASE),
+        re.compile(rf"\bALTER\s+TABLE\s+(?:{tables_pipe})\b", re.IGNORECASE),
+    ]
 
 def check_destructive_ddl(tool_name: str, arguments: Dict[str, Any]) -> List[Finding]:
     findings = []
@@ -297,13 +309,13 @@ def check_privileged_actions(tool_name: str, arguments: Dict[str, Any]) -> List[
     findings = []
     if tool_name == "db_query":
         query_text = str(arguments.get("query") or arguments.get("sql") or "")
-        for pat in ADMIN_PRIVILEGED_PATTERNS:
+        for pat in build_privileged_patterns():
             match = pat.search(query_text)
             if match:
                 findings.append(Finding(
                     name="privileged_administrative_action",
                     severity="critical",
-                    evidence=f"Database query executes privileged administrative mutation: '{match.group(0)}'",
+                    evidence=f"Database query executes privileged administrative mutation on protected table: '{match.group(0)}'",
                     owasp_category="LLM06: Excessive Agency"
                 ))
     return findings

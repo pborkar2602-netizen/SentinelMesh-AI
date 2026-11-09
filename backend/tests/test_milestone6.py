@@ -584,5 +584,5 @@ def test_privileged_action_with_no_token_requires_approval(client, test_db):
         assert data2["decision"] == "allow"
         assert "verified one-time HMAC approval token" in data2["reason"]
     finally:
-        SimulatedReviewer.set_mode("deny")
+        SimulatedReviewer.set_mode("disabled")
 

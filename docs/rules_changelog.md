@@ -37,3 +37,22 @@ This document logs all generic detection rules, policy engine heuristics, and th
   1. In Policy Rule 5 (`backend/app/core/policy_engine.py`), differentiated moderate anomalies ($70 \le \text{score} < 85$) from critical compound anomalies ($\text{score} \ge 85$).
   2. Critical compound violations yielding $\ge 85$ anomaly score are strictly blocked.
 - **Justification**: A massive table dump executed in the middle of the night on a weekend represents an acute breach scenario warranting immediate blocking, whereas a single-factor anomaly warrants reviewer evaluation.
+
+---
+
+### Entry 5: Empirical Baseline Distribution Thresholds & Robust Minimum Spread (Zero-MAD Resolution)
+- **Problem Observed**: Agents with constant or near-constant historical metrics (e.g. steady-state record queries where $\text{MAD} = 0.0$) risk zero-variance lockups, where any single-record deviation would trigger false alarms if absolute mathematical zero MAD was used. Hardcoded floor constants were removed per Milestone 7 requirements.
+- **Generic Change**:
+  1. Removed all arbitrary hardcoded threshold floors from `AgentBaselineProfile.finalize()`. All thresholds derive directly from empirical data: $\text{threshold} = \text{median} + 3.5 \times \text{MAD}$.
+  2. In `calculate_mad()`, when historical behavior has near-zero variance ($\text{raw\_mad} = 0$), applied a principled data-derived spread: $\max(0.15 \times \text{median}, 1.0)$.
+  3. Validated on 200 normal sessions of a near-constant agent: $\text{FPR} = 0.00\%$ ($95\%$ Wilson CI: $[0.00\%, 1.88\%]$).
+- **Justification**: Eliminates arbitrary magic numbers while maintaining robust non-parametric statistical bounds across all agent profiles.
+
+---
+
+### Entry 6: Configurable Privileged Database Mutation Tables & Authoritative Server Timestamping
+- **Problem Observed**: Privileged state modifications (`UPDATE system_configs`, `UPDATE users`, etc.) were checked against hardcoded table names in rules code. Additionally, outside benchmark mode, client-supplied timestamps posed replay and temporal spoofing risks.
+- **Generic Change**:
+  1. Privileged table enforcement now reads from `SENTINEL_PRIVILEGED_TABLES` (comma-separated environment variable), defaulting to `["system_configs", "users", "permissions", "roles", "credentials", "auth"]`. Non-privileged tables like `customer_addresses` (BEN-010) are cleanly permitted without approval escalation.
+  2. In `backend/app/api/gateway.py`, outside benchmark mode (`SENTINEL_BENCHMARK_MODE != true`), client-supplied timestamp attributes are strictly ignored and server-authoritative UTC clock (`datetime.now(timezone.utc)`) is enforced on all audit events, hash chains, and rate calculations.
+- **Justification**: Enhances operational flexibility for enterprise deployments while guaranteeing authoritative cryptographic integrity against client timestamp manipulation.

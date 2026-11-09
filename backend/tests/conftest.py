@@ -197,6 +197,8 @@ def test_db() -> Generator[str, None, None]:
     
     # Reset policy engine to enforce mode by default for tests
     PolicyEngine.set_mode("enforce")
+    from backend.app.approvals.reviewer import SimulatedReviewer
+    SimulatedReviewer.set_mode("disabled")
 
     yield db_path
 

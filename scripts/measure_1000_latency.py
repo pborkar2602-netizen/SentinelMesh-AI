@@ -94,7 +94,7 @@ def main():
         print("Gateway HTTP server online and healthy.\n")
 
         # 1. Warm-up Phase: 100 calls
-        print("Executing 100 HTTP warm-up calls...")
+        print("Executing 100 HTTP warm-up calls...", flush=True)
         with httpx.Client(timeout=30.0) as client:
             for i in range(100):
                 payload = {
@@ -109,7 +109,7 @@ def main():
                 }
                 client.post(execute_url, json=payload)
 
-        print("Warm-up complete. Commencing 1,000 live HTTP benchmark calls...\n")
+        print("Warm-up complete. Commencing 1,000 live HTTP benchmark calls...\n", flush=True)
 
         # 2. Benchmark Phase: 1,000 calls
         http_latencies: List[float] = []
@@ -196,8 +196,8 @@ def main():
                 transport_ms = max(0.0, total_http_ms - server_reported_ms)
                 http_transport_latencies.append(transport_ms)
 
-                if (i + 1) % 200 == 0:
-                    print(f"  Processed {i + 1} / 1,000 calls...")
+                if (i + 1) % 100 == 0:
+                    print(f"  Processed {i + 1} / 1,000 calls (last call: {total_http_ms:.1f}ms)...", flush=True)
 
         # 3. Print Statistical Breakdown
         print("\n" + "=" * 80)
