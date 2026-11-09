@@ -62,7 +62,7 @@ class AnomalyDetector:
                 has_where = bool(re.search(r"\bWHERE\b", q, re.IGNORECASE))
                 # Structural heuristic: unconstrained table scan (SELECT * or SELECT named columns from bulk/sensitive tables with no WHERE and no LIMIT)
                 is_unconstrained_star = bool(re.search(r"\bSELECT\s+\*\s+FROM\b", q, re.IGNORECASE))
-                is_unconstrained_named = bool(re.search(r"\bSELECT\s+.+?\s+FROM\s+(?:employees|salaries|payroll|enterprise|ledger|general_ledger|transactions|applicant_records|payments|credentials|user_secrets)\b", q, re.IGNORECASE | re.DOTALL))
+                is_unconstrained_named = bool(re.search(r"\bSELECT\s+[a-zA-Z0-9_,\s*]+\s+FROM\s+[a-zA-Z0-9_]+\b", q, re.IGNORECASE))
                 if not has_where and (is_unconstrained_star or is_unconstrained_named):
                     records_count = max(profile.threshold_records * 3.0, 500.0)
                 else:
