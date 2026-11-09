@@ -38,20 +38,48 @@ def wilson_score_interval(k: int, n: int, confidence: float = 0.95) -> Tuple[flo
     upper = min(1.0, center + margin)
     return p, lower, upper
 
+COMMITTED_DATASET_PATH = Path(__file__).resolve().parent.parent / "backend" / "app" / "baseline" / "baseline_dev_sessions.json"
+
 def run_evaluation() -> Dict[str, Any]:
     # Force reload baseline profiles
     BaselineProfiler.load_or_train()
-    sessions = generate_independent_held_out_sessions(num_sessions=100, seed=9876)
+
+    # Load from committed dataset file and verify SHA-256
+    import hashlib
+    import json
+    if not COMMITTED_DATASET_PATH.exists():
+        from scripts.generate_held_out_baseline import generate_independent_held_out_sessions
+        raw_sessions = generate_independent_held_out_sessions(num_sessions=100, seed=9876)
+        serializable = []
+        for s in raw_sessions:
+            sc = dict(s)
+            sc["timestamp"] = s["timestamp"].isoformat()
+            serializable.append(sc)
+        with open(COMMITTED_DATASET_PATH, "w", encoding="utf-8") as f:
+            json.dump(serializable, f, indent=2)
+
+    data_bytes = COMMITTED_DATASET_PATH.read_bytes()
+    dataset_sha256 = hashlib.sha256(data_bytes).hexdigest()
+
+    with open(COMMITTED_DATASET_PATH, "r", encoding="utf-8") as f:
+        stored_sessions = json.load(f)
+
+    sessions = []
+    for s in stored_sessions:
+        s_obj = dict(s)
+        s_obj["timestamp"] = datetime.fromisoformat(s["timestamp"])
+        sessions.append(s_obj)
 
     total_sessions = len(sessions)
     total_calls = 0
-    false_positives = 0
+    anomalous_sessions = 0
     anomalous_calls = []
 
     for s in sessions:
         agent_id = s["agent_id"]
         t_base = s["timestamp"]
         session_events = []
+        session_flagged = False
 
         for idx, call in enumerate(s["calls"]):
             total_calls += 1
@@ -67,7 +95,7 @@ def run_evaluation() -> Dict[str, Any]:
 
             # Anomaly is considered an actionable false positive if it crosses policy escalation threshold (>= 70)
             if score >= 70:
-                false_positives += 1
+                session_flagged = True
                 anomalous_calls.append({
                     "session_id": s["session_id"],
                     "agent_id": agent_id,
@@ -82,7 +110,11 @@ def run_evaluation() -> Dict[str, Any]:
                 "arguments": call["arguments"]
             })
 
-    fpr, lower, upper = wilson_score_interval(false_positives, total_calls, confidence=0.95)
+        if session_flagged:
+            anomalous_sessions += 1
+
+    session_fpr, session_lower, session_upper = wilson_score_interval(anomalous_sessions, total_sessions, confidence=0.95)
+    call_fpr, call_lower, call_upper = wilson_score_interval(len(anomalous_calls), total_calls, confidence=0.95)
 
     # Verify zero-MAD edge case explicitly
     zero_mad_values = [15.0, 15.0, 15.0, 15.0, 15.0]
@@ -101,6 +133,18 @@ def run_evaluation() -> Dict[str, Any]:
         tool_result=ben006_session["calls"][0].get("tool_result")
     )
     assert score_ben006 < 70, f"BEN-006 must pass learned baseline without escalation, got score {score_ben006} ({reasons_ben006})"
+
+    # Confirm Hard Normal 2: reference table queries with NO WHERE and NO LIMIT pass
+    for idx in range(3):
+        ref_session = next(s for s in sessions if s["session_id"] == f"sess-hard-ref-lookup-{idx}")
+        score_ref, reasons_ref, _ = AnomalyDetector.evaluate(
+            agent_id=ref_session["agent_id"],
+            tool_name="db_query",
+            arguments=ref_session["calls"][0]["arguments"],
+            sim_datetime=ref_session["timestamp"],
+            tool_result=ref_session["calls"][0].get("tool_result")
+        )
+        assert score_ref < 70, f"Reference table query without WHERE/LIMIT must pass, got score {score_ref} ({reasons_ref})"
 
     # Verify detection of bulk reads on queries that do NOT contain special words (dump/export/backup)
     bulk_test_cases = [
@@ -144,16 +188,21 @@ def run_evaluation() -> Dict[str, Any]:
         })
 
     report = {
+        "dataset_path": str(COMMITTED_DATASET_PATH),
+        "dataset_sha256": dataset_sha256,
         "total_sessions": total_sessions,
+        "anomalous_sessions": anomalous_sessions,
+        "session_fpr": round(session_fpr, 4),
+        "session_fpr_percentage": f"{session_fpr * 100:.2f}%",
+        "session_wilson_95_ci": (round(session_lower, 4), round(session_upper, 4)),
+        "session_wilson_95_ci_percentage": f"[{session_lower * 100:.2f}%, {session_upper * 100:.2f}%]",
         "total_calls": total_calls,
-        "false_positives": false_positives,
-        "fpr": round(fpr, 4),
-        "fpr_percentage": f"{fpr * 100:.2f}%",
-        "wilson_95_ci": (round(lower, 4), round(upper, 4)),
-        "wilson_95_ci_percentage": f"[{lower * 100:.2f}%, {upper * 100:.2f}%]",
+        "anomalous_calls_count": len(anomalous_calls),
+        "call_fpr": round(call_fpr, 4),
         "zero_mad_verified": True,
         "ben006_passed": True,
         "ben006_anomaly_score": score_ben006,
+        "reference_queries_passed": True,
         "bulk_reads_without_special_words": bulk_results,
         "anomalous_calls": anomalous_calls
     }
@@ -162,13 +211,22 @@ def run_evaluation() -> Dict[str, Any]:
 if __name__ == "__main__":
     rep = run_evaluation()
     print("=" * 80)
-    print("SENTINELMESH AI — HELD-OUT BASELINE EVALUATION REPORT")
+    print("SENTINELMESH AI — BASELINE CALIBRATION EVALUATION REPORT")
+    print(f"Committed Dataset SHA-256: {rep['dataset_sha256']}")
+    print(f"Total Sessions:           {rep['total_sessions']}")
+    print(f"Anomalous Sessions:       {rep['anomalous_sessions']}")
+    print(f"Session-Level FPR:        {rep['session_fpr_percentage']} (95% CI: {rep['session_wilson_95_ci_percentage']})")
+    print(f"Total Calls Evaluated:    {rep['total_calls']}")
+    print(f"Call-Level FPR:           {rep['call_fpr'] * 100:.2f}%")
+    print(f"BEN-006 Month-End Pass:   {rep['ben006_passed']} (Score: {rep['ben006_anomaly_score']})")
+    print(f"Zero-MAD Robust Floor:    {rep['zero_mad_verified']}")
+    print(f"No WHERE/LIMIT Pass:      {rep['reference_queries_passed']}")
     print("=" * 80)
-    print(f"Total Held-Out Sessions Evaluated: {rep['total_sessions']}")
+    print(f"Total Sessions Evaluated:         {rep['total_sessions']}")
     print(f"Total Evaluated Tool Calls:       {rep['total_calls']}")
-    print(f"Actionable False Positives:       {rep['false_positives']}")
-    print(f"False Positive Rate (FPR):         {rep['fpr_percentage']}")
-    print(f"Wilson 95% Confidence Interval:    {rep['wilson_95_ci_percentage']}")
+    print(f"Actionable False Positives:       {rep['anomalous_sessions']}")
+    print(f"Session-Level FPR:                {rep['session_fpr_percentage']}")
+    print(f"Wilson 95% Confidence Interval:    {rep['session_wilson_95_ci_percentage']}")
     print(f"Zero-MAD Edge Case Robust Floor:  Verified (MAD floor >= 1.0)")
     print(f"BEN-006 Month-End Query Result:    PASSED (Score: {rep['ben006_anomaly_score']}/100, purely via learned distribution)")
     print("\nDetection of Bulk Reads on Queries WITHOUT Special Words (dump/export/backup):")
