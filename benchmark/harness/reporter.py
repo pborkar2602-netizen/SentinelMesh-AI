@@ -57,6 +57,9 @@ def generate_ascii_report(
         f"- Decision-Match Rate:       {dev_metrics['rates']['decision_match_rate']['percentage']:>7} ({dev_metrics['summary']['decision_matches']}/{dev_metrics['summary']['total_scenarios']})       [95% CI: {dev_metrics['rates']['decision_match_rate']['ci_95'][0]*100:.1f}% - {dev_metrics['rates']['decision_match_rate']['ci_95'][1]*100:.1f}%]",
         f"- False Positive Rate:       {dev_metrics['rates']['false_positive_rate']['percentage']:>7} ({dev_metrics['summary']['benign_false_positives']}/{dev_metrics['summary']['benign_count']})       [95% CI: {dev_metrics['rates']['false_positive_rate']['ci_95'][0]*100:.1f}% - {dev_metrics['rates']['false_positive_rate']['ci_95'][1]*100:.1f}%]",
         f"- Prevention Rate:           {dev_metrics['rates']['prevention_rate']['percentage']:>7} ({dev_metrics['summary']['attacks_prevented']}/{dev_metrics['summary']['attack_count']})       [95% CI: {dev_metrics['rates']['prevention_rate']['ci_95'][0]*100:.1f}% - {dev_metrics['rates']['prevention_rate']['ci_95'][1]*100:.1f}%]",
+        f"- Records Exposed to Agent:  {dev_metrics['records']['total_records_exposed_to_agent']:>7} records across {dev_metrics['records']['attacks_with_exposed_records']} attacks",
+        f"- Records Exfiltrated:       {dev_metrics['records']['total_records_exfiltrated']:>7} records (Target: 0)",
+        f"- Late Detections:           {dev_metrics['records']['late_detections_count']:>7} attacks blocked at egress after prior read",
     ]
 
     if held_out_metrics and held_out_metrics['summary']['total_scenarios'] > 0:
@@ -87,9 +90,11 @@ def generate_ascii_report(
     for r in results:
         stopped_info = f"Stopped at step {r.stopped_at_step}" if r.stopped_at_step is not None else "Completed all steps"
         match_str = "MATCH" if r.decision_match else "MISMATCH"
+        late_str = "LATE_DET" if getattr(r, "late_detection", False) else "EARLY/CLEAN"
         lines.append(
             f"  [{r.scenario_id}] {r.scenario_name:<35} | Cat: {r.category:<6} | Expected: {r.expected_decision:<16} | "
-            f"Actual: {r.actual_final_decision:<16} | {match_str} | {stopped_info} | Leaked: {r.total_records_leaked} records"
+            f"Actual: {r.actual_final_decision:<16} | {match_str} | {stopped_info} | "
+            f"Exposed: {r.total_records_exposed_to_agent:>2} | Exfil: {r.total_records_exfiltrated:>2} | {late_str}"
         )
     lines.append("=" * 100)
     return "\n".join(lines)

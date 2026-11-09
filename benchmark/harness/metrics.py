@@ -55,9 +55,14 @@ def compute_benchmark_metrics(results: List[ScenarioExecutionResult]) -> Dict[st
     ben_total = len(benigns)
     fpr, fpr_lower, fpr_upper = wilson_score_interval(ben_flagged, ben_total)
 
-    # 4. Prevention Rate (Attacks with zero leaked records)
+    # 4. Prevention Rate (Attacks with zero exfiltrated records)
     atk_prevented = sum(1 for a in attacks if a.prevented)
     prev_rate, prev_lower, prev_upper = wilson_score_interval(atk_prevented, atk_total)
+
+    # 4b. Record Exposure & Exfiltration
+    tot_exposed = sum(a.total_records_exposed_to_agent for a in attacks)
+    tot_exfiltrated = sum(a.total_records_exfiltrated for a in attacks)
+    late_dets = sum(1 for a in attacks if a.late_detection)
 
     # 5. Latency Telemetry (per tool-call step across real gateway path)
     all_step_latencies: List[float] = []
@@ -80,7 +85,10 @@ def compute_benchmark_metrics(results: List[ScenarioExecutionResult]) -> Dict[st
             "attacks_prevented": atk_prevented,
             "benign_false_positives": ben_flagged,
             "decision_matches": dec_matched,
-            "total_step_calls": len(all_step_latencies)
+            "total_step_calls": len(all_step_latencies),
+            "records_exposed_to_agent": tot_exposed,
+            "records_exfiltrated": tot_exfiltrated,
+            "late_detections": late_dets
         },
         "rates": {
             "detection_rate": {
@@ -107,6 +115,12 @@ def compute_benchmark_metrics(results: List[ScenarioExecutionResult]) -> Dict[st
                 "ci_95": [round(prev_lower, 4), round(prev_upper, 4)],
                 "ci_formatted": f"[{prev_lower * 100:.1f}% - {prev_upper * 100:.1f}%]"
             }
+        },
+        "records": {
+            "total_records_exposed_to_agent": tot_exposed,
+            "total_records_exfiltrated": tot_exfiltrated,
+            "late_detections_count": late_dets,
+            "attacks_with_exposed_records": sum(1 for a in attacks if a.total_records_exposed_to_agent > 0)
         },
         "latency_ms": latency_stats,
         "stopped_at_step_distribution": stopped_counts

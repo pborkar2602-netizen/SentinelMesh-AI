@@ -56,6 +56,11 @@ def execute_tool_call(request: ToolCallRequest) -> GatewayDecisionResponse:
     stage_timings["masking"] = masking_ms
 
     now_utc = datetime.now(timezone.utc)
+    event_dt = request.timestamp if (hasattr(request, "timestamp") and request.timestamp) else now_utc
+    if isinstance(event_dt, str):
+        event_dt_iso = event_dt
+    else:
+        event_dt_iso = event_dt.isoformat()
 
     # 6. Persist to Append-Only Audit Log with SHA-256 Hash Chaining (COVERING ONLY MASKED DATA)
     t_hash_start = time.perf_counter()
@@ -71,7 +76,7 @@ def execute_tool_call(request: ToolCallRequest) -> GatewayDecisionResponse:
         "risk_score": risk_score,
         "risk_breakdown": risk_breakdown,
         "latency_ms": 0.0,
-        "timestamp": now_utc.isoformat()
+        "timestamp": event_dt_iso
     }
     event_id, event_hash = save_audit_event(event_dict)
     hash_chain_ms = round((time.perf_counter() - t_hash_start) * 1000, 3)

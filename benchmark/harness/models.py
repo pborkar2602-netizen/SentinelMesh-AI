@@ -54,7 +54,9 @@ class StepExecutionResult:
     risk_score: int
     reason: str
     records_accessed: int
-    records_leaked: int
+    records_exposed_to_agent: int = 0
+    records_exfiltrated: int = 0
+    records_leaked: int = 0  # Backward-compatible alias for records_exfiltrated
 
 @dataclass
 class ScenarioExecutionResult:
@@ -73,5 +75,8 @@ class ScenarioExecutionResult:
     total_latency_ms: float
     step_latencies_ms: List[float]
     total_records_accessed: int
-    total_records_leaked: int
-    step_results: List[StepExecutionResult]
+    total_records_exposed_to_agent: int = 0
+    total_records_exfiltrated: int = 0
+    total_records_leaked: int = 0  # Backward-compatible alias for total_records_exfiltrated
+    late_detection: bool = False
+    step_results: List[StepExecutionResult] = field(default_factory=list)
