@@ -66,23 +66,23 @@ class AgentBaselineProfile:
         if self.records_per_query_dist:
             self.median_records = calculate_median(self.records_per_query_dist)
             self.mad_records = calculate_mad(self.records_per_query_dist, self.median_records)
-            # 3.5 * MAD upper threshold for outlier detection
-            self.threshold_records = max(self.median_records + 3.5 * self.mad_records, 35.0)
+            # 3.5 * MAD upper threshold for outlier detection derived purely from learned distribution
+            self.threshold_records = self.median_records + 3.5 * self.mad_records
 
         # 2. Calls per minute (burst threshold)
         if self.calls_per_minute_dist:
             self.median_calls_per_min = calculate_median(self.calls_per_minute_dist)
             self.mad_calls_per_min = calculate_mad(self.calls_per_minute_dist, self.median_calls_per_min)
-            self.threshold_calls_per_min = max(self.median_calls_per_min + 3.5 * self.mad_calls_per_min, 6.0)
+            self.threshold_calls_per_min = self.median_calls_per_min + 3.5 * self.mad_calls_per_min
 
-        # 3. Cumulative records per session threshold
+        # 3. Cumulative records per session threshold derived purely from learned distribution
         if self.records_per_session_dist:
             self.median_session_records = calculate_median(self.records_per_session_dist)
             self.mad_session_records = calculate_mad(self.records_per_session_dist, self.median_session_records)
-            self.threshold_session_records = max(self.median_session_records + 3.5 * self.mad_session_records, 20.0)
+            self.threshold_session_records = self.median_session_records + 3.5 * self.mad_session_records
 
         # 4. Hourly call rate threshold
-        self.threshold_calls_per_hour = max(self.threshold_calls_per_min * 20.0, 30.0)
+        self.threshold_calls_per_hour = self.threshold_calls_per_min * 60.0
 
 class BaselineProfiler:
     _profiles: Dict[str, AgentBaselineProfile] = {}
