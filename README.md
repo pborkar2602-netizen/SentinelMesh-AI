@@ -27,55 +27,34 @@
    - Live WebSocket connection status pill and quick stats (actions inspected, decisions allowed, threats blocked, p95 latency).
    - Monitored agents panel with role and allowed tool tags.
    - Live streaming terminal decision feed with expandable JSON arguments, context source trust tags, and sub-millisecond gateway latency.
-5. **One-Command Orchestration (`docker-compose.yml`, `Makefile`)**:
-   - `docker compose up` starts both the FastAPI gateway (port 8000) and the React command center dashboard (port 3000).
-   - `make demo` (or `python run_demo.py`) executes the demo agent tool calls live.
+5. **Local Orchestration (`Makefile`)**:
+   - `make demo` (or `python demo_agents/run_demo.py`) executes the demo agent tool calls live against the gateway.
 
 ---
 
-## 2. Quickstart & How to Run
-
-### Option A: Running with Docker Compose (Recommended)
-
-1. **Start Gateway and Dashboard**:
-   ```bash
-   docker compose up --build
-   ```
-   - Dashboard UI: [http://localhost:3000](http://localhost:3000)
-   - Gateway API Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
-
-2. **Run Demo Agent in a Second Terminal**:
-   ```bash
-   make demo
-   # or
-   python run_demo.py
-   ```
-   Watch the tool calls appear live in the dashboard feed!
-
----
-
-### Option B: Running Locally (Development Mode)
+## 2. Quickstart & How to Run (Local Execution)
 
 1. **Terminal 1 — Start the Gateway**:
    ```bash
-   python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
+   uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
    ```
+   - Gateway API Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
 
 2. **Terminal 2 — Start the Dashboard**:
    ```bash
-   npm --prefix frontend run dev
+   cd frontend && npm run dev
    ```
-   Open [http://localhost:3000](http://localhost:3000) in your browser.
+   - Dashboard UI: [http://localhost:3000](http://localhost:3000)
 
 3. **Terminal 3 — Run the Demo Agent Scenarios**:
    ```bash
-   # Run both scenarios sequentially
-   make demo
+   python demo_agents/run_demo.py
    # or run attack scenario ATK-001
-   make demo-attack
+   python demo_agents/run_demo.py --scenario atk-001
    # or run benign twin scenario BEN-001
-   make demo-benign
+   python demo_agents/run_demo.py --scenario ben-001
    ```
+   Watch the tool calls and policy decisions stream live into the dashboard feed!
 
 ---
 
