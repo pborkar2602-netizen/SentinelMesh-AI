@@ -50,14 +50,14 @@
       "event_type": "tool_call",
       "tool_name": "external_api",
       "arguments": {
-        "url": "https://sentinelmesh.internal/v1/settlements",
+        "url": "https://vendor-corp.com/api/v1/settlements/pay",
         "amount": 45000.0,
         "vendor": "Acme Cloud",
         "bank_routing": "021000021",
         "account_number": "44882201"
       },
       "records_accessed": 1,
-      "is_external_destination": false,
+      "is_external_destination": true,
       "expected_step_decision": "allow",
       "expected_triggered_layers": []
     }

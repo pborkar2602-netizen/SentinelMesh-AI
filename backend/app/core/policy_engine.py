@@ -86,20 +86,48 @@ class PolicyEngine:
                     f"Action would have been blocked. Session tainted by [{sources_str}]."
                 )
 
-        # Policy Rule 2: High-Sensitivity Data Egress or Tainted Financial Transaction to External Destination
+        # Policy Rule 2: High-Sensitivity Data Egress or Financial Transaction Verification
         has_sensitive_pii = any(getattr(f, "pii_type", "") in ["SALARY", "NATIONAL_ID", "CREDIT_CARD", "IBAN", "API_KEY"] for f in (pii_findings or []))
         is_financial_transaction = any(k in arguments for k in ["amount", "bank_routing", "account_number", "wire_routing"])
-        if is_external_destination and (has_sensitive_pii or (is_tainted and is_financial_transaction)):
+
+        if is_financial_transaction:
+            # Query vendor master table from database to verify banking profile
+            vendor_val = str(arguments.get("vendor") or arguments.get("vendor_name") or "")
+            routing_val = str(arguments.get("bank_routing") or arguments.get("wire_routing") or "")
+            account_val = str(arguments.get("account_number") or "")
+
+            is_verified_disbursement = False
+            if vendor_val and routing_val and account_val:
+                from backend.app.db.database import get_vendor_master
+                v_master = get_vendor_master(vendor_val)
+                if v_master and v_master["bank_routing"] == routing_val and v_master["account_number"] == account_val:
+                    is_verified_disbursement = True
+
+            # If routing details do NOT match master record, or if tainted and unverified, require human approval
+            if not is_verified_disbursement:
+                if is_tainted or is_external_destination:
+                    if mode == "enforce":
+                        return (
+                            "require_approval",
+                            "Policy 'High-Sensitivity External Egress': Outgoing transfer with unverified or modified banking routing details requires human approval."
+                        )
+                    else:
+                        return (
+                            "would_block",
+                            "Policy Alert [MONITOR MODE]: Outgoing transfer with unverified banking routing details."
+                        )
+
+        if is_external_destination and has_sensitive_pii and not is_financial_transaction:
             if cls._high_sensitivity_external_action == "require_approval" or is_tainted:
                 if mode == "enforce":
                     return (
                         "require_approval",
-                        f"Policy 'High-Sensitivity External Egress': Outgoing transfer containing sensitive personal/financial data to external destination requires human approval."
+                        "Policy 'High-Sensitivity External Egress': Outgoing transfer containing sensitive personal data to external destination requires human approval."
                     )
                 else:
                     return (
                         "would_block",
-                        f"Policy 'High-Sensitivity External Egress' [MONITOR MODE]: Outgoing transfer containing sensitive personal/financial data would have required human approval."
+                        "Policy 'High-Sensitivity External Egress' [MONITOR MODE]: Outgoing transfer containing sensitive personal data would have required human approval."
                     )
 
         # Policy Rule: Destructive Database Operation requires human approval

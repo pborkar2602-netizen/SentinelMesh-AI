@@ -210,6 +210,30 @@ def init_db(db_path: Optional[str] = None) -> None:
         );
         """)
 
+        # Table: vendor_master (Master verified banking profile for disbursements)
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS vendor_master (
+            vendor_name TEXT PRIMARY KEY,
+            bank_routing TEXT NOT NULL,
+            account_number TEXT NOT NULL,
+            authorized_endpoint TEXT NOT NULL
+        );
+        """)
+
+        # Seed default verified vendor master records
+        default_vendors = [
+            ("Acme Cloud", "021000021", "44882201", "https://vendor-corp.com/api/v1/settlements/pay"),
+            ("Acme Cloud Services", "021000021", "44882201", "https://vendor-corp.com/api/v1/settlements/pay")
+        ]
+        for v_name, b_route, a_num, auth_ep in default_vendors:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO vendor_master (vendor_name, bank_routing, account_number, authorized_endpoint)
+                VALUES (?, ?, ?, ?)
+                """,
+                (v_name, b_route, a_num, auth_ep)
+            )
+
         # Seed demo agents if not existing
         for agent in DEFAULT_DEMO_AGENTS:
             cur = conn.execute("SELECT id FROM agents WHERE id = ?", (agent["id"],))
@@ -969,4 +993,49 @@ def expire_timed_out_approvals(conn: Optional[sqlite3.Connection] = None) -> Lis
     if close:
         conn.close()
     return expired_ids
+
+def get_vendor_master(vendor_name: str, conn: Optional[sqlite3.Connection] = None) -> Optional[Dict[str, Any]]:
+    """Retrieves verified master banking profile for a vendor."""
+    close = False
+    if conn is None:
+        conn = get_connection()
+        close = True
+    try:
+        cur = conn.execute(
+            "SELECT vendor_name, bank_routing, account_number, authorized_endpoint FROM vendor_master WHERE LOWER(vendor_name) = LOWER(?)",
+            (vendor_name.strip(),)
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        if close:
+            conn.close()
+
+def save_vendor_master(
+    vendor_name: str,
+    bank_routing: str,
+    account_number: str,
+    authorized_endpoint: str,
+    conn: Optional[sqlite3.Connection] = None
+) -> None:
+    """Inserts or updates verified vendor banking profile."""
+    close = False
+    if conn is None:
+        conn = get_connection()
+        close = True
+    with conn:
+        conn.execute(
+            """
+            INSERT INTO vendor_master (vendor_name, bank_routing, account_number, authorized_endpoint)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(vendor_name) DO UPDATE SET
+                bank_routing = excluded.bank_routing,
+                account_number = excluded.account_number,
+                authorized_endpoint = excluded.authorized_endpoint
+            """,
+            (vendor_name.strip(), bank_routing.strip(), account_number.strip(), authorized_endpoint.strip())
+        )
+    if close:
+        conn.close()
+
 
