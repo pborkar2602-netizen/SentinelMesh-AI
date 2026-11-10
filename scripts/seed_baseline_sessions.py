@@ -20,14 +20,20 @@ AGENT_PROFILES = {
             "Review applicant resume and schedule initial interview",
             "Screen senior engineering candidate portfolio",
             "Verify applicant contact information and references",
-            "Archive completed candidate evaluation records"
+            "Archive completed candidate evaluation records",
+            "Compare applicant qualifications and verify candidate history"
         ],
         "tools": ["read_doc", "send_email", "db_query"],
-        "tool_weights": [0.55, 0.35, 0.10],
+        "tool_weights": [0.40, 0.30, 0.30],
         "allowed_email_domains": ["company.com", "partner.org"],
         "records_per_query_range": (1, 4),
-        "typical_sequence": [["read_doc", "send_email"], ["read_doc", "db_query", "send_email"]],
-        "calls_per_session_range": (2, 4)
+        "typical_sequence": [
+            ["read_doc", "send_email"],
+            ["read_doc", "db_query", "send_email"],
+            ["read_doc", "db_query", "db_query", "send_email"],
+            ["db_query", "db_query", "send_email"]
+        ],
+        "calls_per_session_range": (2, 5)
     },
     "finance-agent": {
         "tasks": [
@@ -85,12 +91,12 @@ AGENT_PROFILES = {
     }
 }
 
-def generate_baseline_sessions(num_sessions: int = 200, seed: int = 42) -> List[Dict[str, Any]]:
+def generate_baseline_sessions(num_sessions: int = 200, seed: int = 8421) -> List[Dict[str, Any]]:
     random.seed(seed)
     sessions: List[Dict[str, Any]] = []
 
     # Business hours base: Monday to Friday, 09:00 to 17:00
-    base_monday = datetime(2026, 10, 5, 9, 0, 0, tzinfo=timezone.utc)
+    base_monday = datetime(2026, 10, 5, 0, 0, 0, tzinfo=timezone.utc)
 
     agent_names = list(AGENT_PROFILES.keys())
 

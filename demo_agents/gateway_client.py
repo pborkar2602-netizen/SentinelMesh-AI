@@ -97,12 +97,49 @@ class GatewayClient:
                 "reason": reason,
                 "approval_id": data.get("approval_id")
             }
-        elif decision == "redact":
-            exec_args = data.get("redacted_arguments") or arguments
+        exec_args = data.get("redacted_arguments") or arguments if decision == "redact" else arguments
+        if decision == "redact":
             print(f"  [GATEWAY REDACTION] Executing tool with privacy-redacted arguments: {exec_args}")
-            return tool_func(**exec_args)
 
-        return tool_func(**arguments)
+        result = tool_func(**exec_args)
+
+        # Count returned records
+        records_returned = 0
+        if isinstance(result, list):
+            records_returned = len(result)
+        elif isinstance(result, dict):
+            for k in ["count", "rows_returned", "records_returned", "row_count"]:
+                if k in result and isinstance(result[k], (int, float)):
+                    records_returned = int(result[k])
+                    break
+            if records_returned == 0:
+                records_returned = 1
+        elif isinstance(result, (int, float)):
+            records_returned = int(result)
+        elif result is not None:
+            records_returned = 1
+
+        # Post returned records to gateway /tool-return endpoint
+        return_url = self.gateway_url.replace("/execute", "/tool-return")
+        return_payload = {
+            "session_id": self.session_id,
+            "trace_id": trace_id,
+            "records_returned": records_returned
+        }
+        try:
+            if self.http_client is not None:
+                self.http_client.post(return_url, json=return_payload)
+            else:
+                try:
+                    with httpx.Client(timeout=2.0) as client:
+                        client.post(return_url, json=return_payload)
+                except Exception:
+                    from backend.app.db.database import record_tool_return_event
+                    record_tool_return_event(session_id=self.session_id, trace_id=trace_id, records_returned=records_returned)
+        except Exception:
+            pass
+
+        return result
 
     async def aintercept_and_execute(
         self,

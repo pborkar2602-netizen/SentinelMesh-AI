@@ -16,14 +16,88 @@ class IncidentBuilder:
     No scenario-specific strings are hardcoded.
     """
 
+    @staticmethod
+    def _format_step(idx: int, ev: dict):
+        tool = ev.get("tool_name", "")
+        args = ev.get("arguments", {})
+        dec = ev.get("decision", "allow")
+        score = ev.get("risk_score", 0)
+        sources = ev.get("context_sources", [])
+        affected_items = set()
+        untrusted_src = None
+
+        has_untrusted = any(c.get("is_untrusted") for c in sources if isinstance(c, dict))
+        if has_untrusted:
+            for c in sources:
+                if isinstance(c, dict) and c.get("is_untrusted"):
+                    untrusted_src = c.get("source_id", "untrusted source")
+                    affected_items.add(f"Ingested Source: {untrusted_src}")
+                    break
+
+        if tool == "read_doc":
+            icon = "📄"
+            file_target = args.get("file_path") or args.get("path") or "document"
+            title = f"Document Ingestion: {file_target}"
+            step_status = "TAINTED_INGEST" if has_untrusted else "ALLOWED"
+            affected_items.add(f"Document ({file_target})")
+        elif tool == "db_query":
+            icon = "🗄️"
+            query_str = str(args.get("query") or args.get("sql") or "")
+            title = f"Database Query ({query_str[:45]}...)" if len(query_str) > 45 else f"Database Query ({query_str})"
+            step_status = "SENSITIVE_READ"
+            table_match = re.search(r"\bFROM\s+([a-zA-Z0-9_\.]+)", query_str, re.IGNORECASE)
+            if table_match:
+                table_name = table_match.group(1)
+                affected_items.add(f"Database Table: {table_name}")
+            else:
+                affected_items.add("Database Records")
+        elif tool == "send_email":
+            icon = "📤"
+            recipient = args.get("to") or args.get("recipient") or "unknown"
+            title = f"Email Dispatch to {recipient}"
+            step_status = "BLOCKED_ATTACK" if dec == "block" else ("WOULD_BLOCK" if dec == "would_block" else "ALLOWED")
+            affected_items.add(f"Exfiltration Target: {recipient}")
+        elif tool == "external_api":
+            icon = "🌐"
+            endpoint = args.get("url") or args.get("endpoint") or "api"
+            title = f"External API Request to {endpoint}"
+            step_status = "BLOCKED_ATTACK" if dec == "block" else ("WOULD_BLOCK" if dec == "would_block" else "ALLOWED")
+            if "169.254.169.254" in str(endpoint) or "metadata" in str(endpoint).lower():
+                affected_items.add(f"Cloud Metadata Endpoint: {endpoint}")
+            else:
+                affected_items.add(f"API Target: {endpoint}")
+        else:
+            icon = "⚡"
+            title = f"Tool Execution: {tool}"
+            step_status = "BLOCKED_ATTACK" if dec == "block" else ("WOULD_BLOCK" if dec == "would_block" else "ALLOWED")
+
+        step = {
+            "step_number": idx,
+            "tool_name": tool,
+            "title": title,
+            "icon": icon,
+            "arguments": args,
+            "decision": dec,
+            "status": step_status,
+            "risk_score": score,
+            "reason": ev.get("reason", ""),
+            "timestamp": ev.get("timestamp", datetime.now(timezone.utc).isoformat())
+        }
+        return step, affected_items, untrusted_src
+
     @classmethod
     def process_event(
         cls,
         event_dict: Dict[str, Any],
-        findings: Optional[List[Any]] = None
+        findings: Optional[List[Any]] = None,
+        session_events: Optional[List[Dict[str, Any]]] = None
     ) -> Optional[Dict[str, Any]]:
         decision = event_dict.get("decision", "allow")
         risk_score = event_dict.get("risk_score", 0)
+
+        # Skip internal tool_return bookkeeping events
+        if event_dict.get("tool_name") == "tool_return":
+            return None
 
         # Trigger incident when an action is blocked/would_block, or if risk exceeds threshold
         if decision not in ["block", "would_block"] and risk_score < 70:
@@ -32,93 +106,44 @@ class IncidentBuilder:
         session_id = event_dict["session_id"]
         agent_id = event_dict["agent_id"]
 
-        # 1. Fetch all chronological events for this session
-        events = list_session_events(session_id)
-        if not events:
-            events = [event_dict]
-
-        # 2. Check if incident already exists for this session
+        # Check if incident already exists for this session
         existing = get_incident_by_session(session_id)
         incident_id = existing["id"] if existing else f"INC-{uuid.uuid4().hex[:8].upper()}"
 
-        # 3. Analyze trajectory, entry point, affected data, and attack pattern
-        chain_steps = []
-        entry_point = "Direct Agent Execution"
-        affected_data_items = set()
-        untrusted_source_id = None
         all_findings = list(findings or [])
         attack_category = None
 
-        for idx, ev in enumerate(events, 1):
-            tool = ev.get("tool_name", "")
-            args = ev.get("arguments", {})
-            dec = ev.get("decision", "allow")
-            score = ev.get("risk_score", 0)
-            sources = ev.get("context_sources", [])
-
-            # Check for untrusted entry point
-            has_untrusted = any(c.get("is_untrusted") for c in sources if isinstance(c, dict))
-            if has_untrusted and not untrusted_source_id:
-                for c in sources:
-                    if isinstance(c, dict) and c.get("is_untrusted"):
-                        untrusted_source_id = c.get("source_id", "untrusted source")
-                        entry_point = f"{tool} ('{untrusted_source_id}')"
-                        affected_data_items.add(f"Ingested Source: {untrusted_source_id}")
-                        break
-
-            # Classify step icon & title dynamically
-            if tool == "read_doc":
-                icon = "📄"
-                file_target = args.get("file_path") or args.get("path") or "document"
-                title = f"Document Ingestion: {file_target}"
-                step_status = "TAINTED_INGEST" if has_untrusted else "ALLOWED"
-                affected_data_items.add(f"Document ({file_target})")
-            elif tool == "db_query":
-                icon = "🗄️"
-                query_str = str(args.get("query") or args.get("sql") or "")
-                title = f"Database Query ({query_str[:45]}...)" if len(query_str) > 45 else f"Database Query ({query_str})"
-                step_status = "SENSITIVE_READ"
-                
-                # Dynamically extract table name without hardcoding
-                table_match = re.search(r"\bFROM\s+([a-zA-Z0-9_\.]+)", query_str, re.IGNORECASE)
-                if table_match:
-                    table_name = table_match.group(1)
-                    affected_data_items.add(f"Database Table: {table_name}")
-                else:
-                    affected_data_items.add("Database Records")
-            elif tool == "send_email":
-                icon = "📤"
-                recipient = args.get("to") or args.get("recipient") or "unknown"
-                title = f"Email Dispatch to {recipient}"
-                step_status = "BLOCKED_ATTACK" if dec == "block" else ("WOULD_BLOCK" if dec == "would_block" else "ALLOWED")
-                affected_data_items.add(f"Exfiltration Target: {recipient}")
-            elif tool == "external_api":
-                icon = "🌐"
-                endpoint = args.get("url") or args.get("endpoint") or "api"
-                title = f"External API Request to {endpoint}"
-                step_status = "BLOCKED_ATTACK" if dec == "block" else ("WOULD_BLOCK" if dec == "would_block" else "ALLOWED")
-                if "169.254.169.254" in str(endpoint) or "metadata" in str(endpoint).lower():
-                    affected_data_items.add(f"Cloud Metadata Endpoint: {endpoint}")
-                else:
-                    affected_data_items.add(f"API Target: {endpoint}")
+        if existing and existing.get("chain_steps"):
+            # Incremental: append single new step without reloading the whole session
+            prev_steps = existing["chain_steps"]
+            new_step, step_affected, step_untrusted = cls._format_step(len(prev_steps) + 1, event_dict)
+            chain_steps = prev_steps + [new_step]
+            prev_affected = set(s.strip() for s in existing.get("affected_data", "").split(",") if s.strip())
+            affected_data_items = prev_affected | step_affected
+            entry_point = existing.get("entry_point", "Direct Agent Execution")
+            untrusted_source_id = step_untrusted
+            events = [event_dict]
+        else:
+            # First incident creation for this session: load trajectory once
+            if session_events is not None:
+                events = list(session_events) + [event_dict]
             else:
-                icon = "⚡"
-                title = f"Tool Execution: {tool}"
-                step_status = "BLOCKED_ATTACK" if dec == "block" else ("WOULD_BLOCK" if dec == "would_block" else "ALLOWED")
+                events = list_session_events(session_id)
+                if not events:
+                    events = [event_dict]
 
-            chain_steps.append({
-                "step_number": idx,
-                "tool_name": tool,
-                "title": title,
-                "icon": icon,
-                "arguments": args,
-                "decision": dec,
-                "status": step_status,
-                "risk_score": score,
-                "reason": ev.get("reason", ""),
-                "timestamp": ev.get("timestamp", datetime.now(timezone.utc).isoformat())
-            })
+            chain_steps = []
+            entry_point = "Direct Agent Execution"
+            affected_data_items = set()
+            untrusted_source_id = None
 
+            for idx, ev in enumerate([e for e in events if e.get("tool_name") != "tool_return"], 1):
+                step, step_affected, step_untrusted = cls._format_step(idx, ev)
+                chain_steps.append(step)
+                affected_data_items.update(step_affected)
+                if step_untrusted and not untrusted_source_id:
+                    untrusted_source_id = step_untrusted
+                    entry_point = f"{ev.get('tool_name', 'tool')} ('{untrusted_source_id}')"
         # Check findings from event breakdown or passed findings
         final_tool = event_dict.get("tool_name", "")
         final_args = event_dict.get("arguments", {})

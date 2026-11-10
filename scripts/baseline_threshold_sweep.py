@@ -9,11 +9,11 @@ scenario_files = sorted(list(DEV_DIR.glob("*.json")))
 
 runner = BenchmarkRunner()
 
-thresholds = [60, 65, 70, 75, 80]
+thresholds = [20, 30, 40, 50, 60, 70, 80]
 
 print("=" * 85)
-print("BASELINE ACTION THRESHOLD SWEEP (Thresholds 60 to 80, step 5)")
-print("Suite: All 32 Dev Scenarios (20 Attacks, 12 Benign; matching benchmark_report.json)")
+print("BASELINE ACTION THRESHOLD SWEEP (Thresholds 20 to 80)")
+print("Suite: All 36 Dev Scenarios (20 Attacks, 16 Benign; matching benchmark_report.json)")
 print("=" * 85)
 print(f"{'Threshold':<10} | {'Attacks Det':<14} | {'Det Rate':<10} | {'Benign FP':<12} | {'FP Rate':<10} | {'Match Rate':<10}")
 print("-" * 85)

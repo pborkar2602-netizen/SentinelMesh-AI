@@ -65,20 +65,57 @@ def acquire_connection(conn: Optional[sqlite3.Connection] = None) -> Tuple[sqlit
         return conn, False
     return get_connection(), False
 
-def update_session_event_return(session_id: str, trace_id: Optional[str] = None, records_returned: int = 0) -> None:
-    """Updates session audit event with actual rows returned after tool call completes."""
-    conn = get_connection()
-    with _hash_chain_lock:
-        if trace_id:
-            cur = conn.execute("SELECT id, risk_breakdown FROM audit_events WHERE trace_id = ?", (trace_id,))
-        else:
-            cur = conn.execute("SELECT id, risk_breakdown FROM audit_events WHERE session_id = ? ORDER BY id DESC LIMIT 1", (session_id,))
-        row = cur.fetchone()
-        if row:
-            rb = json.loads(row["risk_breakdown"] or "{}")
-            rb["records_returned"] = records_returned
-            conn.execute("UPDATE audit_events SET risk_breakdown = ? WHERE id = ?", (json.dumps(rb), row["id"]))
-            conn.commit()
+def record_tool_return_event(
+    session_id: str,
+    trace_id: Optional[str] = None,
+    records_returned: int = 0,
+    conn: Optional[sqlite3.Connection] = None
+) -> Tuple[int, str]:
+    """
+    Appends a new immutable 'tool_return' event to the cryptographic audit hash chain.
+    Never mutates existing rows in the append-only log.
+    """
+    conn, close = acquire_connection(conn)
+    cur = conn.execute("SELECT agent_id FROM sessions WHERE id = ?", (session_id,))
+    row = cur.fetchone()
+    agent_id = row["agent_id"] if row else "unknown-agent"
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    return_trace = f"ret-{trace_id}" if trace_id else f"ret-{uuid.uuid4().hex[:10]}"
+
+    event_dict = {
+        "trace_id": return_trace,
+        "agent_id": agent_id,
+        "session_id": session_id,
+        "tool_name": "tool_return",
+        "arguments": {
+            "parent_trace_id": trace_id,
+            "records_returned": records_returned
+        },
+        "context_sources": [],
+        "decision": "recorded",
+        "reason": f"Tool execution completed: returned {records_returned} records.",
+        "risk_score": 0,
+        "risk_breakdown": {
+            "records_returned": records_returned,
+            "parent_trace_id": trace_id
+        },
+        "latency_ms": 0.0,
+        "timestamp": now_iso
+    }
+
+    event_id, event_hash = save_audit_event(event_dict, conn=conn)
+    if close:
+        conn.close()
+    return event_id, event_hash
+
+def update_session_event_return(
+    session_id: str,
+    trace_id: Optional[str] = None,
+    records_returned: int = 0
+) -> None:
+    """Compatibility wrapper that appends a tool_return event rather than updating hashed rows."""
+    record_tool_return_event(session_id=session_id, trace_id=trace_id, records_returned=records_returned)
 
 def compute_event_hash(event_data: Dict[str, Any], prev_hash: str) -> str:
     """

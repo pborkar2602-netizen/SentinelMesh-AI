@@ -65,7 +65,7 @@ def test_atk_001_blocked_in_enforce_mode(client, test_db):
 
     # Verify audit event in append-only SQLite store
     events = list_audit_events(limit=10, order="asc")
-    session_events = [e for e in events if e["session_id"] == session_id]
+    session_events = [e for e in events if e["session_id"] == session_id and e.get("tool_name") != "tool_return"]
     assert len(session_events) == 3
     assert session_events[0]["decision"] == "allow"
     assert session_events[1]["decision"] == "allow"
@@ -123,7 +123,7 @@ def test_atk_001_marked_would_block_in_monitor_mode(client, test_db):
 
     # Verify audit event store records 'would_block'
     events = list_audit_events(limit=10, order="asc")
-    session_events = [e for e in events if e["session_id"] == session_id]
+    session_events = [e for e in events if e["session_id"] == session_id and e.get("tool_name") != "tool_return"]
     assert len(session_events) == 3
     assert session_events[2]["decision"] == "would_block"
     assert "[MONITOR MODE]" in session_events[2]["reason"]
@@ -169,7 +169,7 @@ def test_ben_001_allowed_in_both_modes(client, test_db):
         )
         assert email_res["status"] == "delivered"
 
-        events = list_audit_events(limit=5, order="desc")
+        events = [e for e in list_audit_events(limit=10, order="desc") if e.get("tool_name") != "tool_return"]
         latest = events[0]
         assert latest["session_id"] == session_id
         assert latest["decision"] == "allow"

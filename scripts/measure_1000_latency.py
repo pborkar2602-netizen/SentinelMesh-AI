@@ -44,12 +44,13 @@ def main():
     # Initialize DB
     init_db()
 
-    port = 8765
+    port = 8767
     server_url = f"http://127.0.0.1:{port}"
     execute_url = f"{server_url}/api/v1/gateway/execute"
     health_url = f"{server_url}/health"
 
     env = os.environ.copy()
+    env["PYTHONPATH"] = str(PROJECT_ROOT)
     env["DEMO_MODE"] = "true"
     env["SENTINEL_JWT_SECRET"] = "dev-secret-jwt-key-for-local-benchmark-only"
     env["SENTINEL_TOKEN_SECRET"] = "dev-secret-token-key-for-local-benchmark-only"

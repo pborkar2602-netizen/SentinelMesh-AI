@@ -58,7 +58,7 @@ def run_configuration(config_name: str, description: str):
 
 print("=" * 110)
 print("PART 1: CUMULATIVE SIX-LAYER ABLATION SWEEP (docs/benchmark_spec.md Section 7)")
-print("Suite: All 32 Dev Scenarios (20 Attacks, 12 Benign; matching benchmark_report.json)")
+print("Suite: All 36 Dev Scenarios (20 Attacks, 16 Benign; matching benchmark_report.json)")
 print("Note: Judge is running in offline test stub mode (judge stub: deterministic cassettes, not real LLM)")
 print("=" * 110)
 print(f"{'Config Layer':<32} | {'Attacks Det':<14} | {'Det Rate':<10} | {'Benign FP':<12} | {'FP Rate':<10} | {'Match Rate':<10}")

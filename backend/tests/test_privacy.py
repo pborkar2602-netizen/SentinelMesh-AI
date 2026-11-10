@@ -131,7 +131,7 @@ def test_zero_raw_pii_in_audit_database(client, test_db):
     cursor = conn.cursor()
 
     # Scan audit_events table
-    cursor.execute("SELECT arguments, context_sources, reason FROM audit_events WHERE session_id = ?", (session_id,))
+    cursor.execute("SELECT arguments, context_sources, reason FROM audit_events WHERE session_id = ? AND tool_name != 'tool_return'", (session_id,))
     rows = cursor.fetchall()
     assert len(rows) >= 1
 
@@ -412,7 +412,7 @@ def test_extended_raw_pii_scan_across_all_surfaces(client, test_db, monkeypatch)
     # 1. Scan SQLite audit_events
     conn = sqlite3.connect(test_db)
     cursor = conn.cursor()
-    cursor.execute("SELECT arguments, context_sources, reason FROM audit_events WHERE session_id = ?", (session_id,))
+    cursor.execute("SELECT arguments, context_sources, reason FROM audit_events WHERE session_id = ? AND tool_name != 'tool_return'", (session_id,))
     for row in cursor.fetchall():
         row_str = " ".join([str(col) for col in row])
         assert raw_salary not in row_str

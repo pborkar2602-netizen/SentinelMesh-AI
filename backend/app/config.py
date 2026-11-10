@@ -18,4 +18,18 @@ class Settings(BaseModel):
     ENABLE_INTENT_JUDGE: bool = Field(default_factory=lambda: os.getenv("ENABLE_INTENT_JUDGE", "true").lower() in ("true", "1", "yes"))
     ENABLE_POLICY_ENGINE: bool = Field(default_factory=lambda: os.getenv("ENABLE_POLICY_ENGINE", "true").lower() in ("true", "1", "yes"))
 
+    # Configurable Reference / Lookup Tables for Query Structure Heuristic
+    # Note: Privileged tables (such as 'roles', 'permissions', 'user_roles') are strictly excluded
+    REFERENCE_TABLES: list[str] = [
+        "departments",
+        "ticket_statuses",
+        "exchange_rates",
+        "categories",
+        "status_codes",
+        "countries",
+        "currencies",
+        "locations",
+        "job_titles"
+    ]
+
 settings = Settings()

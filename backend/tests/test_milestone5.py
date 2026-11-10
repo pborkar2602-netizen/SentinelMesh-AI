@@ -235,8 +235,8 @@ def test_atk001_shows_taint_judge_and_policy_signals(client, test_db):
         )
 
     # Inspect event telemetry
-    events_res = client.get("/api/v1/events?order=desc&limit=1")
-    event = events_res.json()[0]
+    events_res = client.get("/api/v1/events?order=desc&limit=5")
+    event = next(e for e in events_res.json() if e.get("tool_name") != "tool_return")
     bd = event["risk_breakdown"]
 
     assert event["decision"] == "block"
@@ -323,8 +323,8 @@ def test_ben001_still_allowed_with_baseline_and_judge(client, test_db):
     assert result == {"status": "sent"}
 
     # Check event breakdown
-    events_res = client.get("/api/v1/events?order=desc&limit=1")
-    event = events_res.json()[0]
+    events_res = client.get("/api/v1/events?order=desc&limit=5")
+    event = next(e for e in events_res.json() if e.get("tool_name") != "tool_return")
     assert event["decision"] == "allow"
     bd = event["risk_breakdown"]
     assert bd.get("judge_mismatch", 0) <= 20

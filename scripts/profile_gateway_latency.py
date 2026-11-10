@@ -13,6 +13,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from backend.app.schemas.gateway import ToolCallRequest
 from backend.app.core.gateway import GatewayCore
+from backend.app.core.incident_builder import IncidentBuilder
 from backend.app.db.database import init_db, get_connection, save_audit_event, get_session, save_session
 
 def profile_gateway_calls(num_calls: int = 100):
@@ -66,6 +67,7 @@ def profile_gateway_calls(num_calls: int = 100):
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
         save_audit_event(event_dict)
+        IncidentBuilder.process_event(event_dict, findings)
         
     t1 = time.perf_counter()
     profiler.disable()

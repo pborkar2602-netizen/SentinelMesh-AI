@@ -104,6 +104,14 @@ class DirectClient:
                 return ApiResponse(200, res.model_dump())
             except Exception as e:
                 return ApiResponse(422, {"detail": str(e)})
+        elif clean_path == "/api/v1/gateway/tool-return":
+            from backend.app.api.gateway import report_tool_return, ToolReturnRequest
+            try:
+                req = ToolReturnRequest(**(json or {}))
+                res = report_tool_return(req)
+                return ApiResponse(200, res)
+            except Exception as e:
+                return ApiResponse(422, {"detail": str(e)})
         elif clean_path == "/api/v1/policies/mode":
             try:
                 req = ModeUpdate(**(json or {}))
