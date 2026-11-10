@@ -5,6 +5,12 @@ from backend.app.detection.rules import Finding
 class PolicyEngine:
     _current_mode: str = os.getenv("SENTINEL_POLICY_MODE", "enforce").lower()
     _high_sensitivity_external_action: str = os.getenv("SENTINEL_HIGH_SENSITIVITY_EXTERNAL_ACTION", "require_approval").lower()
+    _anomaly_threshold: int = int(os.getenv("SENTINEL_ANOMALY_THRESHOLD", "70"))
+
+    @classmethod
+    def set_anomaly_threshold(cls, threshold: int) -> int:
+        cls._anomaly_threshold = threshold
+        return cls._anomaly_threshold
 
     @classmethod
     def get_mode(cls) -> str:
@@ -192,8 +198,8 @@ class PolicyEngine:
                     f"Intent Judge Alert [MONITOR MODE]: High intent mismatch ({judge_verdict.mismatch_score}/100). {judge_verdict.reasoning}"
                 )
 
-        # Policy Rule 5: Behavioral Baseline Anomaly Escalation (Anomaly >= 70)
-        if anomaly_score >= 70:
+        # Policy Rule 5: Behavioral Baseline Anomaly Escalation (Anomaly >= threshold)
+        if anomaly_score >= cls._anomaly_threshold:
             anomaly_str = "; ".join(anomaly_reasons[:2]) if anomaly_reasons else "Significant behavioral outlier"
             # Critical compound anomaly on tainted session (e.g. ATK-009 off-hours bulk dump from injected trigger)
             if is_tainted and anomaly_score >= 85 and any("*" in str(v) for v in arguments.values()):

@@ -40,13 +40,13 @@ This document logs all generic detection rules, policy engine heuristics, and th
 
 ---
 
-### Entry 5: Empirical Baseline Distribution Thresholds & Robust Minimum Spread (Zero-MAD Resolution)
+### Entry 5: Empirical Baseline Distribution Thresholds & Min-Spread Floor Rule (Zero-MAD Resolution)
 - **Problem Observed**: Agents with constant or near-constant historical metrics (e.g. steady-state record queries where $\text{MAD} = 0.0$) risk zero-variance lockups, where any single-record deviation would trigger false alarms if absolute mathematical zero MAD was used. Hardcoded floor constants were removed per Milestone 7 requirements.
 - **Generic Change**:
   1. Removed all arbitrary hardcoded threshold floors from `AgentBaselineProfile.finalize()`. All thresholds derive directly from empirical data: $\text{threshold} = \text{median} + 3.5 \times \text{MAD}$.
-  2. In `calculate_mad()`, when historical behavior has near-zero variance ($\text{raw\_mad} = 0$), applied a principled data-derived spread: $\max(0.15 \times \text{median}, 1.0)$.
+  2. In `calculate_mad()`, when historical behavior has near-zero variance ($\text{raw\_mad} = 0$), applied the **min-spread floor rule**: a principled data-derived non-parametric floor $\max(0.15 \times \text{median}, 1.0)$.
   3. Validated on 200 normal sessions of a near-constant agent: $\text{FPR} = 0.00\%$ ($95\%$ Wilson CI: $[0.00\%, 1.88\%]$).
-- **Justification**: Eliminates arbitrary magic numbers while maintaining robust non-parametric statistical bounds across all agent profiles.
+- **Justification**: Eliminates arbitrary magic numbers while maintaining robust non-parametric statistical bounds across all agent profiles via a well-defined min-spread floor rule.
 
 ---
 

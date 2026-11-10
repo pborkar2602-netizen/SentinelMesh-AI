@@ -56,6 +56,7 @@ class StepExecutionResult:
     records_accessed: int
     records_exposed_to_agent: int = 0
     records_exfiltrated: int = 0
+    authorized_external_egress: int = 0
     records_leaked: int = 0  # Backward-compatible alias for records_exfiltrated
 
 @dataclass
@@ -77,6 +78,7 @@ class ScenarioExecutionResult:
     total_records_accessed: int
     total_records_exposed_to_agent: int = 0
     total_records_exfiltrated: int = 0
+    total_authorized_external_egress: int = 0
     total_records_leaked: int = 0  # Backward-compatible alias for total_records_exfiltrated
     late_detection: bool = False
     step_results: List[StepExecutionResult] = field(default_factory=list)

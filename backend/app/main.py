@@ -1,6 +1,7 @@
+import time
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.config import settings
@@ -94,6 +95,14 @@ async def websocket_event_feed(websocket: WebSocket):
         logger.warning(f"WebSocket client error: {e}")
         ws_manager.disconnect(websocket)
 
+@app.middleware("http")
+async def add_timing_middleware(request: Request, call_next):
+    start = time.perf_counter()
+    response = await call_next(request)
+    elapsed_ms = (time.perf_counter() - start) * 1000.0
+    response.headers["X-Process-Time-Ms"] = f"{elapsed_ms:.3f}"
+    return response
+
 @app.get("/health", tags=["Health"])
 @app.get(f"{settings.API_V1_STR}/health", tags=["Health"])
 def health_check():
@@ -103,3 +112,8 @@ def health_check():
         "version": settings.VERSION,
         "mode": "pass-through (Milestone 1)"
     }
+
+@app.post("/echo", tags=["Diagnostics"])
+@app.post(f"{settings.API_V1_STR}/echo", tags=["Diagnostics"])
+async def echo_endpoint(payload: dict = None):
+    return {"status": "ok", "echo": payload or {}}

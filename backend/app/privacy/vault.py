@@ -101,43 +101,43 @@ class PrivacyVault:
         db_path = get_db_path()
 
         with _vault_lock:
-            with sqlite3.connect(db_path, timeout=30.0) as conn:
-                conn.execute("PRAGMA synchronous = NORMAL;")
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT token, encrypted_value FROM privacy_vault WHERE session_id = ?",
-                    (session_id,)
-                )
-                rows = cursor.fetchall()
+            from backend.app.db.database import get_connection
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT token, encrypted_value FROM privacy_vault WHERE session_id = ?",
+                (session_id,)
+            )
+            rows = cursor.fetchall()
 
-                # Check if this raw_value is already tokenized in this session
-                type_tokens = []
-                for tok, enc_val in rows:
-                    if tok.startswith(f"[{pii_type}_"):
-                        type_tokens.append(tok)
-                        try:
-                            dec = decrypt_value(enc_val)
-                            if dec == raw_value:
-                                return tok
-                        except Exception:
-                            pass
+            # Check if this raw_value is already tokenized in this session
+            type_tokens = []
+            for tok, enc_val in rows:
+                if tok.startswith(f"[{pii_type}_"):
+                    type_tokens.append(tok)
+                    try:
+                        dec = decrypt_value(enc_val)
+                        if dec == raw_value:
+                            return tok
+                    except Exception:
+                        pass
 
-                # If not found, assign next sequential token number for this type
-                next_idx = len(type_tokens) + 1
-                token = f"[{pii_type}_{next_idx}]"
-                
-                # Encrypt and persist
-                enc_value = encrypt_value(raw_value)
-                now_str = datetime.now(timezone.utc).isoformat()
-                cursor.execute(
-                    """
-                    INSERT INTO privacy_vault (session_id, token, encrypted_value, pii_type, created_at)
-                    VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (session_id, token, enc_value, pii_type, now_str)
-                )
-                conn.commit()
-                return token
+            # If not found, assign next sequential token number for this type
+            next_idx = len(type_tokens) + 1
+            token = f"[{pii_type}_{next_idx}]"
+            
+            # Encrypt and persist
+            enc_value = encrypt_value(raw_value)
+            now_str = datetime.now(timezone.utc).isoformat()
+            cursor.execute(
+                """
+                INSERT INTO privacy_vault (session_id, token, encrypted_value, pii_type, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (session_id, token, enc_value, pii_type, now_str)
+            )
+            conn.commit()
+            return token
 
     @classmethod
     def resolve_tokens(cls, session_id: str, tokens: List[str]) -> Dict[str, str]:
@@ -151,35 +151,35 @@ class PrivacyVault:
         retention_hours = get_vault_retention_hours()
 
         with _vault_lock:
-            with sqlite3.connect(db_path, timeout=30.0) as conn:
-                conn.execute("PRAGMA synchronous = NORMAL;")
-                cursor = conn.cursor()
-                if not tokens:
-                    cursor.execute(
-                        "SELECT token, encrypted_value, created_at FROM privacy_vault WHERE session_id = ?",
-                        (session_id,)
-                    )
-                else:
-                    placeholders = ",".join("?" for _ in tokens)
-                    cursor.execute(
-                        f"SELECT token, encrypted_value, created_at FROM privacy_vault WHERE session_id = ? AND token IN ({placeholders})",
-                        [session_id] + list(tokens)
-                    )
-                rows = cursor.fetchall()
+            from backend.app.db.database import get_connection
+            conn = get_connection()
+            cursor = conn.cursor()
+            if not tokens:
+                cursor.execute(
+                    "SELECT token, encrypted_value, created_at FROM privacy_vault WHERE session_id = ?",
+                    (session_id,)
+                )
+            else:
+                placeholders = ",".join("?" for _ in tokens)
+                cursor.execute(
+                    f"SELECT token, encrypted_value, created_at FROM privacy_vault WHERE session_id = ? AND token IN ({placeholders})",
+                    [session_id] + list(tokens)
+                )
+            rows = cursor.fetchall()
 
-                now = datetime.now(timezone.utc)
-                for tok, enc_val, created_at_str in rows:
-                    try:
-                        created_dt = datetime.fromisoformat(created_at_str)
-                        if now - created_dt > timedelta(hours=retention_hours):
-                            raise VaultRetentionExpiredError(
-                                f"Vault retention window of {retention_hours}h expired for session '{session_id}'"
-                            )
-                        resolved[tok] = decrypt_value(enc_val)
-                    except VaultRetentionExpiredError:
-                        raise
-                    except Exception as e:
-                        resolved[tok] = f"[DECRYPTION_ERROR: {str(e)}]"
+            now = datetime.now(timezone.utc)
+            for tok, enc_val, created_at_str in rows:
+                try:
+                    created_dt = datetime.fromisoformat(created_at_str)
+                    if now - created_dt > timedelta(hours=retention_hours):
+                        raise VaultRetentionExpiredError(
+                            f"Vault retention window of {retention_hours}h expired for session '{session_id}'"
+                        )
+                    resolved[tok] = decrypt_value(enc_val)
+                except VaultRetentionExpiredError:
+                    raise
+                except Exception as e:
+                    resolved[tok] = f"[DECRYPTION_ERROR: {str(e)}]"
         return resolved
 
     @classmethod

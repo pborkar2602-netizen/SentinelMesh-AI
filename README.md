@@ -94,6 +94,11 @@ Protected endpoints (such as `POST /api/v1/privacy/raw-access`) require a signed
 - **`analyst`** (`analyst` / `analyst123`): Incident investigation with masked payloads. Attempting raw unmasking returns **HTTP 403 Forbidden**.
 - **`privacy_officer`** (`privacy_officer` / `officer123`): Authorized to retrieve raw PII with a mandatory compliance reason. Each unmasking access is cryptographically committed to the append-only audit hash chain.
 
+### Learned Behavioral Baseline & Min-Spread Floor Rule
+SentinelMesh detects statistical deviations in record volume, temporal windows, and execution burst rates:
+- **Threshold Formulation**: All per-agent thresholds are derived strictly from empirical baseline distributions: $\text{threshold} = \text{median} + 3.5 \times \text{MAD}$.
+- **Min-Spread Floor Rule**: For agents with constant or near-constant historical behavior where empirical $\text{MAD} = 0$, an absolute zero spread would falsely flag normal single-record deviations. SentinelMesh applies the **min-spread floor rule**: $\text{MAD}_{\text{robust}} = \max(0.15 \times \text{median}, 1.0)$, establishing a data-derived non-parametric floor ($15\%$ of median or 1 discrete record unit) without hardcoded arbitrary constants.
+
 ---
 
 ## 5. Repository Structure

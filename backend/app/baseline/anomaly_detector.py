@@ -53,6 +53,7 @@ class AnomalyDetector:
                 records_count = float(tool_result)
 
         # Pre-execution structural heuristic for db_query:
+        # Pre-execution structural heuristic for db_query:
         if records_count == 0.0 and tool_name == "db_query":
             q = str(arguments.get("query") or "")
             limit_m = re.search(r"\bLIMIT\s+(\d+)\b", q, re.IGNORECASE)
@@ -64,13 +65,19 @@ class AnomalyDetector:
                 is_ref_lookup = bool(re.search(rf"\bFROM\s+(?:{'|'.join(ref_tables)})\b", q, re.IGNORECASE))
                 if is_ref_lookup:
                     records_count = 3.0
-                else:
-                    # Structural heuristic: unconstrained table scan (SELECT * or SELECT named columns from bulk/sensitive tables with no WHERE and no LIMIT)
+                elif not has_where:
                     is_unconstrained_star = bool(re.search(r"\bSELECT\s+\*\s+FROM\b", q, re.IGNORECASE))
                     is_unconstrained_named = bool(re.search(r"\bSELECT\s+[a-zA-Z0-9_,\s*]+\s+FROM\s+[a-zA-Z0-9_]+\b", q, re.IGNORECASE))
-                    if not has_where and (is_unconstrained_star or is_unconstrained_named):
+                    if is_unconstrained_star or is_unconstrained_named:
                         records_count = max(profile.threshold_records * 3.0, 500.0)
                     else:
+                        records_count = 1.0
+                else:
+                    for k in ["records_returned", "records_accessed", "count", "rows_returned"]:
+                        if k in arguments and isinstance(arguments[k], (int, float)):
+                            records_count = float(arguments[k])
+                            break
+                    if records_count == 0.0:
                         records_count = 1.0
 
         if records_count > profile.threshold_records:
@@ -85,13 +92,14 @@ class AnomalyDetector:
         events = session_events or []
         past_session_records = 0.0
         for ev in events:
-            past_session_records += float(ev.get("records_accessed", 0) or 0.0)
-            if ev.get("tool_name") == "db_query":
-                bd = ev.get("risk_breakdown", {})
+            bd = ev.get("risk_breakdown", {})
+            rec = float(bd.get("records_returned") or ev.get("records_returned") or ev.get("records_accessed") or 0.0)
+            if rec == 0.0 and ev.get("tool_name") == "db_query":
                 if "bulk_dump" in bd:
-                    past_session_records += float(bd["bulk_dump"].get("records", 0))
+                    rec = float(bd["bulk_dump"].get("records", 0.0))
                 else:
-                    past_session_records += 1.0
+                    rec = 1.0
+            past_session_records += rec
 
         cumulative_session_records = past_session_records + records_count
         if cumulative_session_records > profile.threshold_session_records and len(events) >= 2:

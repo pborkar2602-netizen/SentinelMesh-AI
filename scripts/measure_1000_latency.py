@@ -208,7 +208,7 @@ def main():
         print("-" * len(header))
 
         stages = [
-            ("1. HTTP Wire & Transport", http_transport_latencies),
+            ("1. Unattributed (Wire Transit & OS Loopback)", http_transport_latencies),
             ("2. DB Session & Agent State", db_write_latencies),
             ("3. Rules & Trust Labeling", rules_latencies),
             ("4. Privacy Detection & Risk", privacy_latencies),

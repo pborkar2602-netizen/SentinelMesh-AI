@@ -24,19 +24,8 @@ def reset_request_connection(token):
     """Resets the active SQLite connection context token."""
     _request_conn.reset(token)
 
-def acquire_connection(conn: Optional[sqlite3.Connection] = None) -> Tuple[sqlite3.Connection, bool]:
-    """
-    Returns (connection, should_close).
-    If conn is explicitly passed, uses it (should_close=False).
-    Else if an active request connection exists in context, reuses it across the pipeline (should_close=False).
-    Else creates a new connection (should_close=True).
-    """
-    if conn is not None:
-        return conn, False
-    req_conn = _request_conn.get()
-    if req_conn is not None:
-        return req_conn, False
-    return get_connection(), True
+_connection_pool: Dict[Tuple[int, str], sqlite3.Connection] = {}
+_conn_lock = threading.Lock()
 
 def get_db_path() -> str:
     url = settings.DATABASE_URL
@@ -46,11 +35,50 @@ def get_db_path() -> str:
 
 def get_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
     path = db_path or get_db_path()
-    conn = sqlite3.connect(path, timeout=30.0, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON;")
-    conn.execute("PRAGMA synchronous = NORMAL;")
-    return conn
+    tid = threading.get_ident()
+    key = (tid, path)
+    with _conn_lock:
+        conn = _connection_pool.get(key)
+        if conn is not None:
+            try:
+                conn.execute("SELECT 1")
+                return conn
+            except Exception:
+                _connection_pool.pop(key, None)
+        conn = sqlite3.connect(path, timeout=30.0, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON;")
+        conn.execute("PRAGMA synchronous = NORMAL;")
+        try:
+            conn.execute("PRAGMA journal_mode = WAL;")
+        except Exception:
+            pass
+        _connection_pool[key] = conn
+        return conn
+
+def acquire_connection(conn: Optional[sqlite3.Connection] = None) -> Tuple[sqlite3.Connection, bool]:
+    """
+    Returns (connection, should_close).
+    Always reuses the application-lifetime persistent connection, never closing per request.
+    """
+    if conn is not None:
+        return conn, False
+    return get_connection(), False
+
+def update_session_event_return(session_id: str, trace_id: Optional[str] = None, records_returned: int = 0) -> None:
+    """Updates session audit event with actual rows returned after tool call completes."""
+    conn = get_connection()
+    with _hash_chain_lock:
+        if trace_id:
+            cur = conn.execute("SELECT id, risk_breakdown FROM audit_events WHERE trace_id = ?", (trace_id,))
+        else:
+            cur = conn.execute("SELECT id, risk_breakdown FROM audit_events WHERE session_id = ? ORDER BY id DESC LIMIT 1", (session_id,))
+        row = cur.fetchone()
+        if row:
+            rb = json.loads(row["risk_breakdown"] or "{}")
+            rb["records_returned"] = records_returned
+            conn.execute("UPDATE audit_events SET risk_breakdown = ? WHERE id = ?", (json.dumps(rb), row["id"]))
+            conn.commit()
 
 def compute_event_hash(event_data: Dict[str, Any], prev_hash: str) -> str:
     """

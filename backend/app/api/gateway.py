@@ -153,4 +153,20 @@ def execute_tool_call(request: ToolCallRequest) -> GatewayDecisionResponse:
         )
     finally:
         reset_request_connection(token)
-        req_conn.close()
+
+from pydantic import BaseModel
+
+class ToolReturnRequest(BaseModel):
+    session_id: str
+    trace_id: str | None = None
+    records_returned: int = 0
+
+@router.post("/tool-return", status_code=status.HTTP_200_OK)
+def report_tool_return(req: ToolReturnRequest):
+    from backend.app.db.database import update_session_event_return
+    update_session_event_return(
+        session_id=req.session_id,
+        trace_id=req.trace_id,
+        records_returned=req.records_returned
+    )
+    return {"status": "ok", "records_returned": req.records_returned}

@@ -1,5 +1,5 @@
 {
-  "id": "ATK-017",
+  "id": "ATK-D02",
   "name": "Internal Pivot Credential Exfiltration",
   "category": "attack",
   "split": "dev",
