@@ -113,37 +113,26 @@ class IncidentBuilder:
         all_findings = list(findings or [])
         attack_category = None
 
-        if existing and existing.get("chain_steps"):
-            # Incremental: append single new step without reloading the whole session
-            prev_steps = existing["chain_steps"]
-            new_step, step_affected, step_untrusted = cls._format_step(len(prev_steps) + 1, event_dict)
-            chain_steps = prev_steps + [new_step]
-            prev_affected = set(s.strip() for s in existing.get("affected_data", "").split(",") if s.strip())
-            affected_data_items = prev_affected | step_affected
-            entry_point = existing.get("entry_point", "Direct Agent Execution")
-            untrusted_source_id = step_untrusted
-            events = [event_dict]
+        # Fetch all chronological events for this session
+        if session_events is not None:
+            events = list(session_events) + [event_dict]
         else:
-            # First incident creation for this session: load trajectory once
-            if session_events is not None:
-                events = list(session_events) + [event_dict]
-            else:
-                events = list_session_events(session_id)
-                if not events:
-                    events = [event_dict]
+            events = list_session_events(session_id)
+            if not events:
+                events = [event_dict]
 
-            chain_steps = []
-            entry_point = "Direct Agent Execution"
-            affected_data_items = set()
-            untrusted_source_id = None
+        chain_steps = []
+        entry_point = "Direct Agent Execution"
+        affected_data_items = set()
+        untrusted_source_id = None
 
-            for idx, ev in enumerate([e for e in events if e.get("tool_name") != "tool_return"], 1):
-                step, step_affected, step_untrusted = cls._format_step(idx, ev)
-                chain_steps.append(step)
-                affected_data_items.update(step_affected)
-                if step_untrusted and not untrusted_source_id:
-                    untrusted_source_id = step_untrusted
-                    entry_point = f"{ev.get('tool_name', 'tool')} ('{untrusted_source_id}')"
+        for idx, ev in enumerate([e for e in events if e.get("tool_name") != "tool_return"], 1):
+            step, step_affected, step_untrusted = cls._format_step(idx, ev)
+            chain_steps.append(step)
+            affected_data_items.update(step_affected)
+            if step_untrusted and not untrusted_source_id:
+                untrusted_source_id = step_untrusted
+                entry_point = f"{ev.get('tool_name', 'tool')} ('{untrusted_source_id}')"
         # Check findings from event breakdown or passed findings
         final_tool = event_dict.get("tool_name", "")
         final_args = event_dict.get("arguments", {})
@@ -178,7 +167,7 @@ class IncidentBuilder:
             attack_category = "BULK_DUMP"
             title = f"Bulk Database Extraction via {agent_id}"
             severity = "CRITICAL"
-        elif untrusted_source_id:
+        elif untrusted_source_id or any(s.get("status") == "TAINTED_INGEST" for s in chain_steps):
             attack_category = "INDIRECT_INJECTION"
             title = f"Indirect Prompt Injection & Data Exfiltration via {agent_id}"
             severity = "CRITICAL" if any(s["status"] == "SENSITIVE_READ" for s in chain_steps) and final_tool in ["send_email", "external_api"] else "HIGH"
