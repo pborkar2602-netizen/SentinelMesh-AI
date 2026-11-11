@@ -37,6 +37,18 @@ def generate_ascii_report(
     """Formats ASCII report following Section 10.2 of docs/benchmark_spec.md."""
     sys_info = get_system_telemetry()
     now_utc = datetime.now(timezone.utc).isoformat()
+    from backend.app.judge.intent_judge import IntentJudge
+    judge_evaluated = IntentJudge.is_evaluated_for_headline()
+    suite_mode_str = (
+        "Live / Recorded Real LLM Judge"
+        if judge_evaluated
+        else "Deterministic Core Pipeline (judge not evaluated)"
+    )
+    judge_lat_str = (
+        "Evaluated via Recorded / Live LLM"
+        if judge_evaluated
+        else "judge not evaluated"
+    )
 
     lines = [
         "=" * 100,
@@ -47,7 +59,8 @@ def generate_ascii_report(
         "=" * 100,
         "ENVIRONMENT & HARDWARE",
         f"- Host Platform:       {sys_info['platform']} / {sys_info['processor']} / {sys_info['ram_gb']}GB RAM / Python {sys_info['python_version']}",
-        "- Test Suite Mode:     Deterministic Replay (judge stub: hand-written verdicts, not LLM)",
+        f"- Test Suite Mode:     {suite_mode_str}",
+        f"- Intent Judge Status: {'evaluated (real LLM)' if judge_evaluated else 'judge not evaluated'}",
         f"- Date & Time:         {now_utc}",
         "",
         "-" * 100,
@@ -81,7 +94,7 @@ def generate_ascii_report(
         "-" * 100,
         f"LATENCY OVER REAL GATEWAY PATH ({total_calls} Calls + {warm_up_calls} Warm-Up)",
         f"- Core Gateway Path (p50 / p90 / p95):     {lat['p50']:.1f} ms / {lat['p90']:.1f} ms / {lat['p95']:.1f} ms  (Target: <= 35.0 ms)",
-        "- Live LLM Judge Isolated (p50 / p95):    N/A (No API Key Provided - Recorded/Live Run Only)",
+        f"- Live LLM Judge Isolated (p50 / p95):    {judge_lat_str}",
         "=" * 100,
         "",
         "SCENARIO EXECUTION BREAKDOWN:",
@@ -108,11 +121,14 @@ def save_json_report(
 ) -> None:
     """Exports structured JSON benchmark report."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    from backend.app.judge.intent_judge import IntentJudge
+    judge_evaluated = IntentJudge.is_evaluated_for_headline()
     report_data = {
         "metadata": {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "telemetry": get_system_telemetry(),
-            "mode": "deterministic_replay (judge stub: hand-written verdicts, not LLM)",
+            "mode": "recorded_llm_replay" if judge_evaluated else "deterministic_core (judge not evaluated)",
+            "judge_status": "evaluated" if judge_evaluated else "judge not evaluated",
             "spec_version": "1.0",
         },
         "dev_set": dev_metrics,

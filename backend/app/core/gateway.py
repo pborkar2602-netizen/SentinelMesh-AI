@@ -214,6 +214,10 @@ class GatewayCore:
                 risk_breakdown["judge_mode"] = judge_verdict.mode
                 if judge_verdict.mismatch_score > 50:
                     risk_score = max(risk_score, judge_verdict.mismatch_score)
+            else:
+                risk_breakdown["judge_status"] = "judge not evaluated"
+        else:
+            risk_breakdown["judge_status"] = "judge not evaluated"
         judge_ms = round((time.perf_counter() - t_judge_start) * 1000, 3)
 
         # 9. Policy Engine Evaluation (Enforce vs Monitor mode, with Redact & Judge hooks)
@@ -245,13 +249,15 @@ class GatewayCore:
             decision, reason = "allow", "Policy engine disabled (ablation mode)"
         policy_ms = round((time.perf_counter() - t_pol_start) * 1000, 3)
 
-        risk_breakdown["stage_timings_ms"] = {
+        stage_timings_dict = {
             "rules": rules_ms,
             "privacy": privacy_ms,
             "baseline": baseline_ms,
-            "judge_stub": judge_ms,
             "policy": policy_ms
         }
+        if judge_verdict is not None:
+            stage_timings_dict["judge"] = judge_ms
+        risk_breakdown["stage_timings_ms"] = stage_timings_dict
 
         # 10. Milestone 6: Approval Workflow & Simulated Reviewer
         if decision == "require_approval":

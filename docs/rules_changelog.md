@@ -110,3 +110,18 @@ This document logs all generic detection rules, policy engine heuristics, and th
   4. Added unit tests in `backend/tests/test_proxy_tool_execution.py` verifying all four proxied tools, hash-chain integrity, legacy endpoint compatibility, and a lying agent that under-reports rows across calls while the gateway counts accurately and triggers `require_approval`.
 - **Why**: A security gateway cannot trust a compromised agent to self-report how many records a query returned. By proxying tool execution through the gateway and measuring row counts directly from the adapter response, cumulative and single-call volume enforcement becomes tamper-proof.
 - **How It Generalizes**: Any tool adapter registered with `ToolProxy` has its return payload measured server-side before results are released to the calling agent, preventing both single-call and multi-step under-reporting regardless of how the agent formats its request or `/tool-return` payload.
+
+
+---
+
+## Entry 11 — v2 Fix 5: Optional Judge with Strict Stub Refusal for Headline Numbers
+- **Date**: 2026-11-11
+- **What Failed**: Previously, when `SENTINEL_JUDGE_API_KEY` was not configured, `IntentJudge` fell back to synthetic hand-written stub verdicts (`source="judge_stub"`) and included stub rows in benchmark and ablation reports.
+- **What Changed**:
+  1. Updated `IntentJudge` (`backend/app/judge/intent_judge.py`) so that default/headline replay mode (`recorded_only`, enforced automatically in `SENTINEL_BENCHMARK_MODE`) plays back only real recorded LLM verdicts (`source == "recorded_llm"`) and strictly refuses synthetic stub verdicts, returning `None`.
+  2. Updated `GatewayCore.evaluate` (`backend/app/core/gateway.py`) to record `risk_breakdown["judge_status"] = "judge not evaluated"` and omit stub timings when no real LLM verdict is available.
+  3. Updated `scripts/record_judge_cassettes.py` to record real LLM verdicts across scenario steps when `SENTINEL_JUDGE_API_KEY` is set, and print `"judge not evaluated"` when no key is present.
+  4. Updated `benchmark/harness/reporter.py` and `scripts/run_ablation_sweeps.py` to print `"judge not evaluated"` and exclude the judge from all headline and ablation results when `SENTINEL_JUDGE_API_KEY` is absent.
+  5. Added unit tests in `backend/tests/test_judge_modes.py`.
+- **Why**: Synthetic stub verdicts do not measure real LLM classification behavior or latency and must never be reported as headline benchmark or ablation evidence.
+- **How It Generalizes**: Headline benchmark and ablation runs operate strictly on deterministic core layers unless `SENTINEL_JUDGE_API_KEY` or verified `recorded_llm` cassettes are present.
