@@ -126,7 +126,18 @@ class IncidentBuilder:
         affected_data_items = set()
         untrusted_source_id = None
 
-        for idx, ev in enumerate([e for e in events if e.get("tool_name") != "tool_return"], 1):
+        dedup_events = []
+        seen_traces = set()
+        for e in reversed([ev for ev in events if ev.get("tool_name") != "tool_return"]):
+            tr = e.get("trace_id")
+            if tr and tr in seen_traces:
+                continue
+            if tr:
+                seen_traces.add(tr)
+            dedup_events.append(e)
+        dedup_events.reverse()
+
+        for idx, ev in enumerate(dedup_events, 1):
             step, step_affected, step_untrusted = cls._format_step(idx, ev)
             chain_steps.append(step)
             affected_data_items.update(step_affected)
