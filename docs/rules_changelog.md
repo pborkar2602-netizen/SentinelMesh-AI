@@ -56,3 +56,14 @@ This document logs all generic detection rules, policy engine heuristics, and th
   1. Privileged table enforcement now reads from `SENTINEL_PRIVILEGED_TABLES` (comma-separated environment variable), defaulting to `["system_configs", "users", "permissions", "roles", "credentials", "auth"]`. Non-privileged tables like `customer_addresses` are cleanly permitted without approval escalation.
   2. In `backend/app/api/gateway.py`, outside benchmark mode (`SENTINEL_BENCHMARK_MODE != true`), client-supplied timestamp attributes are strictly ignored and server-authoritative UTC clock (`datetime.now(timezone.utc)`) is enforced on all audit events, hash chains, and rate calculations.
 - **Justification**: Enhances operational flexibility for enterprise deployments while guaranteeing authoritative cryptographic integrity against client timestamp manipulation.
+
+---
+
+### Entry 7: AST-Based SQL Structural Row Estimation (`sqlglot`)
+- **What Failed**: A legitimate departmental expense summary query (`SELECT department, SUM(amount) FROM expenses GROUP BY department`) was falsely flagged as a bulk table dump (`require_approval`) because the legacy regex heuristic only recognized aggregate functions immediately following `SELECT` (`^\s*SELECT\s+(COUNT|SUM|AVG|MIN|MAX)\b`) and did not parse `GROUP BY` summary projections.
+- **What Changed**:
+  1. Replaced all regex SQL heuristics in `backend/app/baseline/anomaly_detector.py` with a full AST SQL parser (`sqlglot`) via `parse_single_sql_statement()` and `estimate_sql_rows()`.
+  2. Structural row estimation now evaluates AST nodes across scalar aggregates, `GROUP BY` summaries (distinguishing low-cardinality categorical grouping from high-cardinality primary-key/PII grouping), `HAVING`, `COUNT(DISTINCT x)`, `DISTINCT`, `JOIN`s (`CROSS JOIN` and unconstrained joins vs. PK-filtered or grouped joins), subqueries and CTEs, `LIMIT`, and `WHERE` selectivity (primary-key equality vs. unbounded range/inequality/wildcard/tautology scans).
+  3. Unparseable SQL syntax, unclosed comments, non-statement expressions, and multi-statement strings fail safe as bulk reads and emit structured warnings.
+- **Why**: Regex matching on surface SQL text is brittle against projection order, quoted identifiers, comments, mixed case, and nested clauses.
+- **How It Generalizes**: Any valid SQL query across ANSI, SQLite, or Postgres identifier quoting styles is parsed into its grammatical AST before estimating cardinality, preventing false positives on grouped summary reports while catching disguised bulk dumps (`GROUP BY` on primary keys, `CROSS JOIN`s, range scans, tautologies, and multi-statement payloads).

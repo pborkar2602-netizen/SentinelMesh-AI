@@ -1,9 +1,475 @@
-import re
+import logging
 import urllib.parse
 from datetime import datetime, timezone
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional, Set, Tuple
+
+import sqlglot
+from sqlglot import exp
+from sqlglot.errors import SqlglotError
 
 from backend.app.baseline.profiler import BaselineProfiler, AgentBaselineProfile
+
+logger = logging.getLogger(__name__)
+
+_VALID_TOP_LEVEL_STATEMENTS = (
+    exp.Select,
+    exp.SetOperation,
+    exp.Update,
+    exp.Insert,
+    exp.Delete,
+    exp.Drop,
+    exp.TruncateTable,
+    exp.Alter,
+    exp.Create,
+    exp.Merge,
+)
+
+_HIGH_CARDINALITY_ENTITY_COLUMNS = {
+    "id",
+    "user_id",
+    "employee_id",
+    "customer_id",
+    "candidate_id",
+    "account_id",
+    "transaction_id",
+    "ssn",
+    "national_id",
+    "email",
+    "card_number",
+    "account_number",
+    "password_hash",
+    "uuid",
+}
+
+_PRIMARY_KEY_LIKE_COLUMNS = {
+    "id",
+    "user_id",
+    "employee_id",
+    "customer_id",
+    "candidate_id",
+    "vendor_id",
+    "account_id",
+    "transaction_id",
+    "ticket_id",
+    "username",
+    "email",
+    "ssn",
+    "national_id",
+    "uuid",
+    "code",
+    "token",
+    "vendor_name",
+    "full_name",
+}
+
+_LOW_CARDINALITY_CATEGORICAL_COLUMNS = {
+    "department",
+    "status",
+    "category",
+    "role",
+    "type",
+    "country",
+    "currency",
+    "tier",
+    "region",
+    "office_location",
+    "weekday",
+    "month",
+    "quarter",
+    "year",
+    "priority",
+    "severity",
+}
+
+
+def parse_single_sql_statement(query: str) -> Optional[exp.Expression]:
+    """
+    Parses a SQL string into a single validated AST statement using sqlglot.
+    Returns None if the query is empty, unparseable, contains multiple statements,
+    or does not represent a valid top-level SQL command.
+    """
+    if not query or not query.strip():
+        return None
+    stripped = query.strip()
+    if "/*" in stripped and "*/" not in stripped:
+        logger.warning("Unclosed SQL block comment detected; treating as unparseable: %s", query)
+        return None
+
+    statements: Optional[List[Optional[exp.Expression]]] = None
+    last_err: Optional[Exception] = None
+    for dialect in ("sqlite", "postgres", None):
+        try:
+            parsed = sqlglot.parse(stripped, read=dialect, error_level=sqlglot.ErrorLevel.RAISE)
+            statements = [s for s in parsed if s is not None]
+            break
+        except SqlglotError as exc:
+            last_err = exc
+            continue
+        except Exception as exc:
+            last_err = exc
+            continue
+
+    if statements is None or len(statements) == 0:
+        logger.warning("Unparseable SQL query (%s); failing safe as bulk read: %s", last_err, query)
+        return None
+
+    if len(statements) > 1:
+        logger.warning(
+            "Multi-statement SQL detected (%d statements); failing safe as bulk read: %s",
+            len(statements),
+            query,
+        )
+        return None
+
+    stmt = statements[0]
+    if not isinstance(stmt, _VALID_TOP_LEVEL_STATEMENTS):
+        logger.warning(
+            "Top-level AST node '%s' is not a valid SQL statement; failing safe: %s",
+            type(stmt).__name__,
+            query,
+        )
+        return None
+
+    return stmt
+
+
+def _extract_limit_value(stmt: exp.Expression) -> Optional[float]:
+    limit_node = stmt.args.get("limit")
+    if limit_node is None:
+        return None
+    expr = limit_node.expression if hasattr(limit_node, "expression") else limit_node.args.get("expression")
+    if expr is None:
+        return None
+    try:
+        if isinstance(expr, exp.Literal) and expr.is_number:
+            return max(0.0, float(expr.this))
+        return max(0.0, float(str(expr.name or expr.this)))
+    except (ValueError, TypeError):
+        return None
+
+
+def _is_pk_column_name(col_name: str) -> bool:
+    c = col_name.lower().strip()
+    return c in _PRIMARY_KEY_LIKE_COLUMNS or c == "id" or c.endswith("_id")
+
+
+def _classify_where_node(
+    node: Optional[exp.Expression],
+    bulk_estimate: float,
+    ref_tables: Set[str],
+    fallback_arg_count: float,
+) -> Tuple[str, float]:
+    if node is None:
+        return ("unconstrained", bulk_estimate)
+
+    if isinstance(node, exp.Paren):
+        return _classify_where_node(node.this, bulk_estimate, ref_tables, fallback_arg_count)
+
+    if isinstance(node, exp.And):
+        left_kind, left_rows = _classify_where_node(node.left, bulk_estimate, ref_tables, fallback_arg_count)
+        right_kind, right_rows = _classify_where_node(node.right, bulk_estimate, ref_tables, fallback_arg_count)
+        priority = {
+            "pk_equality": 1,
+            "in_literals": 2,
+            "bounded_subquery": 3,
+            "categorical_equality": 4,
+            "range_or_bulk": 5,
+            "unconstrained": 6,
+        }
+        if priority.get(left_kind, 6) <= priority.get(right_kind, 6):
+            return (left_kind, min(left_rows, right_rows))
+        return (right_kind, min(left_rows, right_rows))
+
+    if isinstance(node, exp.Or):
+        left_kind, left_rows = _classify_where_node(node.left, bulk_estimate, ref_tables, fallback_arg_count)
+        right_kind, right_rows = _classify_where_node(node.right, bulk_estimate, ref_tables, fallback_arg_count)
+        if left_kind in ("range_or_bulk", "unconstrained") or right_kind in ("range_or_bulk", "unconstrained"):
+            return ("range_or_bulk", bulk_estimate)
+        if left_kind == "pk_equality" and right_kind == "pk_equality":
+            return ("in_literals", left_rows + right_rows)
+        return ("categorical_equality", max(left_rows, right_rows))
+
+    if isinstance(node, exp.Not):
+        return ("range_or_bulk", bulk_estimate)
+
+    if isinstance(node, exp.EQ):
+        left, right = node.left, node.right
+        if type(left) is type(right) and str(left).lower() == str(right).lower():
+            return ("range_or_bulk", bulk_estimate)
+
+        col_node = left if isinstance(left, exp.Column) else (right if isinstance(right, exp.Column) else None)
+        other_node = right if col_node is left else left
+
+        if col_node is None:
+            return ("range_or_bulk", bulk_estimate)
+
+        if other_node is not None:
+            subq = other_node if isinstance(other_node, exp.Select) else other_node.find(exp.Select)
+            if subq is not None:
+                if _is_pk_column_name(col_node.name):
+                    return ("pk_equality", 1.0)
+                sub_rows, _ = _estimate_ast_rows(subq, bulk_estimate, ref_tables, fallback_arg_count)
+                return ("bounded_subquery" if sub_rows < bulk_estimate else "range_or_bulk", sub_rows)
+
+        if _is_pk_column_name(col_node.name):
+            return ("pk_equality", 1.0)
+        return ("categorical_equality", fallback_arg_count if fallback_arg_count > 0.0 else 1.0)
+
+    if isinstance(node, exp.In):
+        query_arg = node.args.get("query") or node.find(exp.Select)
+        if query_arg is not None:
+            inner_select = query_arg if isinstance(query_arg, exp.Select) else query_arg.find(exp.Select)
+            if inner_select is not None:
+                sub_rows, sub_kind = _estimate_ast_rows(inner_select, bulk_estimate, ref_tables, fallback_arg_count)
+                col_node = node.this if isinstance(node.this, exp.Column) else None
+                if sub_kind in (
+                    "unconstrained_table_scan",
+                    "reference_table_lookup",
+                    "distinct_categorical",
+                    "distinct_bulk_scan",
+                ):
+                    return ("range_or_bulk", bulk_estimate)
+                if sub_rows == 1.0 and col_node is not None and _is_pk_column_name(col_node.name):
+                    return ("pk_equality", 1.0)
+                if sub_rows > 1.0 and (col_node is None or not _is_pk_column_name(col_node.name)):
+                    return ("range_or_bulk", bulk_estimate)
+                return ("bounded_subquery" if sub_rows < bulk_estimate else "range_or_bulk", sub_rows)
+
+        exprs = node.expressions or []
+        if exprs:
+            return ("in_literals", float(len(exprs)))
+        return ("range_or_bulk", bulk_estimate)
+
+    if isinstance(node, exp.Exists):
+        return ("range_or_bulk", bulk_estimate)
+
+    if isinstance(
+        node,
+        (
+            exp.GT,
+            exp.GTE,
+            exp.LT,
+            exp.LTE,
+            exp.Between,
+            exp.NEQ,
+            exp.Like,
+            exp.ILike,
+            exp.Is,
+            exp.RegexpLike,
+        ),
+    ):
+        return ("range_or_bulk", bulk_estimate)
+
+    return ("range_or_bulk", bulk_estimate)
+
+
+def _estimate_ast_rows(
+    stmt: exp.Expression,
+    bulk_estimate: float,
+    ref_tables: Set[str],
+    fallback_arg_count: float = 0.0,
+) -> Tuple[float, str]:
+    if isinstance(stmt, exp.SetOperation):
+        left_rows, _ = _estimate_ast_rows(stmt.left, bulk_estimate, ref_tables, fallback_arg_count)
+        right_rows, _ = _estimate_ast_rows(stmt.right, bulk_estimate, ref_tables, fallback_arg_count)
+        if isinstance(stmt, exp.Intersect):
+            return (min(left_rows, right_rows), "intersect_query")
+        if isinstance(stmt, exp.Except):
+            return (left_rows, "except_query")
+        return (left_rows + right_rows, "union_query")
+
+    if isinstance(stmt, (exp.Drop, exp.TruncateTable, exp.Alter, exp.Create)):
+        return (fallback_arg_count if fallback_arg_count > 0.0 else 1.0, "ddl_statement")
+
+    if isinstance(stmt, exp.Insert):
+        inner_sel = stmt.find(exp.Select)
+        if inner_sel is not None:
+            return _estimate_ast_rows(inner_sel, bulk_estimate, ref_tables, fallback_arg_count)
+        values_node = stmt.find(exp.Values)
+        if values_node is not None and values_node.expressions:
+            return (float(len(values_node.expressions)), "insert_values")
+        return (1.0, "insert_single")
+
+    if isinstance(stmt, (exp.Update, exp.Delete, exp.Merge)):
+        where_node = stmt.args.get("where")
+        if where_node is None:
+            return (bulk_estimate, "unconstrained_mutation")
+        w_kind, w_rows = _classify_where_node(where_node.this, bulk_estimate, ref_tables, fallback_arg_count)
+        if w_kind == "range_or_bulk":
+            return (bulk_estimate, "range_mutation")
+        return (fallback_arg_count if fallback_arg_count > 0.0 else w_rows, "filtered_mutation")
+
+    if not isinstance(stmt, exp.Select):
+        return (bulk_estimate, "unknown_statement_fail_safe")
+
+    from_node = stmt.args.get("from") or stmt.args.get("from_")
+    select_exprs = stmt.expressions or []
+
+    if from_node is None:
+        all_constants_or_funcs = bool(select_exprs) and all(
+            isinstance(e.unalias(), (exp.Literal, exp.Func, exp.Anonymous))
+            for e in select_exprs
+        )
+        if all_constants_or_funcs:
+            return (1.0, "scalar_constant_select")
+        logger.warning("SELECT without FROM on non-literal identifiers; failing safe as bulk read.")
+        return (bulk_estimate, "unparseable_select_no_from")
+
+    limit_val = _extract_limit_value(stmt)
+    group_node = stmt.args.get("group")
+    having_node = stmt.args.get("having")
+    where_node = stmt.args.get("where")
+    joins = stmt.args.get("joins") or []
+    is_distinct = stmt.args.get("distinct") is not None
+
+    has_agg_func = any(e.find(exp.AggFunc) is not None for e in select_exprs)
+
+    if has_agg_func and group_node is None:
+        return (1.0, "scalar_aggregate")
+
+    if group_node is not None:
+        group_exprs = group_node.expressions or []
+        group_cols = [
+            c.name.lower()
+            for g in group_exprs
+            for c in g.find_all(exp.Column)
+            if c.name
+        ]
+        has_high_card_group = any(
+            c in _HIGH_CARDINALITY_ENTITY_COLUMNS or c == "id" or c.endswith("_id")
+            for c in group_cols
+        )
+        if has_high_card_group and having_node is None and where_node is None and limit_val is None:
+            return (bulk_estimate, "high_cardinality_group_by")
+        if not has_agg_func and len(group_cols) > 2 and having_node is None and where_node is None and limit_val is None:
+            return (bulk_estimate, "unaggregated_multi_col_group_by")
+
+        base_group_est = 2.0 if having_node is not None else 3.0
+        if limit_val is not None:
+            base_group_est = min(limit_val, base_group_est)
+        return (base_group_est, "grouped_aggregate_having" if having_node is not None else "grouped_aggregate")
+
+    if limit_val is not None:
+        return (limit_val, "explicit_limit")
+
+    with_node = stmt.args.get("with") or stmt.args.get("with_")
+    cte_names = {
+        cte.alias_or_name.lower()
+        for cte in with_node.expressions
+        if cte.alias_or_name
+    } if with_node else set()
+
+    direct_tables: List[str] = []
+    if from_node.this and isinstance(from_node.this, exp.Table) and from_node.this.name:
+        tname = from_node.this.name.lower()
+        if tname not in cte_names:
+            direct_tables.append(tname)
+    for j in joins:
+        if isinstance(j.this, exp.Table) and j.this.name:
+            tname = j.this.name.lower()
+            if tname not in cte_names:
+                direct_tables.append(tname)
+
+    if direct_tables and all(t in ref_tables for t in direct_tables) and len(joins) == 0:
+        return (3.0, "reference_table_lookup")
+
+    if isinstance(from_node.this, exp.Subquery):
+        inner_sel = from_node.this.this
+        if inner_sel is not None and where_node is None and not joins:
+            inner_rows, inner_kind = _estimate_ast_rows(inner_sel, bulk_estimate, ref_tables, fallback_arg_count)
+            return (inner_rows, f"subquery_from_{inner_kind}")
+
+    if cte_names and where_node is None and not joins and isinstance(from_node.this, exp.Table):
+        for cte in with_node.expressions:
+            if cte.alias_or_name and cte.alias_or_name.lower() == (from_node.this.name or "").lower():
+                return _estimate_ast_rows(cte.this, bulk_estimate, ref_tables, fallback_arg_count)
+
+    if is_distinct and where_node is None:
+        selected_cols = [
+            e.unalias().name.lower()
+            for e in select_exprs
+            if isinstance(e.unalias(), exp.Column) and e.unalias().name
+        ]
+        has_star = any(isinstance(e, exp.Star) or e.find(exp.Star) is not None for e in select_exprs)
+        if (
+            not has_star
+            and len(selected_cols) == 1
+            and selected_cols[0] in _LOW_CARDINALITY_CATEGORICAL_COLUMNS
+            and len(joins) == 0
+        ):
+            return (3.0, "distinct_categorical")
+        return (bulk_estimate, "distinct_bulk_scan")
+
+    if joins:
+        for j in joins:
+            is_cross = (j.kind or "").upper() == "CROSS" or (
+                not j.args.get("on") and not j.args.get("using") and (j.kind or "").upper() != "NATURAL"
+            )
+            if is_cross:
+                return (bulk_estimate, "cross_join_bulk")
+        if where_node is None:
+            return (bulk_estimate, "unconstrained_join_bulk")
+
+    if where_node is None:
+        return (bulk_estimate, "unconstrained_table_scan")
+
+    w_kind, w_rows = _classify_where_node(where_node.this, bulk_estimate, ref_tables, fallback_arg_count)
+    if w_kind == "pk_equality":
+        return (1.0, "where_pk_equality")
+    if w_kind == "in_literals":
+        return (w_rows, "where_in_literals")
+    if w_kind == "bounded_subquery":
+        return (w_rows, "where_bounded_subquery")
+    if w_kind == "categorical_equality":
+        return (w_rows, "where_categorical_equality")
+    return (bulk_estimate, "where_range_scan")
+
+
+def estimate_sql_rows(
+    query: str,
+    threshold_records: float = 50.0,
+    ref_tables: Optional[Set[str]] = None,
+    fallback_arg_count: float = 0.0,
+) -> Tuple[float, str]:
+    """
+    Parses SQL query using sqlglot and estimates returned/affected rows from AST structure:
+    - Aggregates with or without GROUP BY, HAVING, COUNT(DISTINCT x)
+    - DISTINCT (categorical vs entity dump)
+    - JOINs (CROSS JOIN, unconstrained JOIN vs PK-filtered or grouped JOIN)
+    - Subqueries & CTEs (FROM subquery, WHERE IN / = subquery)
+    - LIMIT
+    - WHERE on a primary key vs a range / inequality / wildcard / tautology
+    - Unparseable or multi-statement SQL fails safe as a bulk read and is logged.
+    """
+    bulk_estimate = max(threshold_records * 3.0, 500.0)
+    if not query or not query.strip():
+        return (fallback_arg_count if fallback_arg_count > 0.0 else 1.0, "empty_query")
+
+    if ref_tables is None:
+        from backend.app.config import settings
+        ref_tables = {
+            t.lower()
+            for t in getattr(
+                settings,
+                "REFERENCE_TABLES",
+                [
+                    "departments",
+                    "ticket_statuses",
+                    "exchange_rates",
+                    "categories",
+                    "status_codes",
+                    "countries",
+                    "currencies",
+                ],
+            )
+        }
+
+    stmt = parse_single_sql_statement(query)
+    if stmt is None:
+        return (bulk_estimate, "unparseable_or_multistatement_fail_safe")
+
+    return _estimate_ast_rows(stmt, bulk_estimate, ref_tables, fallback_arg_count)
+
 
 class AnomalyDetector:
     """
@@ -52,41 +518,38 @@ class AnomalyDetector:
             elif isinstance(tool_result, (int, float)):
                 records_count = float(tool_result)
 
-        # Pre-execution structural heuristic for db_query:
+        # Pre-execution AST-based structural estimator for db_query using sqlglot:
         if records_count == 0.0 and tool_name == "db_query":
             q = str(arguments.get("query") or "")
-            limit_m = re.search(r"\bLIMIT\s+(\d+)\b", q, re.IGNORECASE)
-            if limit_m:
-                records_count = float(limit_m.group(1))
-            else:
-                has_where = bool(re.search(r"\bWHERE\b", q, re.IGNORECASE))
-                from backend.app.config import settings
-                ref_tables = set(t.lower() for t in getattr(settings, "REFERENCE_TABLES", [
-                    "departments", "ticket_statuses", "exchange_rates", "categories", "status_codes", "countries", "currencies"
-                ]))
-                is_ref_lookup = bool(re.search(rf"\bFROM\s+(?:{'|'.join(ref_tables)})\b", q, re.IGNORECASE))
-                is_aggregate = bool(re.search(r"\bSELECT\s+(?:COUNT|SUM|AVG|MIN|MAX)\b", q, re.IGNORECASE))
-                has_group_by = bool(re.search(r"\bGROUP\s+BY\b", q, re.IGNORECASE))
-
-                if is_aggregate and not has_group_by:
-                    # Aggregate queries (COUNT/SUM/AVG/MIN/MAX) return a single scalar row, not bulk entity dumps
-                    records_count = 1.0
-                elif is_ref_lookup:
-                    records_count = 3.0
-                elif not has_where:
-                    is_unconstrained_star = bool(re.search(r"\bSELECT\s+\*\s+FROM\b", q, re.IGNORECASE))
-                    is_unconstrained_named = bool(re.search(r"\bSELECT\s+[a-zA-Z0-9_,\s*()]+\s+FROM\s+[a-zA-Z0-9_]+\b", q, re.IGNORECASE))
-                    if is_unconstrained_star or is_unconstrained_named:
-                        records_count = max(profile.threshold_records * 3.0, 500.0)
-                    else:
-                        records_count = 1.0
-                else:
-                    for k in ["records_returned", "records_accessed", "count", "rows_returned"]:
-                        if k in arguments and isinstance(arguments[k], (int, float)):
-                            records_count = float(arguments[k])
-                            break
-                    if records_count == 0.0:
-                        records_count = 1.0
+            fallback_arg_count = 0.0
+            for k in ["records_returned", "records_accessed", "count", "rows_returned"]:
+                if k in arguments and isinstance(arguments[k], (int, float)):
+                    fallback_arg_count = float(arguments[k])
+                    break
+            from backend.app.config import settings
+            ref_tables = {
+                t.lower()
+                for t in getattr(
+                    settings,
+                    "REFERENCE_TABLES",
+                    [
+                        "departments",
+                        "ticket_statuses",
+                        "exchange_rates",
+                        "categories",
+                        "status_codes",
+                        "countries",
+                        "currencies",
+                    ],
+                )
+            }
+            records_count, sql_structure_kind = estimate_sql_rows(
+                query=q,
+                threshold_records=profile.threshold_records,
+                ref_tables=ref_tables,
+                fallback_arg_count=fallback_arg_count,
+            )
+            breakdown["sql_structure"] = sql_structure_kind
 
         if records_count > profile.threshold_records:
             median = max(profile.median_records, 1.0)
