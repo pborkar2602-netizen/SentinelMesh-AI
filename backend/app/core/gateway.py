@@ -152,6 +152,11 @@ class GatewayCore:
         anomaly_score = 0
         anomaly_reasons: List[str] = []
         anomaly_breakdown: Dict[str, Any] = {}
+        is_proxy = (
+            bool(request.proxy_execution)
+            if getattr(request, "proxy_execution", None) is not None
+            else bool(getattr(settings, "PROXY_TOOL_EXECUTION", False))
+        )
         if settings.ENABLE_BASELINE_ANOMALY:
             session_events = list_session_events(request.session_id)
             anomaly_score, anomaly_reasons, anomaly_breakdown = AnomalyDetector.evaluate(
@@ -160,7 +165,8 @@ class GatewayCore:
                 arguments=request.arguments,
                 session_events=session_events,
                 sim_datetime=request.timestamp,
-                tool_result=getattr(request, "tool_result", None)
+                tool_result=getattr(request, "tool_result", None),
+                ignore_agent_claimed_count=is_proxy,
             )
             if anomaly_score > 0:
                 risk_breakdown["baseline_anomaly"] = anomaly_score

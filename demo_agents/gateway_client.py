@@ -18,28 +18,35 @@ class GatewayClient:
         agent_id: str = "hr-agent",
         session_id: Optional[str] = None,
         http_client: Optional[httpx.Client] = None,
-        async_http_client: Optional[httpx.AsyncClient] = None
+        async_http_client: Optional[httpx.AsyncClient] = None,
+        proxy_execution: Optional[bool] = None,
     ):
         self.gateway_url = gateway_url or os.getenv("SENTINEL_GATEWAY_URL", "http://localhost:8000/api/v1/gateway/execute")
         self.agent_id = agent_id
         self.session_id = session_id or f"sess-{uuid.uuid4().hex[:8]}"
         self.http_client = http_client
         self.async_http_client = async_http_client
+        self.proxy_execution = proxy_execution
 
     def intercept_and_execute(
         self,
         tool_name: str,
         arguments: Dict[str, Any],
-        tool_func: Callable[..., Any],
+        tool_func: Optional[Callable[..., Any]] = None,
         context_sources: Optional[List[Dict[str, Any]]] = None,
         task_description: Optional[str] = None,
         timestamp: Optional[datetime] = None,
-        approval_token: Optional[str] = None
+        approval_token: Optional[str] = None,
+        proxy_execution: Optional[bool] = None,
     ) -> Any:
         """
         Synchronous tool call interception.
+        When proxy_execution is True, the gateway runs the tool adapter itself and
+        measures the returned row count directly; otherwise, falls back to legacy
+        client-side execution + /tool-return reporting.
         """
         trace_id = f"trc-{uuid.uuid4().hex[:10]}"
+        use_proxy = proxy_execution if proxy_execution is not None else self.proxy_execution
         payload = {
             "trace_id": trace_id,
             "agent_id": self.agent_id,
@@ -49,8 +56,10 @@ class GatewayClient:
             "context_sources": context_sources or [],
             "task_description": task_description or "Execute autonomous task",
             "timestamp": (timestamp or datetime.now(timezone.utc)).isoformat(),
-            "approval_token": approval_token
+            "approval_token": approval_token,
         }
+        if use_proxy is not None:
+            payload["proxy_execution"] = use_proxy
 
         try:
             if self.http_client is not None:
@@ -97,13 +106,20 @@ class GatewayClient:
                 "reason": reason,
                 "approval_id": data.get("approval_id")
             }
+
+        # If gateway executed the tool in proxy mode, return the gateway's authoritative tool_output
+        if data.get("tool_output") is not None or data.get("measured_records_returned") is not None:
+            return data.get("tool_output")
+
         exec_args = data.get("redacted_arguments") or arguments if decision == "redact" else arguments
         if decision == "redact":
             print(f"  [GATEWAY REDACTION] Executing tool with privacy-redacted arguments: {exec_args}")
 
+        if tool_func is None:
+            return None
         result = tool_func(**exec_args)
 
-        # Count returned records
+        # Count returned records (legacy client-side reporting when proxy mode is off)
         records_returned = 0
         if isinstance(result, list):
             records_returned = len(result)
@@ -119,7 +135,7 @@ class GatewayClient:
         elif result is not None:
             records_returned = 1
 
-        # Post returned records to gateway /tool-return endpoint
+        # Post returned records to legacy gateway /tool-return endpoint
         return_url = self.gateway_url.replace("/execute", "/tool-return")
         return_payload = {
             "session_id": self.session_id,

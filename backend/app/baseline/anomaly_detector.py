@@ -487,7 +487,8 @@ class AnomalyDetector:
         arguments: Dict[str, Any],
         session_events: Optional[List[Dict[str, Any]]] = None,
         sim_datetime: Optional[datetime] = None,
-        tool_result: Optional[Any] = None
+        tool_result: Optional[Any] = None,
+        ignore_agent_claimed_count: bool = False,
     ) -> Tuple[int, List[str], Dict[str, Any]]:
         profile: AgentBaselineProfile = BaselineProfiler.get_profile(agent_id)
         reasons: List[str] = []
@@ -522,10 +523,11 @@ class AnomalyDetector:
         if records_count == 0.0 and tool_name == "db_query":
             q = str(arguments.get("query") or "")
             fallback_arg_count = 0.0
-            for k in ["records_returned", "records_accessed", "count", "rows_returned"]:
-                if k in arguments and isinstance(arguments[k], (int, float)):
-                    fallback_arg_count = float(arguments[k])
-                    break
+            if not ignore_agent_claimed_count:
+                for k in ["records_returned", "records_accessed", "count", "rows_returned"]:
+                    if k in arguments and isinstance(arguments[k], (int, float)):
+                        fallback_arg_count = float(arguments[k])
+                        break
             from backend.app.config import settings
             ref_tables = {
                 t.lower()
@@ -549,7 +551,7 @@ class AnomalyDetector:
                 ref_tables=ref_tables,
                 fallback_arg_count=fallback_arg_count,
             )
-            if fallback_arg_count > 0.0:
+            if fallback_arg_count > 0.0 and not ignore_agent_claimed_count:
                 records_count = max(records_count, fallback_arg_count)
             breakdown["sql_structure"] = sql_structure_kind
 
@@ -565,15 +567,22 @@ class AnomalyDetector:
         events = session_events or []
         
         # Build map of returned records from appended immutable tool_return events
+        # Gateway proxy measurements strictly take precedence over agent self-reported returns
         tool_returns_by_trace = {}
+        tool_returns_source_by_trace = {}
         for ev in events:
             if ev.get("tool_name") == "tool_return":
                 args = ev.get("arguments", {}) if isinstance(ev.get("arguments"), dict) else {}
                 rb = ev.get("risk_breakdown", {}) if isinstance(ev.get("risk_breakdown"), dict) else {}
                 ptrace = args.get("parent_trace_id") or rb.get("parent_trace_id")
                 recs = args.get("records_returned") if args.get("records_returned") is not None else rb.get("records_returned")
+                src = args.get("source") or rb.get("source") or "agent_reported"
                 if ptrace:
+                    existing_src = tool_returns_source_by_trace.get(ptrace)
+                    if existing_src == "gateway_proxy" and src != "gateway_proxy":
+                        continue
                     tool_returns_by_trace[ptrace] = float(recs or 0.0)
+                    tool_returns_source_by_trace[ptrace] = src
 
         past_session_records = 0.0
         tool_call_events = []

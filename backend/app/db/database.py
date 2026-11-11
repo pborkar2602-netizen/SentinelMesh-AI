@@ -65,11 +65,47 @@ def acquire_connection(conn: Optional[sqlite3.Connection] = None) -> Tuple[sqlit
         return conn, False
     return get_connection(), False
 
+def get_gateway_proxy_return_count(
+    session_id: str,
+    trace_id: Optional[str] = None,
+    conn: Optional[sqlite3.Connection] = None,
+) -> Optional[int]:
+    """
+    Returns the gateway-measured row count if a 'tool_return' event with source='gateway_proxy'
+    has already been recorded for (session_id, trace_id).
+    """
+    if not trace_id:
+        return None
+    conn, close = acquire_connection(conn)
+    try:
+        cur = conn.execute(
+            "SELECT arguments, risk_breakdown FROM audit_events WHERE session_id = ? AND tool_name = 'tool_return' ORDER BY id DESC",
+            (session_id,),
+        )
+        rows = cur.fetchall()
+        for r in rows:
+            try:
+                args = json.loads(r["arguments"]) if isinstance(r["arguments"], str) else (r["arguments"] or {})
+                rb = json.loads(r["risk_breakdown"]) if isinstance(r["risk_breakdown"], str) else (r["risk_breakdown"] or {})
+                ptrace = args.get("parent_trace_id") or rb.get("parent_trace_id")
+                src = args.get("source") or rb.get("source")
+                if ptrace == trace_id and src == "gateway_proxy":
+                    recs = args.get("records_returned") if args.get("records_returned") is not None else rb.get("records_returned")
+                    return int(recs or 0)
+            except Exception:
+                continue
+        return None
+    finally:
+        if close:
+            conn.close()
+
+
 def record_tool_return_event(
     session_id: str,
     trace_id: Optional[str] = None,
     records_returned: int = 0,
-    conn: Optional[sqlite3.Connection] = None
+    conn: Optional[sqlite3.Connection] = None,
+    source: str = "agent_reported",
 ) -> Tuple[int, str]:
     """
     Appends a new immutable 'tool_return' event to the cryptographic audit hash chain.
@@ -90,15 +126,17 @@ def record_tool_return_event(
         "tool_name": "tool_return",
         "arguments": {
             "parent_trace_id": trace_id,
-            "records_returned": records_returned
+            "records_returned": records_returned,
+            "source": source,
         },
         "context_sources": [],
         "decision": "recorded",
-        "reason": f"Tool execution completed: returned {records_returned} records.",
+        "reason": f"Tool execution completed ({source}): returned {records_returned} records.",
         "risk_score": 0,
         "risk_breakdown": {
             "records_returned": records_returned,
-            "parent_trace_id": trace_id
+            "parent_trace_id": trace_id,
+            "source": source,
         },
         "latency_ms": 0.0,
         "timestamp": now_iso
@@ -109,13 +147,39 @@ def record_tool_return_event(
         conn.close()
     return event_id, event_hash
 
+
 def update_session_event_return(
     session_id: str,
     trace_id: Optional[str] = None,
     records_returned: int = 0
-) -> None:
-    """Compatibility wrapper that appends a tool_return event rather than updating hashed rows."""
-    record_tool_return_event(session_id=session_id, trace_id=trace_id, records_returned=records_returned)
+) -> Dict[str, Any]:
+    """
+    Legacy compatibility wrapper that appends an agent-reported tool_return event
+    ONLY if the gateway did not already measure the return count via proxy execution.
+    """
+    proxy_count = get_gateway_proxy_return_count(session_id=session_id, trace_id=trace_id)
+    if proxy_count is not None:
+        logger.warning(
+            f"Ignoring agent-reported tool_return ({records_returned}) for trace_id={trace_id}; "
+            f"authoritative gateway proxy count ({proxy_count}) is already recorded."
+        )
+        return {
+            "accepted": False,
+            "source": "gateway_proxy",
+            "records_returned": proxy_count,
+            "agent_claimed_records": records_returned,
+        }
+    record_tool_return_event(
+        session_id=session_id,
+        trace_id=trace_id,
+        records_returned=records_returned,
+        source="agent_reported",
+    )
+    return {
+        "accepted": True,
+        "source": "agent_reported",
+        "records_returned": records_returned,
+    }
 
 def compute_event_hash(event_data: Dict[str, Any], prev_hash: str) -> str:
     """

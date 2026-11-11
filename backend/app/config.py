@@ -214,5 +214,10 @@ class Settings(BaseModel):
         default_factory=_load_sensitive_read_data_classes
     )
 
+    # Proxy Tool Execution Mode (Gateway executes tool adapters directly and counts rows from real result)
+    PROXY_TOOL_EXECUTION: bool = Field(
+        default_factory=lambda: os.getenv("SENTINEL_PROXY_TOOL_EXECUTION", "false").lower() in ("true", "1", "yes")
+    )
+
 
 settings = Settings()

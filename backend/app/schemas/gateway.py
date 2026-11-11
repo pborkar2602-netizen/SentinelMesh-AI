@@ -22,6 +22,7 @@ class ToolCallRequest(BaseModel):
     trace_id: str = Field(default_factory=lambda: f"trc-{uuid.uuid4().hex[:12]}", description="Distributed trace identifier")
     approval_token: str | None = Field(default=None, description="HMAC-signed approval token for pre-authorized or approved actions")
     tool_result: Any | None = Field(default=None, description="Actual tool response/result object measured by gateway")
+    proxy_execution: bool | None = Field(default=None, description="When True, gateway runs the tool adapter and counts rows from the real result")
 
 class GatewayDecisionResponse(BaseModel):
     trace_id: str
@@ -38,6 +39,8 @@ class GatewayDecisionResponse(BaseModel):
     event_hash: str = ""
     redacted_arguments: dict[str, Any] | None = None
     approval_id: str | None = None
+    tool_output: Any | None = None
+    measured_records_returned: int | None = None
 
 class AuditEventRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)

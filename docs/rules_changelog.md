@@ -93,3 +93,20 @@ This document logs all generic detection rules, policy engine heuristics, and th
   4. Added unit tests in `backend/tests/test_untasked_sensitive_reads.py` (14 test cases).
 - **Why**: Stopping an indirect prompt injection only at the egress step still exposes confidential records (credit cards, SSNs, salaries, credentials) to the compromised agent context. Comparing the requested sensitive data class against the original trusted user task before executing the read prevents exposure at the source while permitting legitimate task-aligned reads (such as vendor bank account lookups during invoice reconciliation).
 - **How It Generalizes**: Any `SELECT` query (including CTEs, subqueries, and `SELECT *` on sensitive tables) or `read_doc` accessing a configured sensitive data class inside a tainted session is deterministically checked against the task's domain keywords before execution. Across the 36-scenario `dev` set, `records_exposed_to_agent` dropped from **38 records across 6 attacks to 2 records across 2 attacks** (a 94.7% reduction in exposed records) and late detections dropped from **6 to 1**, with **0 new false positives** (`0/16` benign scenarios affected). Across the 12-scenario `dev_v1_heldout` (`dev (seen)`) set, `records_exposed_to_agent` dropped from **3 to 0** and late detections dropped from **3 to 0**, with **0 false positives**.
+
+
+---
+
+## Entry 10 — v2 Fix 4: Gateway-Measured Return Counts via Proxy Execution Mode
+- **Date**: 2026-11-11
+- **What Failed**: Previously, when tool execution occurred client-side in the agent process, cumulative session record counters relied on agent-reported row counts sent to `/api/v1/gateway/tool-return` (or `records_returned` in request arguments), which a compromised or lying agent could under-report to evade cumulative session thresholds.
+- **What Changed**:
+  1. Added `ToolProxy` (`backend/app/core/tool_proxy.py`) providing gateway-side proxy execution adapters for the four tools (`read_doc`, `db_query`, `send_email`, `external_api`) and deterministic row counting (`count_result_rows`) from the real tool output.
+  2. Added `PROXY_TOOL_EXECUTION` to `backend/app/config.py` and `proxy_execution`, `tool_output`, and `measured_records_returned` to the gateway request/response schemas (`backend/app/schemas/gateway.py`).
+  3. Updated `backend/app/api/gateway.py`, `backend/app/core/gateway.py`, `backend/app/baseline/anomaly_detector.py`, and `backend/app/db/database.py` so that in proxy mode:
+     - Agent self-reported row counts in `arguments` are ignored (`ignore_agent_claimed_count=True`).
+     - The gateway runs the tool adapter directly, counts rows from the real result, re-evaluates the behavioral baseline against the real result (withholding `tool_output` and escalating to `require_approval` if a bulk or cumulative threshold is breached), and appends an immutable `tool_return` event tagged `source="gateway_proxy"`.
+     - Legacy `/api/v1/gateway/tool-return` remains supported when proxy mode is off, but refuses to let an agent-reported count overwrite an authoritative `gateway_proxy` count (`status="ignored_in_proxy_mode"`).
+  4. Added unit tests in `backend/tests/test_proxy_tool_execution.py` verifying all four proxied tools, hash-chain integrity, legacy endpoint compatibility, and a lying agent that under-reports rows across calls while the gateway counts accurately and triggers `require_approval`.
+- **Why**: A security gateway cannot trust a compromised agent to self-report how many records a query returned. By proxying tool execution through the gateway and measuring row counts directly from the adapter response, cumulative and single-call volume enforcement becomes tamper-proof.
+- **How It Generalizes**: Any tool adapter registered with `ToolProxy` has its return payload measured server-side before results are released to the calling agent, preventing both single-call and multi-step under-reporting regardless of how the agent formats its request or `/tool-return` payload.
