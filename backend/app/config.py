@@ -1,5 +1,170 @@
+import json
 import os
+from typing import Dict, List
 from pydantic import BaseModel, Field
+
+
+DEFAULT_SENSITIVE_READ_DATA_CLASSES: Dict[str, Dict[str, List[str]]] = {
+    "ssn": {
+        "columns": ["ssn", "national_id", "tax_id", "social_security", "sin", "tin"],
+        "tables": [],
+        "file_patterns": ["ssn", "national_id", "tax_id", "w2", "w-2", "1099"],
+        "task_keywords": [
+            "ssn",
+            "social security",
+            "national id",
+            "national_id",
+            "tax id",
+            "tax_id",
+            "tax",
+            "identity verification",
+            "background check",
+            "onboarding",
+        ],
+    },
+    "card_number": {
+        "columns": [
+            "card_number",
+            "credit_card",
+            "cc_number",
+            "cvv",
+            "cvc",
+            "pan",
+            "card_expiry",
+            "cardholder",
+        ],
+        "tables": ["payment_methods", "credit_cards", "payment_cards"],
+        "file_patterns": ["card_number", "credit_card", "payment_card", "pci_dump"],
+        "task_keywords": [
+            "card",
+            "credit card",
+            "payment method",
+            "payment_methods",
+            "chargeback",
+            "billing card",
+            "pan",
+            "cvv",
+            "pci",
+        ],
+    },
+    "salary": {
+        "columns": [
+            "salary",
+            "compensation",
+            "base_pay",
+            "bonus",
+            "wage",
+            "pay_rate",
+            "annual_pay",
+            "comp_band",
+        ],
+        "tables": ["salaries", "payroll", "compensation"],
+        "file_patterns": ["salary", "salaries", "payroll", "compensation_dump"],
+        "task_keywords": [
+            "salary",
+            "salaries",
+            "compensation",
+            "payroll",
+            "pay",
+            "wage",
+            "bonus",
+            "stipend",
+            "remuneration",
+            "total rewards",
+        ],
+    },
+    "bank_account": {
+        "columns": [
+            "bank_account",
+            "account_number",
+            "routing_number",
+            "bank_routing",
+            "wire_routing",
+            "iban",
+            "swift_code",
+            "ach_routing",
+        ],
+        "tables": ["bank_accounts", "wire_transfers"],
+        "file_patterns": ["bank_account", "iban", "wire_routing", "ach_dump"],
+        "task_keywords": [
+            "bank",
+            "routing",
+            "account",
+            "iban",
+            "wire",
+            "ach",
+            "disbursement",
+            "payout",
+            "vendor",
+            "invoice",
+            "reconcile",
+            "reconciliation",
+            "remittance",
+            "settlement",
+            "payment",
+        ],
+    },
+    "credentials": {
+        "columns": [
+            "password_hash",
+            "password",
+            "passwd",
+            "api_key",
+            "secret_key",
+            "private_key",
+            "access_token",
+            "refresh_token",
+            "client_secret",
+            "mfa_secret",
+            "session_token",
+            "ssh_key",
+        ],
+        "tables": ["credentials", "api_keys", "secrets", "auth_tokens", "passwords"],
+        "file_patterns": [
+            ".aws/credentials",
+            "credentials",
+            "secrets.env",
+            ".env",
+            "id_rsa",
+            "private_key",
+            ".pem",
+            "shadow",
+            "passwd",
+            "htpasswd",
+            "keystore",
+            "api_keys",
+        ],
+        "task_keywords": [
+            "credential",
+            "credentials",
+            "password",
+            "password_hash",
+            "secret",
+            "secrets",
+            "api key",
+            "api_key",
+            "token",
+            "key rotation",
+            "rotate key",
+            "ssh key",
+            "certificate",
+            "vault",
+        ],
+    },
+}
+
+
+def _load_sensitive_read_data_classes() -> Dict[str, Dict[str, List[str]]]:
+    raw = os.getenv("SENTINEL_SENSITIVE_READ_DATA_CLASSES", "").strip()
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            pass
+    return DEFAULT_SENSITIVE_READ_DATA_CLASSES
+
 
 class Settings(BaseModel):
     PROJECT_NAME: str = "SentinelMesh AI"
@@ -43,5 +208,11 @@ class Settings(BaseModel):
             if c.strip()
         ]
     )
+
+    # Configurable Sensitive Read Data Classes & Task-Relevance Rules (Pre-Read Protection)
+    SENSITIVE_READ_DATA_CLASSES: Dict[str, Dict[str, List[str]]] = Field(
+        default_factory=_load_sensitive_read_data_classes
+    )
+
 
 settings = Settings()

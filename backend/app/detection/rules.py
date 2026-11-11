@@ -569,6 +569,188 @@ def analyze_sql_sensitive_write(
     return result
 
 
+_GENERIC_TASK_PLACEHOLDERS = {
+    "",
+    "execute autonomous task",
+    "autonomous session task",
+}
+
+
+def _match_identifier_against_patterns(ident: str, patterns: List[str]) -> bool:
+    c = ident.lower().strip().strip('"').strip("`").strip("[]")
+    if not c:
+        return False
+    c_tokens = set(c.split("_"))
+    for pat in patterns:
+        p = pat.lower().strip()
+        if not p:
+            continue
+        if c == p or p in c_tokens or c.endswith("_" + p) or c.startswith(p + "_"):
+            return True
+    return False
+
+
+def _is_data_class_relevant_to_task(task_description: str, task_keywords: List[str]) -> bool:
+    task_low = task_description.lower().strip()
+    if not task_low:
+        return False
+    for kw in task_keywords:
+        k = kw.lower().strip()
+        if not k:
+            continue
+        if re.search(rf"\b{re.escape(k)}s?\b", task_low):
+            return True
+    return False
+
+
+def analyze_untasked_sensitive_read(
+    tool_name: str,
+    arguments: Dict[str, Any],
+    task_description: Optional[str],
+    data_classes: Optional[Dict[str, Dict[str, List[str]]]] = None,
+) -> Dict[str, Any]:
+    """
+    Deterministic, configurable pre-read check (keyword and column/path based, no LLM):
+    Inspects a `db_query` (SELECT via sqlglot) or `read_doc` (file_path) to determine
+    whether it accesses any configured sensitive data class (ssn, card_number, salary,
+    bank_account, credentials) that is NOT mentioned in `task_description`.
+    """
+    result: Dict[str, Any] = {
+        "is_read_operation": False,
+        "matched_data_classes": [],
+        "untasked_data_classes": [],
+        "matched_targets": {},
+        "has_untasked_sensitive_read": False,
+    }
+    task_clean = (task_description or "").strip()
+    if task_clean.lower() in _GENERIC_TASK_PLACEHOLDERS:
+        return result
+
+    if data_classes is None:
+        from backend.app.config import settings, DEFAULT_SENSITIVE_READ_DATA_CLASSES
+        data_classes = getattr(settings, "SENSITIVE_READ_DATA_CLASSES", DEFAULT_SENSITIVE_READ_DATA_CLASSES)
+
+    matched_classes: List[str] = []
+    matched_targets: Dict[str, List[str]] = {}
+
+    if tool_name == "db_query":
+        query_str = str((arguments or {}).get("query") or (arguments or {}).get("sql") or "").strip()
+        if not query_str:
+            return result
+
+        statements: Optional[List[Optional[exp.Expression]]] = None
+        for dialect in ("sqlite", "postgres", "mysql", None):
+            try:
+                parsed = sqlglot.parse(query_str, read=dialect, error_level=sqlglot.ErrorLevel.RAISE)
+                statements = [s for s in parsed if s is not None]
+                if statements:
+                    break
+            except SqlglotError:
+                continue
+            except Exception:
+                continue
+
+        if not statements:
+            return result
+
+        select_cols: List[str] = []
+        queried_tables: List[str] = []
+        has_star = False
+        has_select_stmt = False
+
+        for stmt in statements:
+            if not isinstance(stmt, (exp.Select, exp.Union)):
+                continue
+            has_select_stmt = True
+            for sel in stmt.find_all(exp.Select):
+                for proj in sel.expressions or []:
+                    if isinstance(proj, exp.Star) or proj.find(exp.Star) is not None:
+                        has_star = True
+                    for col in proj.find_all(exp.Column):
+                        if col.name:
+                            c_clean = col.name.lower().strip().strip('"').strip("`").strip("[]")
+                            if c_clean and c_clean not in select_cols:
+                                select_cols.append(c_clean)
+            for tbl in stmt.find_all(exp.Table):
+                if tbl.name:
+                    t_clean = tbl.name.lower().strip().strip('"').strip("`").strip("[]")
+                    if t_clean and t_clean not in queried_tables:
+                        queried_tables.append(t_clean)
+
+        if not has_select_stmt:
+            return result
+
+        result["is_read_operation"] = True
+
+        for cls_name, cls_cfg in data_classes.items():
+            cfg_cols = cls_cfg.get("columns", [])
+            cfg_tables = cls_cfg.get("tables", [])
+            hits: List[str] = []
+
+            for c in select_cols:
+                if _match_identifier_against_patterns(c, cfg_cols):
+                    hits.append(f"column:{c}")
+
+            for t in queried_tables:
+                if _match_identifier_against_patterns(t, cfg_tables) or (
+                    has_star and _match_identifier_against_patterns(t, cfg_cols)
+                ):
+                    hits.append(f"table:{t}")
+
+            if hits:
+                matched_classes.append(cls_name)
+                matched_targets[cls_name] = hits
+
+    elif tool_name == "read_doc":
+        file_path = str((arguments or {}).get("file_path") or (arguments or {}).get("path") or "").strip()
+        if not file_path:
+            return result
+
+        result["is_read_operation"] = True
+        norm_path = file_path.replace("\\", "/").lower().strip()
+        basename = norm_path.split("/")[-1]
+
+        for cls_name, cls_cfg in data_classes.items():
+            file_pats = cls_cfg.get("file_patterns", [])
+            hits = []
+            for fp in file_pats:
+                p = fp.replace("\\", "/").lower().strip()
+                if not p:
+                    continue
+                if p.startswith("."):
+                    if norm_path.endswith(p) or basename == p.lstrip("/") or p in norm_path:
+                        hits.append(f"path:{file_path}")
+                        break
+                else:
+                    if (
+                        p in norm_path
+                        or basename == p
+                        or basename.startswith(p + ".")
+                        or basename.startswith(p + "_")
+                    ):
+                        hits.append(f"path:{file_path}")
+                        break
+            if hits:
+                matched_classes.append(cls_name)
+                matched_targets[cls_name] = hits
+
+    if not matched_classes:
+        return result
+
+    untasked: List[str] = []
+    for cls_name in matched_classes:
+        cls_cfg = data_classes.get(cls_name, {})
+        task_kws = cls_cfg.get("task_keywords", [])
+        if not _is_data_class_relevant_to_task(task_clean, task_kws):
+            untasked.append(cls_name)
+
+    result["matched_data_classes"] = matched_classes
+    result["untasked_data_classes"] = untasked
+    result["matched_targets"] = matched_targets
+    result["has_untasked_sensitive_read"] = len(untasked) > 0
+    return result
+
+
 def run_all_detectors(
     tool_name: str,
     arguments: Dict[str, Any],

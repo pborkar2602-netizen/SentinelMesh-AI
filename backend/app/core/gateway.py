@@ -212,6 +212,7 @@ class GatewayCore:
 
         # 9. Policy Engine Evaluation (Enforce vs Monitor mode, with Redact & Judge hooks)
         t_pol_start = time.perf_counter()
+        session_tainted_before_call = bool(is_tainted and not newly_tainted)
         if settings.ENABLE_POLICY_ENGINE:
             decision, reason = PolicyEngine.evaluate_policy(
                 tool_name=request.tool_name,
@@ -225,10 +226,15 @@ class GatewayCore:
                 anomaly_score=anomaly_score,
                 anomaly_reasons=anomaly_reasons,
                 session_id=request.session_id,
+                task_description=request.task_description,
+                session_tainted_before_call=session_tainted_before_call,
             )
             if decision == "require_approval" and "Sensitive Column Write Protection" in reason:
                 risk_score = max(risk_score, 75)
                 risk_breakdown["sensitive_column_write_policy"] = True
+            elif decision == "require_approval" and "Pre-Read Sensitive Data Protection" in reason:
+                risk_score = max(risk_score, 75)
+                risk_breakdown["untasked_sensitive_read_policy"] = True
         else:
             decision, reason = "allow", "Policy engine disabled (ablation mode)"
         policy_ms = round((time.perf_counter() - t_pol_start) * 1000, 3)

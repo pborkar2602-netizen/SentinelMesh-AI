@@ -549,6 +549,8 @@ class AnomalyDetector:
                 ref_tables=ref_tables,
                 fallback_arg_count=fallback_arg_count,
             )
+            if fallback_arg_count > 0.0:
+                records_count = max(records_count, fallback_arg_count)
             breakdown["sql_structure"] = sql_structure_kind
 
         if records_count > profile.threshold_records:

@@ -45,6 +45,8 @@ class PolicyEngine:
         anomaly_reasons: Optional[List[str]] = None,
         session_id: Optional[str] = None,
         untrusted_literals: Optional[Set[str]] = None,
+        task_description: Optional[str] = None,
+        session_tainted_before_call: Optional[bool] = None,
     ) -> Tuple[str, str]:
         """
         Evaluates active security policies against session context, detection findings,
@@ -223,6 +225,40 @@ class PolicyEngine:
                     f"Security Rule Alert [MONITOR MODE]: Would have blocked on {top.name.replace('_', ' ').title()} "
                     f"({top.evidence}). Action permitted for monitoring."
                 )
+
+        # Policy Rule 3b: Pre-Read Sensitive Data Class Protection in Tainted Sessions
+        # (Runs after critical security blocks like SQLi/path traversal so hard security blocks take precedence,
+        #  and before execution so untasked reads of sensitive data classes require human approval prior to exposure.)
+        if tool_name in ("db_query", "read_doc") and is_tainted:
+            effective_tainted = is_tainted
+            if tool_name == "read_doc":
+                target_file = str((arguments or {}).get("file_path") or (arguments or {}).get("path") or "").strip()
+                other_sources = [s for s in (tainted_by or []) if s and s != target_file]
+                effective_tainted = (
+                    bool(session_tainted_before_call)
+                    or len(other_sources) > 0
+                    or (is_tainted and not tainted_by)
+                )
+            if effective_tainted:
+                from backend.app.detection.rules import analyze_untasked_sensitive_read
+                read_check = analyze_untasked_sensitive_read(
+                    tool_name=tool_name,
+                    arguments=arguments,
+                    task_description=task_description,
+                )
+                if read_check.get("has_untasked_sensitive_read"):
+                    untasked_cls = ", ".join(read_check.get("untasked_data_classes") or [])
+                    sources_str = ", ".join(tainted_by) if tainted_by else "untrusted context"
+                    if mode == "enforce":
+                        return (
+                            "require_approval",
+                            f"Policy 'Pre-Read Sensitive Data Protection': Tainted session [{sources_str}] attempted to read sensitive data class(es) [{untasked_cls}] not relevant to agent task. Human approval required before read."
+                        )
+                    else:
+                        return (
+                            "would_block",
+                            f"Policy Alert [MONITOR MODE]: Tainted session [{sources_str}] attempted to read untasked sensitive data class(es) [{untasked_cls}]."
+                        )
 
         # Policy Rule 4: Intent Judge Divergence Escalation (Mismatch >= 70)
         if judge_verdict and not getattr(judge_verdict, "is_aligned", True) and getattr(judge_verdict, "mismatch_score", 0) >= 70:
