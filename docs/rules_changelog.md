@@ -125,3 +125,16 @@ This document logs all generic detection rules, policy engine heuristics, and th
   5. Added unit tests in `backend/tests/test_judge_modes.py`.
 - **Why**: Synthetic stub verdicts do not measure real LLM classification behavior or latency and must never be reported as headline benchmark or ablation evidence.
 - **How It Generalizes**: Headline benchmark and ablation runs operate strictly on deterministic core layers unless `SENTINEL_JUDGE_API_KEY` or verified `recorded_llm` cassettes are present.
+
+
+---
+
+## Entry 12 — v2 Fix 6: Robustness Variants & Deobfuscation Normalization
+- **Date**: 2026-11-11
+- **What Failed**: Obfuscated untrusted payloads (zero-width characters `\u200b`/`\u200c`/`\u200d`/`\ufeff` or inline base64-encoded strings) and multi-document split instructions could potentially evade literal extraction or identifier matching if text is not normalized prior to analysis.
+- **What Changed**:
+  1. Added `normalize_and_deobfuscate_text` in `backend/app/core/taint_tracker.py` to strip zero-width characters (`[\u200b\u200c\u200d\ufeff\u2060\u00ad]`) and decode inline base64 UTF-8 segments before recording untrusted provenance literals or checking prompt injection patterns.
+  2. Stripped zero-width characters prior to SQL AST parsing and file path inspection in `backend/app/detection/rules.py` and `backend/app/baseline/anomaly_detector.py`.
+  3. Added `scripts/generate_robustness_variants.py` and `scripts/run_variants_benchmark.py` generating and evaluating 60 robustness variant scenarios across 5 variant families (`column_names`, `wording`, `obfuscation_b64_zwsp`, `destination`, `split_documents` — 5 variants for each of the 12 `dev_v1_heldout` scenarios) under `benchmark/scenarios/variants/<family>/`, reported separately from the main sets.
+- **Why**: Attackers routinely vary column names, reword instructions, insert zero-width characters or base64 encoding, switch destinations, or split instructions across multiple documents.
+- **How It Generalizes**: Normalization at the ingestion and SQL parsing boundary strips zero-width characters and decodes base64 payloads before AST and provenance checks run, while session taint and value provenance persist across any number of sequential document reads. All 5 variant families (60 scenarios total) achieved **100.0% detection (30/30), 0.0% false positives (0/30), and 0 exposed/exfiltrated records**.

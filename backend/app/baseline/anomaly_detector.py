@@ -90,7 +90,10 @@ def parse_single_sql_statement(query: str) -> Optional[exp.Expression]:
     """
     if not query or not query.strip():
         return None
-    stripped = query.strip()
+    from backend.app.core.taint_tracker import _ZWSP_RE
+    stripped = _ZWSP_RE.sub("", query).strip()
+    if not stripped:
+        return None
     if "/*" in stripped and "*/" not in stripped:
         logger.warning("Unclosed SQL block comment detected; treating as unparseable: %s", query)
         return None

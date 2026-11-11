@@ -1,3 +1,4 @@
+import base64
 import re
 from typing import Dict, List, Optional, Set, Tuple, Any
 from backend.app.schemas.gateway import ContextSource
@@ -6,6 +7,33 @@ from backend.app.db.database import get_session, mark_session_tainted
 # In-memory session stores for value-provenance tracking of untrusted content
 _SESSION_UNTRUSTED_LITERALS: Dict[str, Set[str]] = {}
 _SESSION_UNTRUSTED_SNIPPETS: Dict[str, List[str]] = {}
+
+_ZWSP_RE = re.compile(r"[\u200b\u200c\u200d\ufeff\u2060\u00ad]")
+_BASE64_CANDIDATE_RE = re.compile(r"\b[A-Za-z0-9+/]{16,}={0,2}\b")
+
+
+def normalize_and_deobfuscate_text(text: str) -> str:
+    """
+    Strips zero-width characters and decodes inline base64-encoded UTF-8 payloads
+    so provenance tracking and rule detectors cannot be bypassed by obfuscation.
+    """
+    if not text:
+        return ""
+    cleaned = _ZWSP_RE.sub("", text)
+    decoded_parts: List[str] = [cleaned]
+    for m in _BASE64_CANDIDATE_RE.finditer(cleaned):
+        b64_tok = m.group(0)
+        if len(b64_tok) % 4 != 0:
+            continue
+        try:
+            raw_bytes = base64.b64decode(b64_tok, validate=True)
+            decoded_str = raw_bytes.decode("utf-8")
+            if decoded_str and all(c.isprintable() or c in "\r\n\t" for c in decoded_str):
+                decoded_parts.append(_ZWSP_RE.sub("", decoded_str))
+        except Exception:
+            continue
+    return " ".join(decoded_parts)
+
 
 _STOP_WORDS = {
     "the", "and", "for", "with", "from", "into", "that", "this", "please",
@@ -29,20 +57,21 @@ def extract_literals_from_untrusted_text(text: str) -> Set[str]:
     """
     if not text or not text.strip():
         return set()
+    norm_text = normalize_and_deobfuscate_text(text)
     extracted: Set[str] = set()
 
-    for m in _QUOTED_STR_RE.finditer(text):
+    for m in _QUOTED_STR_RE.finditer(norm_text):
         val = m.group(1).strip()
         if len(val) >= 2 and val.lower() not in _STOP_WORDS:
             extracted.add(val.lower())
 
-    for m in _EMAIL_RE.finditer(text):
+    for m in _EMAIL_RE.finditer(norm_text):
         extracted.add(m.group(0).strip().lower().rstrip(".,;:"))
 
-    for m in _URL_RE.finditer(text):
+    for m in _URL_RE.finditer(norm_text):
         extracted.add(m.group(0).strip().lower().rstrip(".,;:"))
 
-    for m in _TOKEN_RE.finditer(text):
+    for m in _TOKEN_RE.finditer(norm_text):
         tok = m.group(0).strip().rstrip(".,;:")
         tok_low = tok.lower()
         if len(tok_low) >= 3 and tok_low not in _STOP_WORDS:
@@ -75,8 +104,9 @@ def record_untrusted_literals(
             else (getattr(source, "snippet", None) or getattr(source, "content", None) or "")
         )
         if is_untrusted and snippet:
-            lit_set.update(extract_literals_from_untrusted_text(str(snippet)))
-            snip_low = str(snippet).lower()
+            norm_snip = normalize_and_deobfuscate_text(str(snippet))
+            lit_set.update(extract_literals_from_untrusted_text(norm_snip))
+            snip_low = norm_snip.lower()
             if snip_low not in snip_list:
                 snip_list.append(snip_low)
 
@@ -112,7 +142,7 @@ def value_appears_in_untrusted_session(
     """
     if not value:
         return False
-    val_clean = str(value).strip().strip("'\"").lower()
+    val_clean = _ZWSP_RE.sub("", str(value)).strip().strip("'\"").lower()
     if len(val_clean) < 2 or val_clean in _STOP_WORDS:
         return False
 

@@ -247,14 +247,15 @@ def check_credential_leak(tool_name: str, arguments: Dict[str, Any]) -> List[Fin
 
 def check_prompt_injection(context_sources: List[Any], arguments: Dict[str, Any]) -> List[Finding]:
     findings = []
-    # Inspect arguments and context snippets
+    from backend.app.core.taint_tracker import normalize_and_deobfuscate_text
+    # Inspect arguments and context snippets (with zero-width and base64 deobfuscation)
     text_snippets = []
     for ctx in context_sources:
         if isinstance(ctx, dict):
-            text_snippets.append(ctx.get("snippet") or "")
+            text_snippets.append(normalize_and_deobfuscate_text(str(ctx.get("snippet") or "")))
         else:
-            text_snippets.append(getattr(ctx, "snippet", "") or "")
-    text_snippets.extend([str(v) for v in arguments.values()])
+            text_snippets.append(normalize_and_deobfuscate_text(str(getattr(ctx, "snippet", "") or "")))
+    text_snippets.extend([normalize_and_deobfuscate_text(str(v)) for v in arguments.values()])
 
     combined_text = " ".join(text_snippets)
     for pat in PROMPT_INJECTION_PATTERNS:
@@ -423,6 +424,9 @@ def analyze_sql_sensitive_write(
     }
     if not query or not query.strip():
         return result
+
+    from backend.app.core.taint_tracker import _ZWSP_RE
+    query = _ZWSP_RE.sub("", query)
 
     if sensitive_columns is None:
         from backend.app.config import settings
@@ -634,7 +638,8 @@ def analyze_untasked_sensitive_read(
     matched_targets: Dict[str, List[str]] = {}
 
     if tool_name == "db_query":
-        query_str = str((arguments or {}).get("query") or (arguments or {}).get("sql") or "").strip()
+        from backend.app.core.taint_tracker import _ZWSP_RE
+        query_str = _ZWSP_RE.sub("", str((arguments or {}).get("query") or (arguments or {}).get("sql") or "")).strip()
         if not query_str:
             return result
 
@@ -702,7 +707,8 @@ def analyze_untasked_sensitive_read(
                 matched_targets[cls_name] = hits
 
     elif tool_name == "read_doc":
-        file_path = str((arguments or {}).get("file_path") or (arguments or {}).get("path") or "").strip()
+        from backend.app.core.taint_tracker import _ZWSP_RE
+        file_path = _ZWSP_RE.sub("", str((arguments or {}).get("file_path") or (arguments or {}).get("path") or "")).strip()
         if not file_path:
             return result
 
