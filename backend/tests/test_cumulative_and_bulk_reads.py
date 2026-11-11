@@ -190,3 +190,48 @@ def test_hr_agent_session_reviewing_10_candidates():
             "risk_breakdown": {"parent_trace_id": f"tr-cand-{i}", "records_returned": 1},
             "timestamp": call_time.isoformat()
         })
+
+def test_hr_agent_11th_candidate_variant_threshold_breach():
+    """
+    Documented Known Limitation: Replays exactly 11 candidate reads for hr-agent.
+    Under the principled baseline distribution (min-spread floor = 4.0, upper threshold = 12.75 records),
+    11 records does not exceed 12.75, so the 11th candidate read receives an 'allow' decision
+    (score < 70) rather than escalating to require_approval.
+    """
+    agent_id = "hr-agent"
+    base_time = datetime(2026, 11, 4, 14, 0, 0, tzinfo=timezone.utc)
+    events = []
+    final_score = 0
+    final_reasons = []
+    for i in range(1, 12):
+        call_time = base_time + timedelta(minutes=i * 2)
+        q = f"SELECT id, name, resume_text, email FROM candidates WHERE id = {i}"
+        score, reasons, bd = AnomalyDetector.evaluate(
+            agent_id=agent_id,
+            tool_name="db_query",
+            arguments={"query": q, "records_returned": 1},
+            session_events=list(events),
+            sim_datetime=call_time
+        )
+        if i == 11:
+            final_score = score
+            final_reasons = reasons
+        events.append({
+            "trace_id": f"tr-cand-{i}",
+            "tool_name": "db_query",
+            "arguments": {"query": q},
+            "records_accessed": 1,
+            "records_returned": 1,
+            "risk_breakdown": {"records_returned": 1},
+            "timestamp": call_time.isoformat()
+        })
+        events.append({
+            "trace_id": f"ret-cand-{i}",
+            "tool_name": "tool_return",
+            "arguments": {"parent_trace_id": f"tr-cand-{i}", "records_returned": 1},
+            "risk_breakdown": {"parent_trace_id": f"tr-cand-{i}", "records_returned": 1},
+            "timestamp": call_time.isoformat()
+        })
+    # Documented known limitation: 11 records is under the 12.75 threshold, so score remains < 70 (allow)
+    assert final_score < 70, f"Expected 11th candidate to evaluate as allow (< 70) under known limitation, got {final_score}"
+

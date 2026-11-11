@@ -7,6 +7,7 @@ import uuid
 import subprocess
 from pathlib import Path
 from typing import List, Dict, Any
+from collections import Counter
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -41,19 +42,17 @@ def run_split_1000_calls(client: httpx.Client, execute_url: str, run_num: int) -
     benign_latencies: List[float] = []
     flagged_latencies: List[float] = []
     all_latencies: List[float] = []
+    decisions_counter = Counter()
 
-    # 800 benign calls, 200 flagged calls (20% flagged)
-    # Interleaved: 4 benign, 1 flagged
     for i in range(1000):
-        is_flagged = (i % 5 == 0)
-        session_id = f"sess-split-r{run_num}-{i // 20}"
+        # Workload distribution: 80% scoped employee queries, 20% unconstrained candidate queries with untrusted context
+        is_attack_workload = (i % 5 == 0)
 
-        if not is_flagged:
-            # Benign: targeted employee query with WHERE clause
+        if not is_attack_workload:
             payload = {
                 "trace_id": f"trc-ben-{run_num}-{i}",
                 "agent_id": "hr-agent",
-                "session_id": session_id,
+                "session_id": f"sess-benign-r{run_num}-{i}",
                 "tool_name": "db_query",
                 "arguments": {"query": f"SELECT employee_id, full_name FROM employees WHERE employee_id = {100 + (i % 50)}"},
                 "context_sources": [],
@@ -61,11 +60,10 @@ def run_split_1000_calls(client: httpx.Client, execute_url: str, run_num: int) -
                 "timestamp": "2026-10-14T14:00:00Z"
             }
         else:
-            # Flagged: unconstrained bulk scan on candidate salaries (triggers block/approval)
             payload = {
                 "trace_id": f"trc-flg-{run_num}-{i}",
                 "agent_id": "hr-agent",
-                "session_id": session_id,
+                "session_id": f"sess-flagged-r{run_num}-{i}",
                 "tool_name": "db_query",
                 "arguments": {"query": "SELECT * FROM candidates"},
                 "context_sources": [{"source_id": "attacker.txt", "source_type": "document", "is_untrusted": True}],
@@ -80,7 +78,12 @@ def run_split_1000_calls(client: httpx.Client, execute_url: str, run_num: int) -
         rt_ms = round((t1 - t0) * 1000.0, 2)
         all_latencies.append(rt_ms)
 
-        if is_flagged:
+        # Count flagged calls strictly by Gateway's REAL DECISION (not by input type)
+        data = resp.json()
+        real_decision = data.get("decision", "allow")
+        decisions_counter[real_decision] += 1
+
+        if real_decision != "allow":
             flagged_latencies.append(rt_ms)
         else:
             benign_latencies.append(rt_ms)
@@ -88,16 +91,21 @@ def run_split_1000_calls(client: httpx.Client, execute_url: str, run_num: int) -
         if (i + 1) % 250 == 0:
             print(f"  Run #{run_num}: Processed {i + 1} / 1,000 calls...", flush=True)
 
+    print(f"  Run #{run_num} Real Gateway Decisions: {dict(decisions_counter)}")
+    print(f"  Classified by Real Gateway Decision: Flagged={len(flagged_latencies)}, Benign={len(benign_latencies)}")
+
     return {
+        "run_num": run_num,
+        "decisions": dict(decisions_counter),
+        "flagged_count": len(flagged_latencies),
+        "benign_count": len(benign_latencies),
         "overall": calc_stats(all_latencies),
         "benign": calc_stats(benign_latencies),
         "flagged": calc_stats(flagged_latencies),
-        "raw_benign": benign_latencies,
-        "raw_flagged": flagged_latencies
     }
 
 def main():
-    port = 8768
+    port = 8770
     server_url = f"http://127.0.0.1:{port}"
     execute_url = f"{server_url}/api/v1/gateway/execute"
     health_url = f"{server_url}/health"
@@ -105,13 +113,15 @@ def main():
     env = os.environ.copy()
     env["PYTHONPATH"] = str(PROJECT_ROOT)
     env["DEMO_MODE"] = "true"
+    env["BENCHMARK_MODE"] = "true"
     env["SENTINEL_JWT_SECRET"] = "dev-secret-jwt-key-for-local-benchmark-only"
     env["SENTINEL_TOKEN_SECRET"] = "dev-secret-token-key-for-local-benchmark-only"
 
-    print("=" * 90)
-    print("STARTING LATENCY BENCHMARK: 3 x 1,000 CALLS (SPLIT BENIGN VS FLAGGED)")
-    print("Definition: 800 Benign (constrained WHERE query), 200 Flagged (unconstrained tainted query)")
-    print("=" * 90)
+    print("=" * 95)
+    print("STARTING LATENCY BENCHMARK: 3 x 1,000 REAL HTTP CALLS")
+    print("Flagged Classification Rule: Real Gateway Decision != 'allow' (block / require_approval / redact)")
+    print("Workload: 80% Scoped Employee DB Queries (clean context), 20% Unconstrained Candidate DB Queries (tainted)")
+    print("=" * 95)
 
     init_db()
 
@@ -153,12 +163,11 @@ def main():
         print("Gateway HTTP server online and healthy.")
 
         runs_data = []
-        cold_start_latencies = []
 
         with httpx.Client(timeout=30.0) as client:
             # Measure cold-start first call before any warm-up
             t_cs = time.perf_counter()
-            client.post(execute_url, json={
+            cs_res = client.post(execute_url, json={
                 "trace_id": "coldstart-first-call",
                 "agent_id": "hr-agent",
                 "session_id": "sess-coldstart",
@@ -169,7 +178,7 @@ def main():
                 "timestamp": "2026-10-14T14:00:00Z"
             })
             cold_start_ms = round((time.perf_counter() - t_cs) * 1000.0, 2)
-            print(f"Measured Cold-Start Initial Call: {cold_start_ms:.2f} ms")
+            print(f"Measured Cold-Start Initial Call: {cold_start_ms:.2f} ms (Decision: {cs_res.json().get('decision')})")
 
             print("Executing 50 warm-up calls...", flush=True)
             for i in range(50):
@@ -188,11 +197,15 @@ def main():
                 res = run_split_1000_calls(client, execute_url, run_num)
                 runs_data.append(res)
 
-        print("\n" + "=" * 90)
-        print("THREE-RUN LATENCY SUMMARY: BENIGN VS FLAGGED CALLS (N = 1,000 / run)")
-        print("=" * 90)
+        print("\n" + "=" * 95)
+        print("THREE-RUN LATENCY SUMMARY: CLASSIFIED BY REAL GATEWAY DECISION (N = 1,000 / run)")
+        print("=" * 95)
+        print(f"Run 1 Real Gateway Decisions: {runs_data[0]['decisions']} (Flagged: {runs_data[0]['flagged_count']}, Benign: {runs_data[0]['benign_count']})")
+        print(f"Run 2 Real Gateway Decisions: {runs_data[1]['decisions']} (Flagged: {runs_data[1]['flagged_count']}, Benign: {runs_data[1]['benign_count']})")
+        print(f"Run 3 Real Gateway Decisions: {runs_data[2]['decisions']} (Flagged: {runs_data[2]['flagged_count']}, Benign: {runs_data[2]['benign_count']})")
+        print("-" * 95)
         print(f"{'Category / Metric':<32} | {'Run 1':<10} | {'Run 2':<10} | {'Run 3':<10} | {'Median':<10} | {'Range (Min - Max)':<18}")
-        print("-" * 90)
+        print("-" * 95)
         print(f"{'COLD-START INITIAL CALL':<32} | {cold_start_ms:>7.2f} ms | {'--':>10} | {'--':>10} | {cold_start_ms:>7.2f} ms | {cold_start_ms:.2f} ms")
 
         categories = [
@@ -216,7 +229,7 @@ def main():
             rng = f"{min(vals):.2f} - {max(vals):.2f}"
             print(f"{label:<32} | {v1:>7.2f} ms | {v2:>7.2f} ms | {v3:>7.2f} ms | {med:>7.2f} ms | {rng}")
 
-        print("=" * 90)
+        print("=" * 95)
 
     finally:
         proc.kill()
