@@ -53,6 +53,6 @@ This document logs all generic detection rules, policy engine heuristics, and th
 ### Entry 6: Configurable Privileged Database Mutation Tables & Authoritative Server Timestamping
 - **Problem Observed**: Privileged state modifications (`UPDATE system_configs`, `UPDATE users`, etc.) were checked against hardcoded table names in rules code. Additionally, outside benchmark mode, client-supplied timestamps posed replay and temporal spoofing risks.
 - **Generic Change**:
-  1. Privileged table enforcement now reads from `SENTINEL_PRIVILEGED_TABLES` (comma-separated environment variable), defaulting to `["system_configs", "users", "permissions", "roles", "credentials", "auth"]`. Non-privileged tables like `customer_addresses` (BEN-010) are cleanly permitted without approval escalation.
+  1. Privileged table enforcement now reads from `SENTINEL_PRIVILEGED_TABLES` (comma-separated environment variable), defaulting to `["system_configs", "users", "permissions", "roles", "credentials", "auth"]`. Non-privileged tables like `customer_addresses` are cleanly permitted without approval escalation.
   2. In `backend/app/api/gateway.py`, outside benchmark mode (`SENTINEL_BENCHMARK_MODE != true`), client-supplied timestamp attributes are strictly ignored and server-authoritative UTC clock (`datetime.now(timezone.utc)`) is enforced on all audit events, hash chains, and rate calculations.
 - **Justification**: Enhances operational flexibility for enterprise deployments while guaranteeing authoritative cryptographic integrity against client timestamp manipulation.

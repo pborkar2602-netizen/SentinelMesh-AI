@@ -51,7 +51,7 @@ def main() -> int:
     parser.add_argument(
         "--split",
         type=str,
-        choices=["all", "dev", "held_out"],
+        choices=["all", "dev", "dev_v1_heldout", "held_out"],
         default="all",
         help="Filter scenarios by split",
     )
@@ -86,6 +86,11 @@ def main() -> int:
         if dev_dir.exists():
             scenario_files.extend(sorted(dev_dir.glob("*.json")))
 
+    if args.split == "dev_v1_heldout":
+        dev_v1_dir = base_dir / "dev_v1_heldout"
+        if dev_v1_dir.exists():
+            scenario_files.extend(sorted(dev_v1_dir.glob("*.json")))
+
     if args.split in ["all", "held_out"]:
         held_out_dir = base_dir / "held_out"
         if held_out_dir.exists():
@@ -116,7 +121,7 @@ def main() -> int:
         results.append(res)
 
     # 4. Compute Metrics per Split and Overall
-    dev_results = [r for r in results if r.split == "dev"]
+    dev_results = [r for r in results if r.split in ("dev", "dev_v1_heldout")]
     held_out_results = [r for r in results if r.split == "held_out"]
 
     dev_metrics = compute_benchmark_metrics(dev_results)
