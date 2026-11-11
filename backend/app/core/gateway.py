@@ -2,7 +2,11 @@ import time
 from typing import Tuple, List, Dict, Any
 from backend.app.schemas.gateway import ToolCallRequest, ContextSource
 from backend.app.core.trust_labeler import label_trust
-from backend.app.core.taint_tracker import track_session_taint
+from backend.app.core.taint_tracker import (
+    track_session_taint,
+    record_untrusted_literals,
+    check_argument_value_provenance,
+)
 from backend.app.detection.rules import run_all_detectors, Finding
 from backend.app.core.risk_scorer import compute_risk_score
 from backend.app.core.policy_engine import PolicyEngine
@@ -73,7 +77,8 @@ class GatewayCore:
             arguments=request.arguments
         )
 
-        # 2. Session Taint Tracking
+        # 2. Session Taint Tracking & Value-Provenance Literal Recording
+        record_untrusted_literals(request.session_id, normalized_sources)
         if settings.ENABLE_TAINT_TRACKER:
             is_tainted, tainted_by, newly_tainted = track_session_taint(
                 session_id=request.session_id,
@@ -81,6 +86,11 @@ class GatewayCore:
             )
         else:
             is_tainted, tainted_by, newly_tainted = False, [], False
+
+        reused_untrusted_values = check_argument_value_provenance(
+            session_id=request.session_id,
+            arguments=request.arguments,
+        )
 
         # 3. Rule Detection
         if settings.ENABLE_RULE_DETECTOR:
@@ -111,6 +121,8 @@ class GatewayCore:
             tool_name=request.tool_name,
             arguments=request.arguments
         )
+        if reused_untrusted_values:
+            risk_breakdown["reused_untrusted_values"] = reused_untrusted_values
 
         # 6. Privacy Risk Scoring (0-100 Privacy Signals)
         if settings.ENABLE_PRIVACY_MODULE:
@@ -211,8 +223,12 @@ class GatewayCore:
                 pii_findings=pii_findings,
                 judge_verdict=judge_verdict,
                 anomaly_score=anomaly_score,
-                anomaly_reasons=anomaly_reasons
+                anomaly_reasons=anomaly_reasons,
+                session_id=request.session_id,
             )
+            if decision == "require_approval" and "Sensitive Column Write Protection" in reason:
+                risk_score = max(risk_score, 75)
+                risk_breakdown["sensitive_column_write_policy"] = True
         else:
             decision, reason = "allow", "Policy engine disabled (ablation mode)"
         policy_ms = round((time.perf_counter() - t_pol_start) * 1000, 3)

@@ -3,7 +3,11 @@ import re
 import email.utils
 import urllib.parse
 from dataclasses import dataclass
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Set, Tuple
+
+import sqlglot
+from sqlglot import exp
+from sqlglot.errors import SqlglotError
 
 @dataclass
 class Finding:
@@ -319,6 +323,251 @@ def check_privileged_actions(tool_name: str, arguments: Dict[str, Any]) -> List[
                     owasp_category="LLM06: Excessive Agency"
                 ))
     return findings
+
+
+_SENSITIVE_COL_SYNONYMS: Dict[str, Set[str]] = {
+    "password_hash": {"password_hash", "password", "passwd", "passwd_hash", "pwd_hash"},
+    "bank_account": {"bank_account", "account_number", "acct_number", "iban", "bank_acct"},
+    "routing_number": {"routing_number", "bank_routing", "routing_no", "wire_routing", "aba_routing"},
+    "permissions": {"permissions", "permission", "privileges", "privilege", "access_level"},
+}
+
+
+def is_sensitive_write_column(col_name: str, configured_columns: Optional[List[str]] = None) -> bool:
+    """
+    Determines whether `col_name` matches the configurable list of sensitive write columns
+    (exact match, underscore token match, or configured synonym).
+    Non-sensitive columns such as `address`, `shipping_address`, `city`, `postal_code` return False.
+    """
+    if not col_name:
+        return False
+    c = col_name.lower().strip().strip('"').strip("`").strip("[]")
+    if not c:
+        return False
+
+    if configured_columns is None:
+        from backend.app.config import settings
+        configured_columns = getattr(
+            settings,
+            "SENSITIVE_WRITE_COLUMNS",
+            [
+                "email",
+                "phone",
+                "password_hash",
+                "role",
+                "permissions",
+                "bank_account",
+                "routing_number",
+                "payee",
+                "beneficiary",
+            ],
+        )
+
+    c_tokens = set(c.split("_"))
+    for sens in configured_columns:
+        s = sens.lower().strip()
+        if not s:
+            continue
+        if c == s or s in c_tokens or c.endswith("_" + s) or c.startswith(s + "_"):
+            return True
+        for syn in _SENSITIVE_COL_SYNONYMS.get(s, set()):
+            if c == syn or syn in c_tokens or c.endswith("_" + syn) or c.startswith(syn + "_"):
+                return True
+    return False
+
+
+def _extract_values_from_expr(expr: Optional[exp.Expression]) -> Tuple[List[str], bool]:
+    """
+    Extracts all literal values (and subquery table/column tokens) from a SQL value expression
+    (handles direct literals, CASE expressions, function calls, and subqueries).
+    Returns: (values_list, has_subquery)
+    """
+    if expr is None:
+        return ([], False)
+    vals: List[str] = []
+    has_subq = expr.find(exp.Select) is not None
+
+    for lit in expr.find_all(exp.Literal):
+        if lit.this is not None:
+            v = str(lit.this).strip()
+            if v:
+                vals.append(v)
+
+    if has_subq:
+        for tbl in expr.find_all(exp.Table):
+            if tbl.name:
+                vals.append(tbl.name.lower())
+        for col in expr.find_all(exp.Column):
+            if col.name:
+                vals.append(col.name.lower())
+
+    return (vals, has_subq)
+
+
+def analyze_sql_sensitive_write(
+    query: str,
+    sensitive_columns: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """
+    Uses sqlglot to parse SQL DML statements (UPDATE, INSERT, UPSERT, DELETE, MERGE)
+    and identify whether any sensitive columns are modified, along with their assigned values.
+    """
+    result: Dict[str, Any] = {
+        "is_mutation": False,
+        "statement_type": None,
+        "modified_columns": [],
+        "sensitive_modified_columns": [],
+        "assigned_values_by_column": {},
+        "all_sensitive_assigned_values": [],
+        "has_subquery_value": False,
+    }
+    if not query or not query.strip():
+        return result
+
+    if sensitive_columns is None:
+        from backend.app.config import settings
+        sensitive_columns = getattr(
+            settings,
+            "SENSITIVE_WRITE_COLUMNS",
+            [
+                "email",
+                "phone",
+                "password_hash",
+                "role",
+                "permissions",
+                "bank_account",
+                "routing_number",
+                "payee",
+                "beneficiary",
+            ],
+        )
+
+    statements: Optional[List[Optional[exp.Expression]]] = None
+    for dialect in ("sqlite", "postgres", "mysql", None):
+        try:
+            parsed = sqlglot.parse(query.strip(), read=dialect, error_level=sqlglot.ErrorLevel.RAISE)
+            statements = [s for s in parsed if s is not None]
+            if statements:
+                break
+        except SqlglotError:
+            continue
+        except Exception:
+            continue
+
+    if not statements:
+        return result
+
+    modified_cols: List[str] = []
+    sensitive_cols: List[str] = []
+    assigned_by_col: Dict[str, List[str]] = {}
+    has_subq_total = False
+
+    def _record_col_assignment(col_raw: str, val_expr: Optional[exp.Expression]) -> None:
+        nonlocal has_subq_total
+        col_clean = col_raw.lower().strip().strip('"').strip("`").strip("[]")
+        if not col_clean:
+            return
+        if col_clean not in modified_cols:
+            modified_cols.append(col_clean)
+        vals, has_subq = _extract_values_from_expr(val_expr)
+        assigned_by_col.setdefault(col_clean, []).extend(vals)
+        if is_sensitive_write_column(col_clean, sensitive_columns):
+            if col_clean not in sensitive_cols:
+                sensitive_cols.append(col_clean)
+            if has_subq:
+                has_subq_total = True
+
+    for stmt in statements:
+        if isinstance(stmt, exp.Update):
+            result["is_mutation"] = True
+            result["statement_type"] = result["statement_type"] or "UPDATE"
+            for eq in stmt.expressions or []:
+                if isinstance(eq, exp.EQ):
+                    if isinstance(eq.this, exp.Column) and eq.this.name:
+                        _record_col_assignment(eq.this.name, eq.expression)
+                    else:
+                        for c in eq.this.find_all(exp.Column):
+                            if c.name:
+                                _record_col_assignment(c.name, eq.expression)
+
+        elif isinstance(stmt, exp.Insert):
+            result["is_mutation"] = True
+            conflict = stmt.args.get("conflict")
+            is_replace = "replace" in (stmt.sql() or "")[:15].lower()
+            result["statement_type"] = "UPSERT" if (conflict is not None or is_replace) else "INSERT"
+
+            schema = stmt.this
+            insert_cols: List[str] = []
+            if isinstance(schema, exp.Schema):
+                for col_expr in schema.expressions or []:
+                    c_name = col_expr.name if hasattr(col_expr, "name") else str(col_expr)
+                    if c_name:
+                        insert_cols.append(c_name.lower().strip().strip('"').strip("`").strip("[]"))
+
+            values_node = stmt.find(exp.Values)
+            if values_node is not None and values_node.expressions:
+                for tuple_expr in values_node.expressions:
+                    row_exprs = tuple_expr.expressions if hasattr(tuple_expr, "expressions") else []
+                    for idx, val_expr in enumerate(row_exprs):
+                        if idx < len(insert_cols):
+                            _record_col_assignment(insert_cols[idx], val_expr)
+
+            # Check INSERT INTO ... SELECT ...
+            select_node = stmt.args.get("expression")
+            if isinstance(select_node, exp.Select):
+                for idx, sel_expr in enumerate(select_node.expressions or []):
+                    if idx < len(insert_cols):
+                        _record_col_assignment(insert_cols[idx], sel_expr)
+                        if is_sensitive_write_column(insert_cols[idx], sensitive_columns):
+                            has_subq_total = True
+
+            # Check ON CONFLICT DO UPDATE / ON DUPLICATE KEY UPDATE assignments
+            if conflict is not None:
+                for eq in conflict.find_all(exp.EQ):
+                    if isinstance(eq.this, exp.Column) and eq.this.name:
+                        c_clean = eq.this.name.lower().strip().strip('"').strip("`").strip("[]")
+                        _record_col_assignment(c_clean, eq.expression)
+                        # If RHS references EXCLUDED.<col> or VALUES(<col>), inherit inserted values
+                        for ref_col in eq.expression.find_all(exp.Column):
+                            ref_name = (ref_col.name or "").lower().strip()
+                            if ref_name in assigned_by_col:
+                                assigned_by_col.setdefault(c_clean, []).extend(assigned_by_col[ref_name])
+
+        elif isinstance(stmt, exp.Delete):
+            result["is_mutation"] = True
+            result["statement_type"] = result["statement_type"] or "DELETE"
+            where_node = stmt.args.get("where")
+            # Inspect columns in WHERE / RETURNING and table name
+            for col in stmt.find_all(exp.Column):
+                if col.name and is_sensitive_write_column(col.name, sensitive_columns):
+                    _record_col_assignment(col.name, where_node)
+            for tbl in stmt.find_all(exp.Table):
+                if tbl.name:
+                    t_clean = tbl.name.lower().strip()
+                    for s in sensitive_columns:
+                        if s in t_clean or t_clean.rstrip("s") == s.rstrip("s"):
+                            _record_col_assignment(s, where_node)
+
+        elif isinstance(stmt, exp.Merge):
+            result["is_mutation"] = True
+            result["statement_type"] = result["statement_type"] or "MERGE"
+            for eq in stmt.find_all(exp.EQ):
+                if isinstance(eq.this, exp.Column) and eq.this.name:
+                    _record_col_assignment(eq.this.name, eq.expression)
+
+    all_sens_vals: List[str] = []
+    for c in sensitive_cols:
+        for v in assigned_by_col.get(c, []):
+            if v not in all_sens_vals:
+                all_sens_vals.append(v)
+
+    result["modified_columns"] = modified_cols
+    result["sensitive_modified_columns"] = sensitive_cols
+    result["assigned_values_by_column"] = assigned_by_col
+    result["all_sensitive_assigned_values"] = all_sens_vals
+    result["has_subquery_value"] = has_subq_total
+    return result
+
 
 def run_all_detectors(
     tool_name: str,

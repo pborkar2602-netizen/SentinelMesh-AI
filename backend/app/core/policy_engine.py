@@ -1,5 +1,5 @@
 import os
-from typing import List, Dict, Any, Tuple, Optional
+from typing import List, Dict, Any, Tuple, Optional, Set
 from backend.app.detection.rules import Finding
 
 class PolicyEngine:
@@ -42,7 +42,9 @@ class PolicyEngine:
         pii_findings: Any = None,
         judge_verdict: Any = None,
         anomaly_score: int = 0,
-        anomaly_reasons: Optional[List[str]] = None
+        anomaly_reasons: Optional[List[str]] = None,
+        session_id: Optional[str] = None,
+        untrusted_literals: Optional[Set[str]] = None,
     ) -> Tuple[str, str]:
         """
         Evaluates active security policies against session context, detection findings,
@@ -135,6 +137,43 @@ class PolicyEngine:
                         "would_block",
                         "Policy 'High-Sensitivity External Egress' [MONITOR MODE]: Outgoing transfer containing sensitive personal data would have required human approval."
                     )
+
+        # Policy Rule 2b: Tainted or Untrusted-Provenance Writes to Sensitive Database Columns
+        if tool_name == "db_query":
+            query_str = str(arguments.get("query") or arguments.get("sql") or "")
+            if query_str:
+                from backend.app.detection.rules import analyze_sql_sensitive_write
+                from backend.app.core.taint_tracker import value_appears_in_untrusted_session
+                write_info = analyze_sql_sensitive_write(query_str)
+                sens_cols = write_info.get("sensitive_modified_columns") or []
+                if sens_cols:
+                    assigned_vals = write_info.get("all_sensitive_assigned_values") or []
+                    matched_untrusted_vals = [
+                        v for v in assigned_vals
+                        if value_appears_in_untrusted_session(
+                            v,
+                            session_id=session_id,
+                            untrusted_literals=untrusted_literals,
+                        )
+                    ]
+                    if is_tainted or bool(matched_untrusted_vals):
+                        cols_str = ", ".join(sens_cols)
+                        stmt_type = write_info.get("statement_type") or "DML"
+                        prov_detail = (
+                            f"untrusted value provenance match {matched_untrusted_vals}"
+                            if matched_untrusted_vals
+                            else f"tainted session [{', '.join(tainted_by) if tainted_by else 'untrusted context'}]"
+                        )
+                        if mode == "enforce":
+                            return (
+                                "require_approval",
+                                f"Policy 'Sensitive Column Write Protection': SQL {stmt_type} modifies sensitive column(s) [{cols_str}] under {prov_detail}. Human approval required."
+                            )
+                        else:
+                            return (
+                                "would_block",
+                                f"Policy Alert [MONITOR MODE]: SQL {stmt_type} modifies sensitive column(s) [{cols_str}] under {prov_detail}."
+                            )
 
         # Policy Rule: Destructive Database Operation or Privileged Mutation requires authorized approval
         priv_ops = [f for f in findings if f.name in ["destructive_ddl_command", "privileged_administrative_action"]]

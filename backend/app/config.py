@@ -32,4 +32,16 @@ class Settings(BaseModel):
         "job_titles"
     ]
 
+    # Configurable Sensitive Columns for Database Write Policy (UPDATE, INSERT, UPSERT, DELETE)
+    SENSITIVE_WRITE_COLUMNS: list[str] = Field(
+        default_factory=lambda: [
+            c.strip().lower()
+            for c in os.getenv(
+                "SENTINEL_SENSITIVE_WRITE_COLUMNS",
+                "email,phone,password_hash,role,permissions,bank_account,routing_number,payee,beneficiary",
+            ).split(",")
+            if c.strip()
+        ]
+    )
+
 settings = Settings()
