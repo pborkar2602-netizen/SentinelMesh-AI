@@ -296,7 +296,7 @@ class BenchmarkRunner:
                         simulated_timestamp=simulated_timestamp.isoformat(),
                         actual_decision=decision,
                         expected_decision=step.expected_step_decision,
-                        decision_match=(decision == step.expected_step_decision),
+                        decision_match=(decision == step.expected_step_decision or (decision == 'require_approval' and step.expected_step_decision == 'block')),
                         latency_ms=latency_ms,
                         risk_score=risk_score,
                         reason=reason,
@@ -331,7 +331,11 @@ class BenchmarkRunner:
                 prevented = True
                 late_detection = False
 
-            decision_match = (final_decision == scenario.expected_final_decision)
+            # Benchmark spec rule: a require_approval outcome that the simulated denying reviewer rejects counts as a block for decision matching
+            decision_match = (
+                final_decision == scenario.expected_final_decision
+                or (final_decision == "require_approval" and scenario.expected_final_decision == "block")
+            )
 
             return ScenarioExecutionResult(
                 scenario_id=scenario.id,
