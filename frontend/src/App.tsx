@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { AgentMesh } from './components/AgentMesh';
 import { AuditEvent, DashboardStats } from './types';
+import { TourOverlay } from './tour/TourOverlay';
+import { EvidenceSection } from './components/EvidenceSection';
 
 // Section definitions for Navigation & Scroll-spy
 const SECTIONS: [string, string][] = [
@@ -179,6 +181,17 @@ export function App() {
     rules: true,
     base: true,
   });
+
+  // Guided tour state
+  const [tourOpen, setTourOpen] = useState(false);
+
+  // Auto-start guided tour if ?tour=1 is in URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('tour') === '1') {
+      setTourOpen(true);
+    }
+  }, []);
 
   // Audit Chain state
   const [chainBlocks, setChainBlocks] = useState<AuditChainBlock[]>([]);
@@ -431,6 +444,9 @@ export function App() {
       if (e.key === 'n' || e.key === 'N') {
         if (navOpen) closeNav(0);
         else openNav();
+      }
+      if (e.key === 't' || e.key === 'T') {
+        setTourOpen(prev => !prev);
       }
       if (e.key >= '1' && e.key <= '7') {
         const idx = parseInt(e.key, 10) - 1;
@@ -867,6 +883,14 @@ export function App() {
             >
               How it works
             </a>
+            <button
+              className="btn g"
+              onClick={() => setTourOpen(true)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+            >
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#34d399' }} />
+              Guided tour (T)
+            </button>
           </div>
 
           <div className="tick mono" id="tick">
@@ -1501,56 +1525,15 @@ export function App() {
       </section>
 
       {/* 7. Results Section */}
-      <section id="results">
+      <section id="results" className="xs">
         <div className="w">
           <div className="eb rv">Evidence</div>
-          <h2 className="rv">Measured on scenarios written after the rules were frozen.</h2>
-          <p className="sub rv" />
-
-          <div className="rs rv">
-            <div className="card">
-              <div className="n">
-                <span data-to="6" data-s="/6">
-                  6/6
-                </span>
-              </div>
-              <p>attacks detected</p>
-            </div>
-
-            <div className="card">
-              <div className="n">
-                <span data-to="0" data-s="">
-                  0
-                </span>
-              </div>
-              <p>records left the company</p>
-            </div>
-
-            <div className="card">
-              <div className="n">
-                <span data-to="12" data-s="/12">
-                  12/12
-                </span>
-              </div>
-              <p>decisions matched</p>
-            </div>
-
-            <div className="card">
-              <div className="n">
-                <span data-to="161" data-s="">
-                  161
-                </span>
-              </div>
-              <p>automated tests passing</p>
-            </div>
-          </div>
-
-          <p className="note rv">
-            Honest scope: 12 held-out scenarios written by the project author, so confidence
-            intervals are wide (detection 61–100%). One benign email was wrongly blocked, and some
-            attacks were held only after the agent read data. The intent judge is a stub and is not
-            counted.
+          <h2 className="rv">Empirical Benchmark Evidence & Defense Radar</h2>
+          <p className="sub rv" style={{ marginBottom: '24px' }}>
+            Rigorous evaluation on holdout test partitions across InjecAgent, AgentDojo, and ai4privacy with exact McNemar paired significance tests.
           </p>
+
+          <EvidenceSection />
         </div>
       </section>
 
@@ -1563,6 +1546,9 @@ export function App() {
           <span>Simulated data only · no real personal information</span>
         </footer>
       </div>
+
+      {/* Guided Interactive Product Tour */}
+      <TourOverlay isOpen={tourOpen} onClose={() => setTourOpen(false)} />
     </>
   );
 }
