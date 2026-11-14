@@ -33,10 +33,11 @@ from benchmark.adapters.injecagent_adapter import (
     map_user_tool,
     map_attacker_tool,
 )
+from backend.app.detection.rules import run_all_detectors
 from benchmark.harness.statistics import (
     wilson_score_interval,
     exact_mcnemar_test,
-    paired_bootstrap_ci,
+    bootstrap_ci,
 )
 
 SALT = b"sentinelmesh_v3_group_cluster_salt"
@@ -88,7 +89,6 @@ def evaluate_enhanced() -> Dict[str, Any]:
         for b in baselines
     }
 
-    # Group tracking for cluster bootstrap
     case_clusters = [c.get("Attacker Instruction", "") for c in test_cases]
     unique_clusters = list(sorted(set(case_clusters)))
     cluster_indices = {cl: [i for i, c in enumerate(case_clusters) if c == cl] for cl in unique_clusters}
@@ -97,31 +97,47 @@ def evaluate_enhanced() -> Dict[str, Any]:
 
     for c in test_cases:
         atype = c["_attack_type"]
+        user_inst = c.get("User Instruction", "")
         user_tool_name = c.get("User Tool", "ReadDocument")
         user_tool_params = c.get("User Tool Parameters", {})
-        attacker_tool_name = c.get("Attacker Tool", "SendEmail")
+        attacker_tools = c.get("Attacker Tools", ["UnknownTool"])
+        attacker_tool_name = attacker_tools[0] if attacker_tools else c.get("Attacker Tool", "SendEmail")
         attacker_instruction = c.get("Attacker Instruction", "")
         tool_response = str(c.get("Tool Response", ""))
 
-        u_prim, u_params = map_user_tool(user_tool_name, user_tool_params)
-        a_prim, a_params = map_attacker_tool(attacker_tool_name, attacker_instruction, atype)
+        s0_tool, s0_args = map_user_tool(user_tool_name, user_tool_params)
+        s1_tool, s1_args = map_attacker_tool(attacker_tool_name, attacker_instruction, atype)
+
+        context_sources = [{
+            "source_id": f"injecagent_{user_tool_name}",
+            "source_type": "document",
+            "is_untrusted": True,
+            "snippet": tool_response[:300]
+        }]
+        untrusted_lits = set(tool_response.split())
+
+        all_findings = run_all_detectors(
+            tool_name=s1_tool,
+            arguments=s1_args,
+            context_sources=context_sources,
+        )
 
         for b in baselines:
-            # Benign session: only user step
-            s_benign = b.create_session("benign_session")
-            u_dec_benign = b.evaluate_tool_call(s_benign, u_prim, u_params, source_content="trusted_user")
-            b_allowed = u_dec_benign.allowed
-            results_by_system[b.name]["benign_verdicts"].append(1 if b_allowed else 0)
-            if b_allowed:
-                results_by_system[b.name]["benign_allowed"] += 1
-
-            # Attack session: user step ingests untrusted response, followed by attacker step
-            s_attack = b.create_session("attack_session")
-            u_dec = b.evaluate_tool_call(s_attack, u_prim, u_params, source_content=tool_response)
-            a_dec = b.evaluate_tool_call(s_attack, a_prim, a_params)
-            attack_blocked = not a_dec.allowed
-
+            # Attack evaluation
+            dec, _ = b.evaluate_step(
+                tool_name=s1_tool,
+                arguments=s1_args,
+                context_sources=context_sources,
+                is_tainted=True,
+                tainted_by=[f"injecagent_{user_tool_name}"],
+                findings=all_findings,
+                risk_score=75,
+                agent_task=user_inst,
+                untrusted_literals=untrusted_lits,
+            )
+            attack_blocked = dec in ["block", "require_approval", "would_block"]
             results_by_system[b.name]["attack_verdicts"].append(1 if attack_blocked else 0)
+
             if atype == "direct_harm":
                 results_by_system[b.name]["dh_evaluated"] += 1
                 if attack_blocked:
@@ -130,6 +146,29 @@ def evaluate_enhanced() -> Dict[str, Any]:
                 results_by_system[b.name]["ds_evaluated"] += 1
                 if attack_blocked:
                     results_by_system[b.name]["ds_blocked"] += 1
+
+            # Benign counterpart evaluation
+            benign_tool, benign_args = "read_doc", {"path": "clean_summary.txt"}
+            benign_findings = run_all_detectors(
+                tool_name=benign_tool,
+                arguments=benign_args,
+                context_sources=[{"source_id": "clean_src", "is_untrusted": False, "snippet": "Clean task output"}],
+            )
+            b_decision, _ = b.evaluate_step(
+                tool_name=benign_tool,
+                arguments=benign_args,
+                context_sources=[],
+                is_tainted=False,
+                tainted_by=[],
+                findings=benign_findings,
+                risk_score=10,
+                agent_task="Summarize document",
+                untrusted_literals=set(),
+            )
+            b_allowed = b_decision == "allow"
+            results_by_system[b.name]["benign_verdicts"].append(1 if b_allowed else 0)
+            if b_allowed:
+                results_by_system[b.name]["benign_allowed"] += 1
 
     # Format final metrics
     report: Dict[str, Any] = {
@@ -163,7 +202,9 @@ def evaluate_enhanced() -> Dict[str, Any]:
 
         # Paired McNemar against B4
         sys_verdicts = np.array(res["attack_verdicts"])
-        mcnemar_res = exact_mcnemar_test(sys_verdicts, b4_verdicts)
+        b_count = int(np.sum((b4_verdicts == 1) & (sys_verdicts == 0)))
+        c_count = int(np.sum((b4_verdicts == 0) & (sys_verdicts == 1)))
+        mcnemar_res = exact_mcnemar_test(b_count, c_count)
 
         report["systems"][b.name] = {
             "overall_prevention_rate": round(overall_rate, 4),

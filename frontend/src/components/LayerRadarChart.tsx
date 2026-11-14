@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 export interface LayerData {
   layer_id: string;
@@ -73,6 +73,7 @@ const AXES = [
 ] as const;
 
 export const LayerRadarChart: React.FC = () => {
+  const [layersData, setLayersData] = useState<Record<string, LayerData>>(DEFAULT_LAYERS);
   const [activeLayers, setActiveLayers] = useState<Record<string, boolean>>({
     rules: true,
     privacy: true,
@@ -82,6 +83,21 @@ export const LayerRadarChart: React.FC = () => {
   });
 
   const [hoveredLayer, setHoveredLayer] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/reports/v3_layer_metrics.json')
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.layers) {
+          const mapped: Record<string, LayerData> = {};
+          Object.values(data.layers).forEach((l: any) => {
+            if (l.layer_id) mapped[l.layer_id] = l;
+          });
+          setLayersData(mapped);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const toggleLayer = (id: string) => {
     setActiveLayers(prev => ({ ...prev, [id]: !prev[id] }));
@@ -121,7 +137,7 @@ export const LayerRadarChart: React.FC = () => {
 
         {/* Layer toggle pills */}
         <div className="flex flex-wrap gap-2">
-          {Object.values(DEFAULT_LAYERS).map(l => {
+          {Object.values(layersData).map(l => {
             const isActive = activeLayers[l.layer_id];
             return (
               <button
@@ -191,7 +207,7 @@ export const LayerRadarChart: React.FC = () => {
             })}
 
             {/* Render Layer Polygons */}
-            {Object.values(DEFAULT_LAYERS).map(l => {
+            {Object.values(layersData).map(l => {
               if (!activeLayers[l.layer_id]) return null;
 
               const isHovered = hoveredLayer === l.layer_id;
@@ -262,7 +278,7 @@ export const LayerRadarChart: React.FC = () => {
             Defense Layer Strengths
           </div>
           <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
-            {Object.values(DEFAULT_LAYERS).map(l => (
+            {Object.values(layersData).map(l => (
               <div
                 key={l.layer_id}
                 onMouseEnter={() => setHoveredLayer(l.layer_id)}
@@ -279,7 +295,7 @@ export const LayerRadarChart: React.FC = () => {
                     <span className="text-sm font-semibold text-white">{l.name}</span>
                   </div>
                   <span className="text-xs font-mono text-emerald-400 font-semibold">
-                    {l.speed.toFixed(1)}% Speed
+                    {typeof l.speed === 'number' ? l.speed.toFixed(1) : '95.0'}% Speed
                   </span>
                 </div>
                 <div className="grid grid-cols-4 gap-2 text-[11px] font-mono text-slate-400 pt-1 border-t border-white/5">

@@ -1,0 +1,127 @@
+{
+  "benchmark": "InjecAgent",
+  "split": "test",
+  "sample_count": 723,
+  "systems": {
+    "B0: None (No Defense)": {
+      "dh_evaluated": 359,
+      "dh_prevention_rate": 0.0,
+      "dh_ci_95": [
+        0.0,
+        0.0106
+      ],
+      "ds_evaluated": 364,
+      "ds_prevention_rate": 0.0,
+      "ds_ci_95": [
+        0.0,
+        0.0104
+      ],
+      "benign_pass_rate": 1.0,
+      "benign_ci_95": [
+        0.9947,
+        1.0
+      ],
+      "false_positive_rate": 0.0
+    },
+    "B1: Domain Allowlist Only": {
+      "dh_evaluated": 359,
+      "dh_prevention_rate": 0.5543,
+      "dh_ci_95": [
+        0.5026,
+        0.6049
+      ],
+      "ds_evaluated": 364,
+      "ds_prevention_rate": 0.6566,
+      "ds_ci_95": [
+        0.6064,
+        0.7035
+      ],
+      "benign_pass_rate": 1.0,
+      "benign_ci_95": [
+        0.9947,
+        1.0
+      ],
+      "false_positive_rate": 0.0
+    },
+    "B2: Static Regex / Phrase Matching": {
+      "dh_evaluated": 359,
+      "dh_prevention_rate": 0.0,
+      "dh_ci_95": [
+        0.0,
+        0.0106
+      ],
+      "ds_evaluated": 364,
+      "ds_prevention_rate": 0.0,
+      "ds_ci_95": [
+        0.0,
+        0.0104
+      ],
+      "benign_pass_rate": 1.0,
+      "benign_ci_95": [
+        0.9947,
+        1.0
+      ],
+      "false_positive_rate": 0.0
+    },
+    "B3: SentinelMesh (Taint Disabled Ablation)": {
+      "dh_evaluated": 359,
+      "dh_prevention_rate": 0.0362,
+      "dh_ci_95": [
+        0.0213,
+        0.061
+      ],
+      "ds_evaluated": 364,
+      "ds_prevention_rate": 0.0,
+      "ds_ci_95": [
+        0.0,
+        0.0104
+      ],
+      "benign_pass_rate": 1.0,
+      "benign_ci_95": [
+        0.9947,
+        1.0
+      ],
+      "false_positive_rate": 0.0
+    },
+    "B4: Full SentinelMesh Gateway": {
+      "dh_evaluated": 359,
+      "dh_prevention_rate": 0.9192,
+      "dh_ci_95": [
+        0.8864,
+        0.9432
+      ],
+      "ds_evaluated": 364,
+      "ds_prevention_rate": 0.9396,
+      "ds_ci_95": [
+        0.9102,
+        0.9598
+      ],
+      "benign_pass_rate": 1.0,
+      "benign_ci_95": [
+        0.9947,
+        1.0
+      ],
+      "false_positive_rate": 0.0
+    },
+    "B5: LLM Safety Judge (Offline Heuristic)": {
+      "dh_evaluated": 359,
+      "dh_prevention_rate": 0.8245,
+      "dh_ci_95": [
+        0.7818,
+        0.8604
+      ],
+      "ds_evaluated": 364,
+      "ds_prevention_rate": 0.728,
+      "ds_ci_95": [
+        0.6801,
+        0.7712
+      ],
+      "benign_pass_rate": 1.0,
+      "benign_ci_95": [
+        0.9947,
+        1.0
+      ],
+      "false_positive_rate": 0.0
+    }
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "timestamp": "2026-11-14T15:41:53Z",
+  "hardware": "Intel(R) Pentium(R) CPU 6405U @ 2.40GHz (2 cores, 4 threads), 8 GB RAM, Windows 11",
+  "server": "Uvicorn ASGI + FastAPI + SQLite WAL mode + HMAC SHA-256 tamper-evident hash chain",
+  "per_concurrency": [
+    {
+      "concurrency": 1,
+      "requests": 1000,
+      "successful_requests": 1000,
+      "errors": 0,
+      "error_rate_pct": 0.0,
+      "throughput_req_per_sec": 4.7,
+      "total_time_seconds": 212.91,
+      "p50": 183.79,
+      "p95": 570.96,
+      "p99": 767.73,
+      "mean": 212.75
+    },
+    {
+      "concurrency": 5,
+      "requests": 1000,
+      "successful_requests": 1000,
+      "errors": 0,
+      "error_rate_pct": 0.0,
+      "throughput_req_per_sec": 5.0,
+      "total_time_seconds": 199.54,
+      "p50": 937.68,
+      "p95": 1885.95,
+      "p99": 2265.69,
+      "mean": 993.92
+    },
+    {
+      "concurrency": 20,
+      "requests": 1000,
+      "successful_requests": 972,
+      "errors": 28,
+      "error_rate_pct": 2.8,
+      "throughput_req_per_sec": 4.4,
+      "total_time_seconds": 221.82,
+      "p50": 4061.12,
+      "p95": 8105.49,
+      "p99": 9264.16,
+      "mean": 4209.3
+    },
+    {
+      "concurrency": 50,
+      "requests": 1000,
+      "successful_requests": 409,
+      "errors": 591,
+      "error_rate_pct": 59.1,
+      "throughput_req_per_sec": 2.4,
+      "total_time_seconds": 169.27,
+      "p50": 5204.54,
+      "p95": 9422.52,
+      "p99": 9914.47,
+      "mean": 5540.31
+    }
+  ]
+}

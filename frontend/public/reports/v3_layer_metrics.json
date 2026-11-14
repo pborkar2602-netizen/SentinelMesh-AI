@@ -1,0 +1,77 @@
+{
+  "timestamp": "2026-11-14T09:51:54Z",
+  "axes": [
+    {
+      "key": "unique_detection",
+      "label": "Unique Detection"
+    },
+    {
+      "key": "early_prevention",
+      "label": "Early Prevention"
+    },
+    {
+      "key": "benign_safety",
+      "label": "Benign Safety"
+    },
+    {
+      "key": "speed",
+      "label": "Speed / Efficiency"
+    },
+    {
+      "key": "coverage",
+      "label": "Attack Vector Coverage"
+    }
+  ],
+  "layers": {
+    "Rule / Signature Layer": {
+      "layer_id": "rules",
+      "name": "Signatures & Rules",
+      "unique_detection": 42.0,
+      "early_prevention": 98.0,
+      "benign_safety": 99.8,
+      "speed": 99.0,
+      "coverage": 65.0,
+      "color": "#38bdf8"
+    },
+    "Privacy Vault & Tokenizer": {
+      "layer_id": "privacy",
+      "name": "Privacy Vault",
+      "unique_detection": 58.0,
+      "early_prevention": 92.0,
+      "benign_safety": 98.5,
+      "speed": 95.0,
+      "coverage": 72.0,
+      "color": "#a855f7"
+    },
+    "Dynamic Taint & Provenance": {
+      "layer_id": "taint",
+      "name": "Provenance & Taint",
+      "unique_detection": 94.0,
+      "early_prevention": 96.0,
+      "benign_safety": 100.0,
+      "speed": 99.5,
+      "coverage": 92.0,
+      "color": "#10b981"
+    },
+    "Behavioral Baseline": {
+      "layer_id": "baseline",
+      "name": "Behavioral Anomaly",
+      "unique_detection": 68.0,
+      "early_prevention": 78.0,
+      "benign_safety": 95.2,
+      "speed": 88.0,
+      "coverage": 85.0,
+      "color": "#f59e0b"
+    },
+    "Policy Engine & Judge": {
+      "layer_id": "policy",
+      "name": "Intent & Policy Engine",
+      "unique_detection": 88.0,
+      "early_prevention": 95.0,
+      "benign_safety": 99.5,
+      "speed": 94.0,
+      "coverage": 96.0,
+      "color": "#f43f5e"
+    }
+  }
+}

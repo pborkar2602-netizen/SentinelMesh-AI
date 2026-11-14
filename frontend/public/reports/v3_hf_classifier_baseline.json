@@ -1,0 +1,28 @@
+{
+  "model_name": "protectai/deberta-v3-base-prompt-injection-v2",
+  "license": "Apache-2.0",
+  "architecture": "DeBERTa-v3-base",
+  "framework": "PyTorch 2.15.0+cpu / Transformers 5.23.0",
+  "eval_hardware": "Intel(R) Pentium(R) CPU 6405U @ 2.40GHz",
+  "sample_evaluated": 100,
+  "direct_harm": {
+    "evaluated": 50,
+    "detected": 49,
+    "detection_rate": 0.98
+  },
+  "data_stealing": {
+    "evaluated": 50,
+    "detected": 29,
+    "detection_rate": 0.58
+  },
+  "overall": {
+    "detection_rate": 0.78,
+    "false_positive_rate": 0.05,
+    "benign_pass_rate": 0.95
+  },
+  "latency_ms": {
+    "mean": 1788.8,
+    "p50": 1754.59,
+    "p95": 2577.38
+  }
+}

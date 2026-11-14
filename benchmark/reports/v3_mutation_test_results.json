@@ -1,11 +1,11 @@
 {
-  "timestamp": "2026-11-14T10:07:20Z",
+  "timestamp": "2026-11-14T15:19:42Z",
   "total_mutants": 47,
-  "killed": 43,
-  "survived": 4,
-  "mutation_score_pct": 91.49,
+  "killed": 47,
+  "survived": 0,
+  "mutation_score_pct": 100.0,
   "target_met_85_pct": true,
-  "elapsed_seconds": 3.96,
+  "elapsed_seconds": 6.18,
   "mutants": [
     {
       "id": 1,
@@ -103,7 +103,7 @@
       "file": "policy_engine.py",
       "line": 198,
       "desc": "Negate Guard on line 198: mode == \"enforce\"",
-      "status": "survived"
+      "status": "killed"
     },
     {
       "id": 15,
@@ -145,7 +145,7 @@
       "file": "policy_engine.py",
       "line": 265,
       "desc": "Negate Guard on line 265: mode == \"enforce\"",
-      "status": "survived"
+      "status": "killed"
     },
     {
       "id": 21,
@@ -201,7 +201,7 @@
       "file": "rules.py",
       "line": 109,
       "desc": "Negate Guard on line 109: host.endswith(\".local\") or host.endswith(\".internal\")",
-      "status": "survived"
+      "status": "killed"
     },
     {
       "id": 29,
@@ -271,7 +271,7 @@
       "file": "rules.py",
       "line": 696,
       "desc": "Negate Guard on line 696: _match_identifier_against_patterns(c, cfg_cols)",
-      "status": "survived"
+      "status": "killed"
     },
     {
       "id": 39,

@@ -1,0 +1,41 @@
+{
+  "evaluation": "Text-Level Prompt Injection Rule Baseline",
+  "claim": "a six-phrase list has low recall on natural-language injections",
+  "open_ml_classifier": "not evaluated (offline environment; deep learning framework weights not bundled)",
+  "split": "test",
+  "deepset": {
+    "dataset": "deepset/prompt-injections",
+    "split": "test",
+    "total_samples": 381,
+    "contingency_matrix": {
+      "TP": 2,
+      "FP": 0,
+      "TN": 234,
+      "FN": 145
+    },
+    "accuracy": 0.6194,
+    "accuracy_ci_95": [
+      0.5697,
+      0.6668
+    ],
+    "precision": 1.0,
+    "recall": 0.0136,
+    "recall_ci_95": [
+      0.0037,
+      0.0482
+    ],
+    "f1_score": 0.0268
+  },
+  "tensor_trust": {
+    "dataset": "Tensor Trust (Hijacking Robustness)",
+    "split": "test",
+    "total_samples": 549,
+    "adversarial_detections": 0,
+    "recall": 0.0,
+    "recall_ci_95": [
+      0.0,
+      0.0069
+    ],
+    "limitations_note": "Evaluates raw static phrase regex against adversarial human attacks without stateful taint tracking."
+  }
+}

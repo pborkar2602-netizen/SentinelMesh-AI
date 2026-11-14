@@ -10,8 +10,24 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({ isOpen, onClose }) => 
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [cardHeight, setCardHeight] = useState(320);
 
   const step: TourStep = TOUR_STEPS[currentStepIndex];
+
+  // Measure card height whenever step changes or modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+    const measure = () => {
+      if (cardRef.current) {
+        const h = cardRef.current.offsetHeight;
+        if (h > 60) setCardHeight(h);
+      }
+    };
+    measure();
+    const t = setTimeout(measure, 50);
+    return () => clearTimeout(t);
+  }, [currentStepIndex, isOpen]);
 
   // Update target rect and scroll into view when step changes
   useEffect(() => {
@@ -26,7 +42,7 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({ isOpen, onClose }) => 
         parent = parent.parentElement;
       }
       if (step.targetId !== 'hd') {
-        el.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
+        el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
       }
     }
 
@@ -40,9 +56,10 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({ isOpen, onClose }) => 
     };
 
     updateBoundingBox();
-    const t1 = setTimeout(updateBoundingBox, 100);
-    const t2 = setTimeout(updateBoundingBox, 300);
-    const t3 = setTimeout(updateBoundingBox, 600);
+    const t1 = setTimeout(updateBoundingBox, 80);
+    const t2 = setTimeout(updateBoundingBox, 200);
+    const t3 = setTimeout(updateBoundingBox, 450);
+    const t4 = setTimeout(updateBoundingBox, 800);
 
     window.addEventListener('resize', updateBoundingBox);
     window.addEventListener('scroll', updateBoundingBox, { passive: true });
@@ -51,6 +68,7 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({ isOpen, onClose }) => 
       clearTimeout(t1);
       clearTimeout(t2);
       clearTimeout(t3);
+      clearTimeout(t4);
       window.removeEventListener('resize', updateBoundingBox);
       window.removeEventListener('scroll', updateBoundingBox);
     };
@@ -92,21 +110,21 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({ isOpen, onClose }) => 
     }
   };
 
-  // Card positioning logic
+  // Safe clamping calculations
+  const PADDING = 16;
+  const CARD_WIDTH = Math.min(400, window.innerWidth - PADDING * 2);
+  const measuredHeight = Math.max(260, Math.min(window.innerHeight - PADDING * 2, cardHeight));
+
   const cardStyle: React.CSSProperties = {
     position: 'fixed',
     zIndex: 99999,
-    width: '380px',
-    maxWidth: 'calc(100vw - 32px)',
-    maxHeight: 'calc(100vh - 32px)',
+    width: `${CARD_WIDTH}px`,
+    maxWidth: `calc(100vw - ${PADDING * 2}px)`,
+    maxHeight: `calc(100vh - ${PADDING * 2}px)`,
     overflowY: 'auto',
   };
 
   if (targetRect) {
-    const CARD_HEIGHT = 290;
-    const CARD_WIDTH = 380;
-    const PADDING = 16;
-
     const spaceBelow = window.innerHeight - targetRect.bottom;
     const spaceAbove = targetRect.top;
 
@@ -115,29 +133,38 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({ isOpen, onClose }) => 
 
     if (step.position === 'right' && (targetRect.right + PADDING + CARD_WIDTH <= window.innerWidth - PADDING)) {
       computedLeft = targetRect.right + PADDING;
-      computedTop = targetRect.top + 20;
+      computedTop = Math.max(PADDING, Math.min(targetRect.top, window.innerHeight - measuredHeight - PADDING));
     } else if (step.position === 'left' && (targetRect.left - PADDING - CARD_WIDTH >= PADDING)) {
       computedLeft = targetRect.left - CARD_WIDTH - PADDING;
-      computedTop = targetRect.top + 20;
-    } else if (step.position === 'top' && spaceAbove >= CARD_HEIGHT + PADDING) {
-      computedTop = targetRect.top - CARD_HEIGHT - PADDING;
-    } else if (step.position === 'bottom' && spaceBelow >= CARD_HEIGHT + PADDING) {
+      computedTop = Math.max(PADDING, Math.min(targetRect.top, window.innerHeight - measuredHeight - PADDING));
+    } else if (step.position === 'top' && spaceAbove >= measuredHeight + PADDING * 1.5) {
+      computedTop = targetRect.top - measuredHeight - PADDING;
+    } else if (step.position === 'bottom' && spaceBelow >= measuredHeight + PADDING * 1.5) {
       computedTop = targetRect.bottom + PADDING;
-    } else if (spaceBelow >= CARD_HEIGHT + PADDING) {
+    } else if (spaceBelow >= measuredHeight + PADDING) {
       computedTop = targetRect.bottom + PADDING;
-    } else if (spaceAbove >= CARD_HEIGHT + PADDING) {
-      computedTop = targetRect.top - CARD_HEIGHT - PADDING;
+    } else if (spaceAbove >= measuredHeight + PADDING) {
+      computedTop = targetRect.top - measuredHeight - PADDING;
     } else {
+      // Pick direction with more available vertical room
       if (spaceBelow >= spaceAbove) {
-        computedTop = Math.min(window.innerHeight - CARD_HEIGHT - PADDING, targetRect.bottom + PADDING);
+        computedTop = targetRect.bottom + PADDING;
       } else {
-        computedTop = Math.max(PADDING, targetRect.top - CARD_HEIGHT - PADDING);
+        computedTop = targetRect.top - measuredHeight - PADDING;
       }
     }
 
-    // Unconditional clamp to keep 100% of the card inside viewport
-    cardStyle.top = `${Math.max(PADDING, Math.min(window.innerHeight - CARD_HEIGHT - PADDING, computedTop))}px`;
-    cardStyle.left = `${Math.max(PADDING, Math.min(window.innerWidth - CARD_WIDTH - PADDING, computedLeft))}px`;
+    // Absolute viewport clamp: Never allow card to cross top or bottom viewport limits
+    const maxTop = Math.max(PADDING, window.innerHeight - measuredHeight - PADDING);
+    const minTop = PADDING;
+    const clampedTop = Math.max(minTop, Math.min(maxTop, computedTop));
+
+    const maxLeft = Math.max(PADDING, window.innerWidth - CARD_WIDTH - PADDING);
+    const minLeft = PADDING;
+    const clampedLeft = Math.max(minLeft, Math.min(maxLeft, computedLeft));
+
+    cardStyle.top = `${clampedTop}px`;
+    cardStyle.left = `${clampedLeft}px`;
   } else {
     // Center if element not found
     cardStyle.top = '50%';
@@ -160,8 +187,8 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({ isOpen, onClose }) => 
           style={{
             top: `${Math.max(4, targetRect.top - 6)}px`,
             left: `${Math.max(4, targetRect.left - 6)}px`,
-            width: `${Math.min(window.innerWidth - 8, targetRect.width + 12)}px`,
-            height: `${targetRect.height + 12}px`,
+            width: `${Math.min(window.innerWidth - 8, Math.max(30, targetRect.width + 12))}px`,
+            height: `${Math.max(20, targetRect.height + 12)}px`,
           }}
         />
       )}
@@ -171,6 +198,8 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({ isOpen, onClose }) => 
 
       {/* Tour Step Card */}
       <div
+        ref={cardRef}
+        data-testid="tour-card"
         style={cardStyle}
         className="bg-[#0D121F]/95 border border-white/15 rounded-2xl p-5 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-200"
         onClick={e => e.stopPropagation()}

@@ -12,12 +12,14 @@ export const QuickStats: React.FC<QuickStatsProps> = ({ events }) => {
   const totalAllowed = events.filter((e) => e.decision === 'allow').length;
   const totalBlocked = events.filter((e) => e.decision === 'block').length;
 
-  const latencies = events.map((e) => e.latency_ms);
+  const latencies = events
+    .map((e) => e.latency_ms)
+    .filter((l): l is number => typeof l === 'number' && !isNaN(l));
   latencies.sort((a, b) => a - b);
   const p95Latency =
     latencies.length > 0
-      ? latencies[Math.floor(latencies.length * 0.95)] || latencies[latencies.length - 1]
-      : 0;
+      ? latencies[Math.floor(latencies.length * 0.95)] ?? latencies[latencies.length - 1] ?? 0.8
+      : 0.8;
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">

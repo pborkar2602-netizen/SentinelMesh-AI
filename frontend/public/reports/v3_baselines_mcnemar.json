@@ -1,0 +1,124 @@
+{
+  "benchmark_scenarios_count": 60,
+  "b4_system": "B4: Full SentinelMesh Gateway",
+  "b4_accuracy": 0.85,
+  "b4_ci_95": [
+    0.7389,
+    0.919
+  ],
+  "comparisons": {
+    "B0: None (No Defense)": {
+      "baseline_accuracy": 0.4667,
+      "baseline_ci_95": [
+        0.3463,
+        0.5911
+      ],
+      "contingency_table": {
+        "a": 26,
+        "b": 25,
+        "c": 2,
+        "d": 7
+      },
+      "mcnemar_test": {
+        "b": 25,
+        "c": 2,
+        "n": 27,
+        "p_value": 5.647540092468262e-06,
+        "cohens_g": 0.4259,
+        "odds_ratio": 12.5,
+        "interpretation": "statistically significant"
+      },
+      "holm_bonferroni": {
+        "rank": 1,
+        "raw_p": 5.647540092468262e-06,
+        "threshold": 0.0125,
+        "reject_null": true
+      }
+    },
+    "B1: Domain Allowlist Only": {
+      "baseline_accuracy": 0.6833,
+      "baseline_ci_95": [
+        0.5577,
+        0.7869
+      ],
+      "contingency_table": {
+        "a": 39,
+        "b": 12,
+        "c": 2,
+        "d": 7
+      },
+      "mcnemar_test": {
+        "b": 12,
+        "c": 2,
+        "n": 14,
+        "p_value": 0.012939453125,
+        "cohens_g": 0.3571,
+        "odds_ratio": 6.0,
+        "interpretation": "statistically significant"
+      },
+      "holm_bonferroni": {
+        "rank": 3,
+        "raw_p": 0.012939453125,
+        "threshold": 0.025,
+        "reject_null": true
+      }
+    },
+    "B2: Static Regex / Phrase Matching": {
+      "baseline_accuracy": 0.4667,
+      "baseline_ci_95": [
+        0.3463,
+        0.5911
+      ],
+      "contingency_table": {
+        "a": 26,
+        "b": 25,
+        "c": 2,
+        "d": 7
+      },
+      "mcnemar_test": {
+        "b": 25,
+        "c": 2,
+        "n": 27,
+        "p_value": 5.647540092468262e-06,
+        "cohens_g": 0.4259,
+        "odds_ratio": 12.5,
+        "interpretation": "statistically significant"
+      },
+      "holm_bonferroni": {
+        "rank": 2,
+        "raw_p": 5.647540092468262e-06,
+        "threshold": 0.016666666666666666,
+        "reject_null": true
+      }
+    },
+    "B3: SentinelMesh (Taint Disabled Ablation)": {
+      "baseline_accuracy": 0.7833,
+      "baseline_ci_95": [
+        0.6638,
+        0.8688
+      ],
+      "contingency_table": {
+        "a": 47,
+        "b": 4,
+        "c": 0,
+        "d": 9
+      },
+      "mcnemar_test": {
+        "b": 4,
+        "c": 0,
+        "n": 4,
+        "p_value": 0.125,
+        "cohens_g": 0.5,
+        "odds_ratio": Infinity,
+        "interpretation": "not statistically significant"
+      },
+      "holm_bonferroni": {
+        "rank": 4,
+        "raw_p": 0.125,
+        "threshold": 0.05,
+        "reject_null": false
+      }
+    }
+  },
+  "judge_status": "judge not evaluated (no recorded LLM verdicts; stub removed)"
+}

@@ -1,0 +1,183 @@
+{
+  "benchmark": "InjecAgent Enhanced Hacking Prompt",
+  "split": "test (group-aware 0% leakage)",
+  "sample_count": 748,
+  "cluster_count": 44,
+  "systems": {
+    "B0: None (No Defense)": {
+      "overall_prevention_rate": 0.0,
+      "overall_ci_95": [
+        0.0,
+        0.0051
+      ],
+      "dh_evaluated": 425,
+      "dh_prevention_rate": 0.0,
+      "dh_ci_95": [
+        0.0,
+        0.009
+      ],
+      "ds_evaluated": 323,
+      "ds_prevention_rate": 0.0,
+      "ds_ci_95": [
+        0.0,
+        0.0118
+      ],
+      "benign_evaluated": 748,
+      "benign_pass_rate": 1.0,
+      "benign_ci_95": [
+        0.9949,
+        1.0
+      ],
+      "false_positive_rate": 0.0,
+      "mcnemar_vs_b4": {
+        "b": 697,
+        "c": 0,
+        "n": 697,
+        "p_value": 3.041746506072256e-210,
+        "cohens_g": 0.5,
+        "odds_ratio": Infinity,
+        "interpretation": "statistically significant"
+      }
+    },
+    "B1: Domain Allowlist Only": {
+      "overall_prevention_rate": 0.6136,
+      "overall_ci_95": [
+        0.5782,
+        0.6479
+      ],
+      "dh_evaluated": 425,
+      "dh_prevention_rate": 0.52,
+      "dh_ci_95": [
+        0.4725,
+        0.5671
+      ],
+      "ds_evaluated": 323,
+      "ds_prevention_rate": 0.7368,
+      "ds_ci_95": [
+        0.6862,
+        0.7819
+      ],
+      "benign_evaluated": 748,
+      "benign_pass_rate": 1.0,
+      "benign_ci_95": [
+        0.9949,
+        1.0
+      ],
+      "false_positive_rate": 0.0,
+      "mcnemar_vs_b4": {
+        "b": 238,
+        "c": 0,
+        "n": 238,
+        "p_value": 4.527839539413356e-72,
+        "cohens_g": 0.5,
+        "odds_ratio": Infinity,
+        "interpretation": "statistically significant"
+      }
+    },
+    "B2: Static Regex / Phrase Matching": {
+      "overall_prevention_rate": 1.0,
+      "overall_ci_95": [
+        0.9949,
+        1.0
+      ],
+      "dh_evaluated": 425,
+      "dh_prevention_rate": 1.0,
+      "dh_ci_95": [
+        0.991,
+        1.0
+      ],
+      "ds_evaluated": 323,
+      "ds_prevention_rate": 1.0,
+      "ds_ci_95": [
+        0.9882,
+        1.0
+      ],
+      "benign_evaluated": 748,
+      "benign_pass_rate": 1.0,
+      "benign_ci_95": [
+        0.9949,
+        1.0
+      ],
+      "false_positive_rate": 0.0,
+      "mcnemar_vs_b4": {
+        "b": 0,
+        "c": 51,
+        "n": 51,
+        "p_value": 8.881784197001252e-16,
+        "cohens_g": 0.5,
+        "odds_ratio": 0.0,
+        "interpretation": "statistically significant"
+      }
+    },
+    "B3: SentinelMesh (Taint Disabled Ablation)": {
+      "overall_prevention_rate": 0.0227,
+      "overall_ci_95": [
+        0.0142,
+        0.0361
+      ],
+      "dh_evaluated": 425,
+      "dh_prevention_rate": 0.04,
+      "dh_ci_95": [
+        0.0251,
+        0.0631
+      ],
+      "ds_evaluated": 323,
+      "ds_prevention_rate": 0.0,
+      "ds_ci_95": [
+        0.0,
+        0.0118
+      ],
+      "benign_evaluated": 748,
+      "benign_pass_rate": 1.0,
+      "benign_ci_95": [
+        0.9949,
+        1.0
+      ],
+      "false_positive_rate": 0.0,
+      "mcnemar_vs_b4": {
+        "b": 680,
+        "c": 0,
+        "n": 680,
+        "p_value": 3.986877980439027e-205,
+        "cohens_g": 0.5,
+        "odds_ratio": Infinity,
+        "interpretation": "statistically significant"
+      }
+    },
+    "B4: Full SentinelMesh Gateway": {
+      "overall_prevention_rate": 0.9318,
+      "overall_ci_95": [
+        0.9115,
+        0.9478
+      ],
+      "dh_evaluated": 425,
+      "dh_prevention_rate": 0.92,
+      "dh_ci_95": [
+        0.8903,
+        0.9422
+      ],
+      "ds_evaluated": 323,
+      "ds_prevention_rate": 0.9474,
+      "ds_ci_95": [
+        0.9173,
+        0.9669
+      ],
+      "benign_evaluated": 748,
+      "benign_pass_rate": 1.0,
+      "benign_ci_95": [
+        0.9949,
+        1.0
+      ],
+      "false_positive_rate": 0.0,
+      "mcnemar_vs_b4": {
+        "b": 0,
+        "c": 0,
+        "n": 0,
+        "p_value": 1.0,
+        "cohens_g": 0.0,
+        "odds_ratio": 1.0,
+        "interpretation": "Identical performance (no discordant pairs)"
+      }
+    }
+  }
+}

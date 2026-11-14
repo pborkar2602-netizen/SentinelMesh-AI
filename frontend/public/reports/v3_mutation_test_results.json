@@ -1,0 +1,341 @@
+{
+  "timestamp": "2026-11-14T15:19:42Z",
+  "total_mutants": 47,
+  "killed": 47,
+  "survived": 0,
+  "mutation_score_pct": 100.0,
+  "target_met_85_pct": true,
+  "elapsed_seconds": 6.18,
+  "mutants": [
+    {
+      "id": 1,
+      "file": "policy_engine.py",
+      "line": 71,
+      "desc": "Negate Guard on line 71: has_unapproved_recipient or not is_approved_email_domain(rec)",
+      "status": "killed"
+    },
+    {
+      "id": 2,
+      "file": "policy_engine.py",
+      "line": 84,
+      "desc": "Negate Guard on line 84: is_tainted and is_unapproved_destination",
+      "status": "killed"
+    },
+    {
+      "id": 3,
+      "file": "policy_engine.py",
+      "line": 86,
+      "desc": "Negate Guard on line 86: mode == \"enforce\"",
+      "status": "killed"
+    },
+    {
+      "id": 4,
+      "file": "policy_engine.py",
+      "line": 118,
+      "desc": "Negate Guard on line 118: is_tainted or is_external_destination",
+      "status": "killed"
+    },
+    {
+      "id": 5,
+      "file": "policy_engine.py",
+      "line": 119,
+      "desc": "Negate Guard on line 119: mode == \"enforce\"",
+      "status": "killed"
+    },
+    {
+      "id": 6,
+      "file": "policy_engine.py",
+      "line": 131,
+      "desc": "Negate Guard on line 131: cls._high_sensitivity_external_action == \"require_approval\" or is_tainted",
+      "status": "killed"
+    },
+    {
+      "id": 7,
+      "file": "policy_engine.py",
+      "line": 132,
+      "desc": "Negate Guard on line 132: mode == \"enforce\"",
+      "status": "killed"
+    },
+    {
+      "id": 8,
+      "file": "policy_engine.py",
+      "line": 151,
+      "desc": "Negate Guard on line 151: sens_cols",
+      "status": "killed"
+    },
+    {
+      "id": 9,
+      "file": "policy_engine.py",
+      "line": 161,
+      "desc": "Negate Guard on line 161: is_tainted or bool(matched_untrusted_vals)",
+      "status": "killed"
+    },
+    {
+      "id": 10,
+      "file": "policy_engine.py",
+      "line": 169,
+      "desc": "Negate Guard on line 169: mode == \"enforce\"",
+      "status": "killed"
+    },
+    {
+      "id": 11,
+      "file": "policy_engine.py",
+      "line": 182,
+      "desc": "Negate Guard on line 182: priv_ops",
+      "status": "killed"
+    },
+    {
+      "id": 12,
+      "file": "policy_engine.py",
+      "line": 184,
+      "desc": "Negate Guard on line 184: mode == \"enforce\"",
+      "status": "killed"
+    },
+    {
+      "id": 13,
+      "file": "policy_engine.py",
+      "line": 196,
+      "desc": "Negate Guard on line 196: has_unapproved_recipient",
+      "status": "killed"
+    },
+    {
+      "id": 14,
+      "file": "policy_engine.py",
+      "line": 198,
+      "desc": "Negate Guard on line 198: mode == \"enforce\"",
+      "status": "killed"
+    },
+    {
+      "id": 15,
+      "file": "policy_engine.py",
+      "line": 214,
+      "desc": "Negate Guard on line 214: actionable_threats",
+      "status": "killed"
+    },
+    {
+      "id": 16,
+      "file": "policy_engine.py",
+      "line": 216,
+      "desc": "Negate Guard on line 216: mode == \"enforce\"",
+      "status": "killed"
+    },
+    {
+      "id": 17,
+      "file": "policy_engine.py",
+      "line": 232,
+      "desc": "Negate Guard on line 232: tool_name in (\"db_query\", \"read_doc\") and is_tainted",
+      "status": "killed"
+    },
+    {
+      "id": 18,
+      "file": "policy_engine.py",
+      "line": 242,
+      "desc": "Negate Guard on line 242: effective_tainted",
+      "status": "killed"
+    },
+    {
+      "id": 19,
+      "file": "policy_engine.py",
+      "line": 252,
+      "desc": "Negate Guard on line 252: mode == \"enforce\"",
+      "status": "killed"
+    },
+    {
+      "id": 20,
+      "file": "policy_engine.py",
+      "line": 265,
+      "desc": "Negate Guard on line 265: mode == \"enforce\"",
+      "status": "killed"
+    },
+    {
+      "id": 21,
+      "file": "policy_engine.py",
+      "line": 277,
+      "desc": "Negate Guard on line 277: anomaly_score >= cls._anomaly_threshold",
+      "status": "killed"
+    },
+    {
+      "id": 22,
+      "file": "policy_engine.py",
+      "line": 280,
+      "desc": "Negate Guard on line 280: is_tainted and anomaly_score >= 85 and any(\"*\" in str(v) for v in arguments.values())",
+      "status": "killed"
+    },
+    {
+      "id": 23,
+      "file": "policy_engine.py",
+      "line": 281,
+      "desc": "Negate Guard on line 281: mode == \"enforce\"",
+      "status": "killed"
+    },
+    {
+      "id": 24,
+      "file": "policy_engine.py",
+      "line": 291,
+      "desc": "Negate Guard on line 291: mode == \"enforce\"",
+      "status": "killed"
+    },
+    {
+      "id": 25,
+      "file": "rules.py",
+      "line": 82,
+      "desc": "Negate Guard on line 82: not target_host or not approved_domain",
+      "status": "killed"
+    },
+    {
+      "id": 26,
+      "file": "rules.py",
+      "line": 86,
+      "desc": "Negate Guard on line 86: target == approved",
+      "status": "killed"
+    },
+    {
+      "id": 27,
+      "file": "rules.py",
+      "line": 88,
+      "desc": "Negate Guard on line 88: target.endswith(\".\" + approved)",
+      "status": "killed"
+    },
+    {
+      "id": 28,
+      "file": "rules.py",
+      "line": 109,
+      "desc": "Negate Guard on line 109: host.endswith(\".local\") or host.endswith(\".internal\")",
+      "status": "killed"
+    },
+    {
+      "id": 29,
+      "file": "rules.py",
+      "line": 128,
+      "desc": "Negate Guard on line 128: host.endswith(\".local\") or host.endswith(\".internal\")",
+      "status": "killed"
+    },
+    {
+      "id": 30,
+      "file": "rules.py",
+      "line": 181,
+      "desc": "Negate Guard on line 181: not is_approved_email_domain(recipient)",
+      "status": "killed"
+    },
+    {
+      "id": 31,
+      "file": "rules.py",
+      "line": 195,
+      "desc": "Negate Guard on line 195: match",
+      "status": "killed"
+    },
+    {
+      "id": 32,
+      "file": "rules.py",
+      "line": 211,
+      "desc": "Negate Guard on line 211: match",
+      "status": "killed"
+    },
+    {
+      "id": 33,
+      "file": "rules.py",
+      "line": 225,
+      "desc": "Negate Guard on line 225: match",
+      "status": "killed"
+    },
+    {
+      "id": 34,
+      "file": "rules.py",
+      "line": 239,
+      "desc": "Negate Guard on line 239: match",
+      "status": "killed"
+    },
+    {
+      "id": 35,
+      "file": "rules.py",
+      "line": 263,
+      "desc": "Negate Guard on line 263: match",
+      "status": "killed"
+    },
+    {
+      "id": 36,
+      "file": "rules.py",
+      "line": 304,
+      "desc": "Negate Guard on line 304: match",
+      "status": "killed"
+    },
+    {
+      "id": 37,
+      "file": "rules.py",
+      "line": 319,
+      "desc": "Negate Guard on line 319: match",
+      "status": "killed"
+    },
+    {
+      "id": 38,
+      "file": "rules.py",
+      "line": 696,
+      "desc": "Negate Guard on line 696: _match_identifier_against_patterns(c, cfg_cols)",
+      "status": "killed"
+    },
+    {
+      "id": 39,
+      "file": "rules.py",
+      "line": 700,
+      "desc": "Negate Guard on line 700: _match_identifier_against_patterns(t, cfg_tables) or (",
+      "status": "killed",
+      "reason": "SyntaxError"
+    },
+    {
+      "id": 40,
+      "file": "rules.py",
+      "line": 743,
+      "desc": "Negate Guard on line 743: not matched_classes",
+      "status": "killed"
+    },
+    {
+      "id": 41,
+      "file": "tokens.py",
+      "line": 78,
+      "desc": "Negate Guard on line 78: not token_str or \".\" not in token_str",
+      "status": "killed"
+    },
+    {
+      "id": 42,
+      "file": "tokens.py",
+      "line": 82,
+      "desc": "Negate Guard on line 82: len(parts) != 2",
+      "status": "killed"
+    },
+    {
+      "id": 43,
+      "file": "tokens.py",
+      "line": 96,
+      "desc": "Negate Guard on line 96: not hmac.compare_digest(signature, expected_sig)",
+      "status": "killed"
+    },
+    {
+      "id": 44,
+      "file": "tokens.py",
+      "line": 102,
+      "desc": "Negate Guard on line 102: now_ts > exp_ts",
+      "status": "killed"
+    },
+    {
+      "id": 45,
+      "file": "tokens.py",
+      "line": 107,
+      "desc": "Negate Guard on line 107: payload.get(\"tool_name\") != tool_name or payload.get(\"action_hash\") != expected_act_hash",
+      "status": "killed"
+    },
+    {
+      "id": 46,
+      "file": "tokens.py",
+      "line": 112,
+      "desc": "Negate Guard on line 112: not nonce",
+      "status": "killed"
+    },
+    {
+      "id": 47,
+      "file": "tokens.py",
+      "line": 115,
+      "desc": "Negate Guard on line 115: is_nonce_used(nonce)",
+      "status": "killed"
+    }
+  ]
+}

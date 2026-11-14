@@ -1,0 +1,106 @@
+{
+  "1. Unattributed (Wire Transit & OS Loopback)": {
+    "p50": 4.62,
+    "p90": 7.42,
+    "p95": 9.16,
+    "mean": 5.21,
+    "min": 3.33,
+    "max": 26.12
+  },
+  "2. DB Session & Agent State": {
+    "p50": 0.12,
+    "p90": 0.21,
+    "p95": 0.27,
+    "mean": 0.19,
+    "min": 0.1,
+    "max": 31.36
+  },
+  "3. Rules & Trust Labeling": {
+    "p50": 0.16,
+    "p90": 0.32,
+    "p95": 0.41,
+    "mean": 0.2,
+    "min": 0.07,
+    "max": 2.78
+  },
+  "4. Privacy Detection & Risk": {
+    "p50": 0.14,
+    "p90": 0.26,
+    "p95": 0.3,
+    "mean": 0.16,
+    "min": 0.08,
+    "max": 3.14
+  },
+  "5. Learned Baseline Detector": {
+    "p50": 1.31,
+    "p90": 3.82,
+    "p95": 5.3,
+    "mean": 1.87,
+    "min": 0.08,
+    "max": 29.79
+  },
+  "6. Intent Judge (Stub Replay)": {
+    "p50": 0.18,
+    "p90": 0.59,
+    "p95": 0.74,
+    "mean": 0.31,
+    "min": 0.04,
+    "max": 32.03
+  },
+  "7. Policy Engine Evaluation": {
+    "p50": 0.04,
+    "p90": 0.13,
+    "p95": 0.15,
+    "mean": 0.06,
+    "min": 0.01,
+    "max": 2.52
+  },
+  "8. Masking & Tokenization": {
+    "p50": 0.14,
+    "p90": 0.45,
+    "p95": 0.56,
+    "mean": 0.22,
+    "min": 0.05,
+    "max": 3.96
+  },
+  "9. Hash Chain & Audit Log Write": {
+    "p50": 0.49,
+    "p90": 0.88,
+    "p95": 1.26,
+    "mean": 2.73,
+    "min": 0.3,
+    "max": 346.83
+  },
+  "10. WebSocket Event Broadcast": {
+    "p50": 0.01,
+    "p90": 0.01,
+    "p95": 0.01,
+    "mean": 0.01,
+    "min": 0.01,
+    "max": 0.17
+  },
+  "11. Incident Builder Analysis": {
+    "p50": 0.01,
+    "p90": 4.84,
+    "p95": 8.57,
+    "mean": 1.77,
+    "min": 0.01,
+    "max": 180.48
+  },
+  "12. Response Serialization": {
+    "p50": 0.22,
+    "p90": 1.23,
+    "p95": 1.57,
+    "mean": 1.17,
+    "min": 0.07,
+    "max": 349.65
+  },
+  "TOTAL REAL HTTP ROUND-TRIP": {
+    "p50": 8.6,
+    "p90": 19.25,
+    "p95": 29.53,
+    "mean": 13.91,
+    "min": 4.6,
+    "max": 361.91
+  }
+}

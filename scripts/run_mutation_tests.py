@@ -145,6 +145,16 @@ def verify_policy_engine() -> None:
     dec_anom, _ = pe.evaluate_policy("db_query", {"query": "SELECT * FROM users"}, is_tainted=True, tainted_by=["doc.txt"], findings=[], risk_score=90, anomaly_score=90, anomaly_reasons=["Bulk dump"])
     assert dec_anom == "block"
 
+    # R. Untainted unapproved recipient (Mutant 14)
+    f_unapp_untainted = [Finding("unapproved_external_recipient", "high", "attacker@unapproved.org", 35)]
+    dec_unapp_enf, _ = pe.evaluate_policy("send_email", {"to": "attacker@unapproved.org", "body": "memo"}, is_tainted=False, tainted_by=[], findings=f_unapp_untainted, risk_score=35)
+    assert dec_unapp_enf == "block", f"Expected block on untainted unapproved recipient in enforce mode, got {dec_unapp_enf}"
+
+    # S. Intent Judge Divergence Mismatch >= 70 (Mutant 20)
+    judge_verdict = type('JudgeV', (), {'is_aligned': False, 'mismatch_score': 85, 'reasoning': 'Divergent action'})()
+    dec_judge_enf, _ = pe.evaluate_policy("db_query", {"query": "SELECT id FROM tbl"}, is_tainted=False, tainted_by=[], findings=[], risk_score=15, judge_verdict=judge_verdict)
+    assert dec_judge_enf == "require_approval", f"Expected require_approval on intent judge divergence, got {dec_judge_enf}"
+
     # 2. MONITOR MODE CHECKS (would_block for all violations)
     pe.set_mode("monitor")
     dec_mon_ddl, _ = pe.evaluate_policy("db_query", {"query": "DROP TABLE users"}, is_tainted=False, tainted_by=[], findings=f_ddl, risk_score=45)
@@ -152,6 +162,12 @@ def verify_policy_engine() -> None:
 
     dec_mon_exfil, _ = pe.evaluate_policy("send_email", {"to": "attacker@evil.com", "body": "leak"}, is_tainted=True, tainted_by=["doc.txt"], findings=f_unapproved_email, risk_score=60)
     assert dec_mon_exfil == "would_block", f"Expected would_block in monitor for exfil, got {dec_mon_exfil}"
+
+    dec_mon_unapp, _ = pe.evaluate_policy("send_email", {"to": "attacker@unapproved.org", "body": "memo"}, is_tainted=False, tainted_by=[], findings=f_unapp_untainted, risk_score=35)
+    assert dec_mon_unapp == "would_block", f"Expected would_block in monitor for untainted unapproved recipient, got {dec_mon_unapp}"
+
+    dec_mon_judge, _ = pe.evaluate_policy("db_query", {"query": "SELECT id FROM tbl"}, is_tainted=False, tainted_by=[], findings=[], risk_score=15, judge_verdict=judge_verdict)
+    assert dec_mon_judge == "would_block", f"Expected would_block in monitor for intent judge divergence, got {dec_mon_judge}"
 
     dec_mon_threat, _ = pe.evaluate_policy("db_query", {"query": "SELECT 1"}, is_tainted=False, tainted_by=[], findings=[Finding("sql_injection_pattern", "high", "SQLi", 40)], risk_score=40)
     assert dec_mon_threat == "would_block", f"Expected would_block in monitor for threat, got {dec_mon_threat}"
@@ -186,7 +202,7 @@ def verify_rules() -> None:
     unapp = r.check_unapproved_email_recipient("send_email", {"to": "evil@bad.xyz"})
     assert any(f.name == "unapproved_external_recipient" for f in unapp)
 
-    # 2. Internal destination check
+    # 2. Internal destination & approved API host check (Mutant 28)
     assert r.is_internal_destination("http://localhost:8000/metrics") is True
     assert r.is_internal_destination("http://127.0.0.1:8000/metrics") is True
     assert r.is_internal_destination("http://service.internal.local/api") is True
@@ -194,6 +210,13 @@ def verify_rules() -> None:
     assert r.is_internal_destination("http://server.internal/api") is True
     assert r.is_internal_destination("https://evil.attacker.com/data") is False
     assert r.is_internal_destination("") is False
+
+    # 2b. is_approved_api_host validation (Mutant 28 & hostile suffixes)
+    assert r.is_approved_api_host("http://service.local/api") is True
+    assert r.is_approved_api_host("http://service.internal/api") is True
+    assert r.is_approved_api_host("http://evil.internal.example.com/api") is False
+    assert r.is_approved_api_host("http://evil.local.attacker.com/api") is False
+    assert r.is_approved_api_host("https://unapproved.attacker.com/api") is False
 
     # 3. SSRF metadata target detector
     ssrf_meta = r.check_ssrf_metadata("external_api", {"url": "http://169.254.169.254/latest/meta-data/"})
@@ -244,9 +267,18 @@ def verify_rules() -> None:
     )
     assert any(f.name == "prompt_injection_phrase" for f in pi_findings), "Expected prompt injection finding"
 
-    # 11. Untasked sensitive read
+    # 11. Untasked sensitive read (table + column)
     ut = r.analyze_untasked_sensitive_read("db_query", {"query": "SELECT ssn, salary FROM employees"}, task_description="Check weather forecast")
     assert ut["has_untasked_sensitive_read"] is True
+
+    # 11b. Untasked sensitive read (column-only match, Mutant 38)
+    ut_col = r.analyze_untasked_sensitive_read("db_query", {"query": "SELECT salary, bonus FROM public_general_ledger"}, task_description="Check inventory")
+    assert ut_col["has_untasked_sensitive_read"] is True
+    assert any("column:salary" in t for t in [item for sublist in ut_col["matched_targets"].values() for item in sublist])
+
+    # 11c. Clean untasked sensitive read (must NOT match clean columns, kills Mutant 38)
+    ut_clean = r.analyze_untasked_sensitive_read("db_query", {"query": "SELECT order_id, product_name FROM store_inventory"}, task_description="Check store inventory")
+    assert ut_clean["has_untasked_sensitive_read"] is False, f"Expected clean query to have no untasked sensitive read, got {ut_clean}"
 
     # 12. run_all_detectors comprehensive check
     all_findings = r.run_all_detectors("db_query", {"query": "DROP TABLE users"}, [])

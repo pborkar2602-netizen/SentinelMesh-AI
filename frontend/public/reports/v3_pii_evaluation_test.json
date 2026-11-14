@@ -1,0 +1,222 @@
+{
+  "benchmark": "ai4privacy English Validation PII Masking",
+  "description": "Side-by-side evaluation of initial v3 regex baseline vs. preregistered v3.1 phonenumbers & expanded national ID detectors across original and fresh test slices.",
+  "runs": {
+    "initial_v3_baseline_old_test": {
+      "label": "v3 Initial Regex (Old Test Slice, N=1028)",
+      "macro_f1": 0.4125,
+      "micro_precision": 0.6487,
+      "micro_recall": 0.6937,
+      "entities": {
+        "NATIONAL_ID": {
+          "TP": 7,
+          "FP": 0,
+          "FN": 253,
+          "precision": 1.0,
+          "precision_ci_95": [
+            0.6457,
+            1.0
+          ],
+          "recall": 0.0269,
+          "recall_ci_95": [
+            0.0131,
+            0.0545
+          ],
+          "f1_score": 0.0524
+        },
+        "PHONE": {
+          "TP": 310,
+          "FP": 331,
+          "FN": 19,
+          "precision": 0.4836,
+          "precision_ci_95": [
+            0.4451,
+            0.5223
+          ],
+          "recall": 0.9422,
+          "recall_ci_95": [
+            0.9116,
+            0.9627
+          ],
+          "f1_score": 0.6392
+        },
+        "CREDIT_CARD": {
+          "TP": 0,
+          "FP": 7,
+          "FN": 0,
+          "precision": 0.0,
+          "precision_ci_95": [
+            0.0,
+            0.3543
+          ],
+          "recall": 0.0,
+          "recall_ci_95": [
+            0.0,
+            0.0
+          ],
+          "f1_score": 0.0
+        },
+        "EMAIL": {
+          "TP": 333,
+          "FP": 14,
+          "FN": 15,
+          "precision": 0.9597,
+          "precision_ci_95": [
+            0.9334,
+            0.9758
+          ],
+          "recall": 0.9569,
+          "recall_ci_95": [
+            0.9301,
+            0.9737
+          ],
+          "f1_score": 0.9583
+        }
+      }
+    },
+    "enhanced_v3_1_old_test": {
+      "label": "v3.1 Enhanced (Old Test Slice, N=1028)",
+      "macro_f1": 0.3545,
+      "micro_precision": 0.5186,
+      "micro_recall": 0.5795,
+      "entities": {
+        "NATIONAL_ID": {
+          "TP": 8,
+          "FP": 8,
+          "FN": 252,
+          "precision": 0.5,
+          "precision_ci_95": [
+            0.28,
+            0.72
+          ],
+          "recall": 0.0308,
+          "recall_ci_95": [
+            0.0157,
+            0.0595
+          ],
+          "f1_score": 0.058
+        },
+        "EMAIL": {
+          "TP": 333,
+          "FP": 14,
+          "FN": 15,
+          "precision": 0.9597,
+          "precision_ci_95": [
+            0.9334,
+            0.9758
+          ],
+          "recall": 0.9569,
+          "recall_ci_95": [
+            0.9301,
+            0.9737
+          ],
+          "f1_score": 0.9583
+        },
+        "CREDIT_CARD": {
+          "TP": 0,
+          "FP": 7,
+          "FN": 0,
+          "precision": 0.0,
+          "precision_ci_95": [
+            0.0,
+            0.3543
+          ],
+          "recall": 0.0,
+          "recall_ci_95": [
+            0.0,
+            0.0
+          ],
+          "f1_score": 0.0
+        },
+        "PHONE": {
+          "TP": 202,
+          "FP": 475,
+          "FN": 127,
+          "precision": 0.2984,
+          "precision_ci_95": [
+            0.2651,
+            0.3339
+          ],
+          "recall": 0.614,
+          "recall_ci_95": [
+            0.5603,
+            0.665
+          ],
+          "f1_score": 0.4016
+        }
+      }
+    },
+    "enhanced_v3_1_fresh_test": {
+      "label": "v3.1 Enhanced (Fresh Disjoint Test Slice, N=1043, Seed 99)",
+      "macro_f1": 0.331,
+      "micro_precision": 0.4451,
+      "micro_recall": 0.507,
+      "entities": {
+        "NATIONAL_ID": {
+          "TP": 8,
+          "FP": 9,
+          "FN": 363,
+          "precision": 0.4706,
+          "precision_ci_95": [
+            0.2617,
+            0.6904
+          ],
+          "recall": 0.0216,
+          "recall_ci_95": [
+            0.011,
+            0.042
+          ],
+          "f1_score": 0.0412
+        },
+        "EMAIL": {
+          "TP": 312,
+          "FP": 8,
+          "FN": 15,
+          "precision": 0.975,
+          "precision_ci_95": [
+            0.9515,
+            0.9873
+          ],
+          "recall": 0.9541,
+          "recall_ci_95": [
+            0.9257,
+            0.972
+          ],
+          "f1_score": 0.9645
+        },
+        "CREDIT_CARD": {
+          "TP": 0,
+          "FP": 5,
+          "FN": 0,
+          "precision": 0.0,
+          "precision_ci_95": [
+            0.0,
+            0.4345
+          ],
+          "recall": 0.0,
+          "recall_ci_95": [
+            0.0,
+            0.0
+          ],
+          "f1_score": 0.0
+        },
+        "PHONE": {
+          "TP": 150,
+          "FP": 564,
+          "FN": 79,
+          "precision": 0.2101,
+          "precision_ci_95": [
+            0.1818,
+            0.2415
+          ],
+          "recall": 0.655,
+          "recall_ci_95": [
+            0.5914,
+            0.7136
+          ],
+          "f1_score": 0.3181
+        }
+      }
+    }
+  }
+}
