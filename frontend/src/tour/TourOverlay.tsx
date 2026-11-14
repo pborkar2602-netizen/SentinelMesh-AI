@@ -17,26 +17,40 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({ isOpen, onClose }) => 
   useEffect(() => {
     if (!isOpen) return;
 
-    const updateRect = () => {
-      const el = document.getElementById(step.targetId);
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-        setTimeout(() => {
-          const rect = el.getBoundingClientRect();
-          setTargetRect(rect);
-        }, 350);
+    const el = document.getElementById(step.targetId);
+    if (el) {
+      el.classList.add('in');
+      let parent = el.parentElement;
+      while (parent) {
+        if (parent.classList.contains('rv')) parent.classList.add('in');
+        parent = parent.parentElement;
+      }
+      el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    }
+
+    const updateBoundingBox = () => {
+      const element = document.getElementById(step.targetId);
+      if (element) {
+        setTargetRect(element.getBoundingClientRect());
       } else {
         setTargetRect(null);
       }
     };
 
-    updateRect();
-    window.addEventListener('resize', updateRect);
-    window.addEventListener('scroll', updateRect);
+    updateBoundingBox();
+    const t1 = setTimeout(updateBoundingBox, 100);
+    const t2 = setTimeout(updateBoundingBox, 300);
+    const t3 = setTimeout(updateBoundingBox, 600);
+
+    window.addEventListener('resize', updateBoundingBox);
+    window.addEventListener('scroll', updateBoundingBox, { passive: true });
 
     return () => {
-      window.removeEventListener('resize', updateRect);
-      window.removeEventListener('scroll', updateRect);
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      window.removeEventListener('resize', updateBoundingBox);
+      window.removeEventListener('scroll', updateBoundingBox);
     };
   }, [currentStepIndex, isOpen, step.targetId]);
 
@@ -85,19 +99,41 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({ isOpen, onClose }) => 
   };
 
   if (targetRect) {
+    const CARD_HEIGHT = 290;
+    const CARD_WIDTH = 380;
+    const PADDING = 16;
+
     const spaceBelow = window.innerHeight - targetRect.bottom;
     const spaceAbove = targetRect.top;
-    const padding = 16;
 
-    if (spaceBelow >= 240 || spaceBelow >= spaceAbove) {
-      // Position below target
-      cardStyle.top = `${Math.min(window.innerHeight - 260, targetRect.bottom + padding)}px`;
-      cardStyle.left = `${Math.max(16, Math.min(window.innerWidth - 396, targetRect.left + (targetRect.width / 2) - 190))}px`;
+    let computedTop = PADDING;
+    let computedLeft = targetRect.left + (targetRect.width / 2) - (CARD_WIDTH / 2);
+
+    if (step.position === 'right' && (targetRect.right + PADDING + CARD_WIDTH <= window.innerWidth - PADDING)) {
+      computedLeft = targetRect.right + PADDING;
+      computedTop = targetRect.top + 20;
+    } else if (step.position === 'left' && (targetRect.left - PADDING - CARD_WIDTH >= PADDING)) {
+      computedLeft = targetRect.left - CARD_WIDTH - PADDING;
+      computedTop = targetRect.top + 20;
+    } else if (step.position === 'top' && spaceAbove >= CARD_HEIGHT + PADDING) {
+      computedTop = targetRect.top - CARD_HEIGHT - PADDING;
+    } else if (step.position === 'bottom' && spaceBelow >= CARD_HEIGHT + PADDING) {
+      computedTop = targetRect.bottom + PADDING;
+    } else if (spaceBelow >= CARD_HEIGHT + PADDING) {
+      computedTop = targetRect.bottom + PADDING;
+    } else if (spaceAbove >= CARD_HEIGHT + PADDING) {
+      computedTop = targetRect.top - CARD_HEIGHT - PADDING;
     } else {
-      // Position above target
-      cardStyle.bottom = `${Math.min(window.innerHeight - 100, window.innerHeight - targetRect.top + padding)}px`;
-      cardStyle.left = `${Math.max(16, Math.min(window.innerWidth - 396, targetRect.left + (targetRect.width / 2) - 190))}px`;
+      if (spaceBelow >= spaceAbove) {
+        computedTop = Math.min(window.innerHeight - CARD_HEIGHT - PADDING, targetRect.bottom + PADDING);
+      } else {
+        computedTop = Math.max(PADDING, targetRect.top - CARD_HEIGHT - PADDING);
+      }
     }
+
+    // Unconditional clamp to keep 100% of the card inside viewport
+    cardStyle.top = `${Math.max(PADDING, Math.min(window.innerHeight - CARD_HEIGHT - PADDING, computedTop))}px`;
+    cardStyle.left = `${Math.max(PADDING, Math.min(window.innerWidth - CARD_WIDTH - PADDING, computedLeft))}px`;
   } else {
     // Center if element not found
     cardStyle.top = '50%';
@@ -107,23 +143,26 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({ isOpen, onClose }) => 
 
   return (
     <div ref={overlayRef} className="fixed inset-0 z-[99990] pointer-events-auto" data-testid="guided-tour-overlay">
-      {/* Dark backdrop with blur */}
+      {/* Click outside to close */}
       <div 
-        className="absolute inset-0 bg-[#06080F]/75 backdrop-blur-sm transition-opacity duration-300"
+        className="absolute inset-0 cursor-default"
         onClick={onClose}
       />
 
-      {/* Spotlight cutout border around targeted element */}
+      {/* Real Spotlight Cutout with crystal-clear center & dark outer shadow */}
       {targetRect && (
         <div
-          className="absolute pointer-events-none rounded-xl transition-all duration-300 ring-2 ring-emerald-400/80 shadow-[0_0_35px_rgba(52,211,153,0.35)]"
+          className="fixed pointer-events-none rounded-2xl transition-all duration-300 ring-2 ring-emerald-400/90 shadow-[0_0_0_9999px_rgba(6,8,15,0.78),0_0_35px_rgba(52,211,153,0.45)] z-[99992]"
           style={{
-            top: `${Math.max(0, targetRect.top - 8)}px`,
-            left: `${Math.max(0, targetRect.left - 8)}px`,
-            width: `${targetRect.width + 16}px`,
-            height: `${targetRect.height + 16}px`,
+            top: `${Math.max(4, targetRect.top - 6)}px`,
+            left: `${Math.max(4, targetRect.left - 6)}px`,
+            width: `${Math.min(window.innerWidth - 8, targetRect.width + 12)}px`,
+            height: `${targetRect.height + 12}px`,
           }}
         />
+      )}
+      {!targetRect && (
+        <div className="fixed inset-0 bg-[#06080F]/78 z-[99991]" />
       )}
 
       {/* Tour Step Card */}

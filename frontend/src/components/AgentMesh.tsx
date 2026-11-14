@@ -421,7 +421,11 @@ export const AgentMesh: React.FC<AgentMeshProps> = ({
       id={canvasId}
       ref={canvasRef}
       className={className}
-      style={{ display: 'block', width: '100%', height: '100%' }}
+      style={{
+        display: 'block',
+        width: '100%',
+        height: mode === 'console' ? '230px' : '100%',
+      }}
     />
   );
 };
