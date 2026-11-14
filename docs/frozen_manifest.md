@@ -136,3 +136,30 @@ print('ALL 21 FROZEN V2 HASHES VERIFIED INTACT.')
 | `backend/app/approvals/reviewer.py` | `e9e247fe33e0168997b3a85e3cc825c3d0dde5c4748bb29899d672c4f3fbcb53` |
 | `backend/app/approvals/service.py` | `99ec90ca7af44e77e08b668ee9c65245ac166e1fbfe986a14df6468d1fa63c3d` |
 | `backend/app/approvals/tokens.py` | `1941b59defa5eef91b6084368070dd71ab396184b81f4bdf652e4b27ece2516e` |
+
+
+---
+
+## C. `v3-frozen` Manifest (`v3-science` Branch)
+
+**Freeze Tag**: `v3-frozen`  
+**Timestamp**: 2026-11-14T09:10:00Z  
+**Commitment**: Committed before evaluating the held-out 70% test partitions.
+
+| File Path | SHA-256 Digest (`v3-frozen`) |
+|---|---|
+| `backend/app/core/policy_engine.py` | `9c30d74661bab13f4ef2083e76067dcac11aa49693950334e312cf279c715b8f` |
+| `backend/app/core/taint_tracker.py` | `8f58398dfe8a57e46f5686416b609d36737b1418e3a73daf596b10eb07d7badd` |
+| `backend/app/core/gateway.py` | `5447c4bb88d22bc7cde758f3150042a56fe8aec060f79a44e8f5640ededa53b3` |
+| `backend/app/detection/rules.py` | `91f3d6451447075b91d94bfb8d933c66e66018a58a1ea102162be3b881eec925` |
+| `backend/app/privacy/detectors.py` | `6e898e888feedfa314a1a95e15523507a028ef0ddd7b20b5af2fe540c8ec6c81` |
+| `backend/app/privacy/masker.py` | `fa0b850e4461dadf48498eed9c8267eaae494336b9fb62e3db06f4f3c35cb9e5` |
+| `backend/app/privacy/vault.py` | `5d3c24ef4096d08b3bb1340a310dd7d3f0d854ba6e8cfe5b7533437d55edde74` |
+| `benchmark/harness/baselines.py` | `40cf434a0a30197146c076fc18ef58ae12c51c06903c9fd9f9e8056d463938ce` |
+| `benchmark/harness/statistics.py` | `3b7d18598dc91df44b46a1558973420d4b32923079c32273b5cd5f190cffcd35` |
+| `benchmark/adapters/injecagent_adapter.py` | `65c15ceb1f80532fbad4de2604dd50695c52837bfd07855f8df730888ef4a1e6` |
+| `benchmark/adapters/agentdojo_adapter.py` | `18746ee48183bf3755e49e90d9c2fa6842a01d27965f1b9e341737da40701e52` |
+| `scripts/evaluate_text_baseline.py` | `b39c6e66bd8882abb74d94f06908fb75300edd6f55edc9231cc17a3801d02ff4` |
+| `scripts/evaluate_pii_detector.py` | `dcfb452e373e57da45dc18a7c1b3069100b6878300c71bbe061e30de7b72c42e` |
+| `scripts/evaluate_provenance_ablation.py` | `969da8f250d4f6f3f5db950ad6448ae521ebb233a8790dae0989b0b1089b43a8` |
+| `scripts/evaluate_baselines_mcnemar.py` | `96152deab32a6a282c5ab81dee04c6f6ff8f2ee8d5d6f67e16133421f249f9ea` |
