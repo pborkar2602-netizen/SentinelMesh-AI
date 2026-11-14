@@ -100,6 +100,8 @@ def run_all(split: str = "dev") -> Dict[str, Any]:
     tt_res = evaluate_tensor_trust(split)
     report = {
         "evaluation": "Text-Level Prompt Injection Rule Baseline",
+        "claim": "a six-phrase list has low recall on natural-language injections",
+        "open_ml_classifier": "not evaluated (offline environment; deep learning framework weights not bundled)",
         "split": split,
         "deepset": deepset_res,
         "tensor_trust": tt_res,

@@ -22,15 +22,16 @@
       "mcnemar_test": {
         "b": 25,
         "c": 2,
-        "p_value": 6e-06,
+        "n": 27,
+        "p_value": 5.647540092468262e-06,
         "cohens_g": 0.4259,
         "odds_ratio": 12.5,
         "interpretation": "statistically significant"
       },
       "holm_bonferroni": {
         "rank": 1,
-        "raw_p": 6e-06,
-        "threshold": 0.01,
+        "raw_p": 5.647540092468262e-06,
+        "threshold": 0.0125,
         "reject_null": true
       }
     },
@@ -49,15 +50,16 @@
       "mcnemar_test": {
         "b": 12,
         "c": 2,
-        "p_value": 0.012939,
+        "n": 14,
+        "p_value": 0.012939453125,
         "cohens_g": 0.3571,
         "odds_ratio": 6.0,
         "interpretation": "statistically significant"
       },
       "holm_bonferroni": {
         "rank": 3,
-        "raw_p": 0.012939,
-        "threshold": 0.016667,
+        "raw_p": 0.012939453125,
+        "threshold": 0.025,
         "reject_null": true
       }
     },
@@ -76,15 +78,16 @@
       "mcnemar_test": {
         "b": 25,
         "c": 2,
-        "p_value": 6e-06,
+        "n": 27,
+        "p_value": 5.647540092468262e-06,
         "cohens_g": 0.4259,
         "odds_ratio": 12.5,
         "interpretation": "statistically significant"
       },
       "holm_bonferroni": {
         "rank": 2,
-        "raw_p": 6e-06,
-        "threshold": 0.0125,
+        "raw_p": 5.647540092468262e-06,
+        "threshold": 0.016666666666666666,
         "reject_null": true
       }
     },
@@ -103,6 +106,7 @@
       "mcnemar_test": {
         "b": 4,
         "c": 0,
+        "n": 4,
         "p_value": 0.125,
         "cohens_g": 0.5,
         "odds_ratio": Infinity,
@@ -111,36 +115,10 @@
       "holm_bonferroni": {
         "rank": 4,
         "raw_p": 0.125,
-        "threshold": 0.025,
-        "reject_null": false
-      }
-    },
-    "B5: LLM Safety Judge (Offline Heuristic)": {
-      "baseline_accuracy": 0.7833,
-      "baseline_ci_95": [
-        0.6638,
-        0.8688
-      ],
-      "contingency_table": {
-        "a": 43,
-        "b": 8,
-        "c": 4,
-        "d": 5
-      },
-      "mcnemar_test": {
-        "b": 8,
-        "c": 4,
-        "p_value": 0.387695,
-        "cohens_g": 0.1667,
-        "odds_ratio": 2.0,
-        "interpretation": "not statistically significant"
-      },
-      "holm_bonferroni": {
-        "rank": 5,
-        "raw_p": 0.387695,
         "threshold": 0.05,
         "reject_null": false
       }
     }
-  }
+  },
+  "judge_status": "judge not evaluated (no recorded LLM verdicts; stub removed)"
 }

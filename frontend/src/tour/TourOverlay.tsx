@@ -25,7 +25,9 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({ isOpen, onClose }) => 
         if (parent.classList.contains('rv')) parent.classList.add('in');
         parent = parent.parentElement;
       }
-      el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+      if (step.targetId !== 'hd') {
+        el.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
+      }
     }
 
     const updateBoundingBox = () => {
@@ -96,6 +98,8 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({ isOpen, onClose }) => 
     zIndex: 99999,
     width: '380px',
     maxWidth: 'calc(100vw - 32px)',
+    maxHeight: 'calc(100vh - 32px)',
+    overflowY: 'auto',
   };
 
   if (targetRect) {

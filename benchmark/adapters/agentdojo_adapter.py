@@ -110,7 +110,6 @@ def evaluate_agentdojo(split_name: str = "dev") -> Dict[str, Any]:
         B2_StaticRegex(),
         B3_NoTaint(),
         B4_FullSentinelMesh(),
-        B5_LLMJudge(),
     ]
 
     results_by_system = {

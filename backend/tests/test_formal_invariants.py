@@ -460,3 +460,116 @@ def test_prop_empty_or_unusual_session_id_handling(raw_session_id):
         session_id=raw_session_id,
     )
     assert decision in ["allow", "block", "require_approval", "would_block"]
+
+
+# =====================================================================
+# INVARIANT 7: No Raw PII in Persisted Rows, Logs, or Responses
+# =====================================================================
+
+@settings(max_examples=40, deadline=None)
+@given(
+    ssn_area=st.integers(min_value=100, max_value=899),
+    ssn_group=st.integers(min_value=10, max_value=99),
+    ssn_serial=st.integers(min_value=1000, max_value=9999),
+)
+def test_prop_I7_no_raw_pii_in_redacted_outputs(ssn_area, ssn_group, ssn_serial):
+    """Invariant 7: Raw SSNs are masked into surrogate tokens, never emitted in plain text."""
+    from backend.app.privacy.masker import PrivacyEngine
+    engine = PrivacyEngine()
+    raw_ssn = f"{ssn_area}-{ssn_group:02d}-{ssn_serial:04d}"
+    text = f"Confidential employee record: Name John Doe, SSN {raw_ssn}, Dept Finance."
+
+    masked_text, entities = engine.mask_text("sess-prop-pii", text)
+    assert raw_ssn not in masked_text
+    assert "[NATIONAL_ID_" in masked_text or "[REDACTED" in masked_text
+
+
+# =====================================================================
+# INVARIANT 8: Tokens Single-Use and Bound to Exact Action & Arguments
+# =====================================================================
+
+@settings(max_examples=40, deadline=None)
+@given(
+    action=st.sampled_from(["db_query", "send_email", "external_api"]),
+    arg_key=st.sampled_from(["query", "to", "url"]),
+    arg_val=st.from_regex(r"[a-z0-9_\-\.]{5,20}", fullmatch=True),
+    altered_val=st.from_regex(r"[A-Z0-9_\-\.]{5,20}", fullmatch=True),
+)
+def test_prop_I8_tokens_single_use_and_bound_to_exact_action(action, arg_key, arg_val, altered_val):
+    """Invariant 8: Cryptographic approval tokens cannot be reused or applied to altered actions."""
+    if arg_val == altered_val:
+        altered_val = altered_val + "_diff"
+
+    args = {arg_key: arg_val}
+    token = issue_signed_approval_token(tool_name=action, arguments=args, session_id="sess-prop-bound")
+
+    # 1. Altered tool name fails
+    with pytest.raises(ApprovalTokenError):
+        verify_and_consume_approval_token(token, tool_name="other_tool", arguments=args, trace_id="tr-test-1")
+
+    # 2. Altered argument value fails
+    altered_args = {arg_key: altered_val}
+    with pytest.raises(ApprovalTokenError):
+        verify_and_consume_approval_token(token, tool_name=action, arguments=altered_args, trace_id="tr-test-2")
+
+    # 3. Successful consumption on exact match
+    payload = verify_and_consume_approval_token(token, tool_name=action, arguments=args, trace_id="tr-test-3")
+    assert payload["tool_name"] == action
+
+    # 4. Immediate replay attack must fail (single-use)
+    with pytest.raises(ApprovalTokenError):
+        verify_and_consume_approval_token(token, tool_name=action, arguments=args, trace_id="tr-test-4")
+
+
+# =====================================================================
+# INVARIANT 9: Agent Claims Cannot Override Gateway Trust Classification
+# =====================================================================
+
+@settings(max_examples=40, deadline=None)
+@given(
+    filename=st.sampled_from(["security_resume.txt", "untrusted_payload.pdf", "web_cache.html", "incoming_email.txt"]),
+)
+def test_prop_I9_agent_claims_cannot_override_gateway_trust(filename):
+    """Invariant 9: Agent claim of is_untrusted=False cannot override gateway untrusted classification."""
+    from backend.app.core.trust_labeler import label_trust
+    from backend.app.schemas.gateway import ContextSource
+
+    agent_claimed_sources = [
+        ContextSource(source_id=filename, source_type="document", is_untrusted=False, snippet="Sample")
+    ]
+    normalized, disagreements = label_trust(agent_claimed_sources, tool_name="read_doc")
+    # Content-ingesting tools override agent claims and enforce is_untrusted=True
+    assert normalized[0].is_untrusted is True
+    assert len(disagreements) > 0
+
+
+# =====================================================================
+# INVARIANT 10: Unknown Sources and Unparseable SQL Fail Restrictive
+# =====================================================================
+
+@settings(max_examples=40, deadline=None)
+@given(
+    malformed_sql=st.sampled_from([
+        "UPDATE ;;;",
+        "SELECT FROM WHERE ???",
+        "UPDATE vendor_master SET ???",
+        "DROP ;;; DELETE ;;;",
+        "FOOBAR BAZ QUX",
+    ]),
+)
+def test_prop_I10_unparseable_sql_fails_restrictive(malformed_sql):
+    """Invariant 10: Unparseable or malformed SQL queries fail safe as bulk read, and unknown sources default to untrusted."""
+    from backend.app.baseline.anomaly_detector import estimate_sql_rows
+    from backend.app.core.trust_labeler import label_trust
+    from backend.app.schemas.gateway import ContextSource
+
+    # 1. Unparseable SQL fails safe as bulk read exceeding safety threshold
+    est_rows, struct_cat = estimate_sql_rows(malformed_sql, threshold_records=50)
+    assert est_rows >= 150
+    assert "bulk" in struct_cat or "unparseable" in struct_cat
+
+    # 2. Unknown source types strictly default to untrusted
+    unknown_source = ContextSource(source_id="custom_ext_feed", source_type="unknown_third_party_protocol", is_untrusted=False)
+    norm_sources, _ = label_trust([unknown_source])
+    assert norm_sources[0].is_untrusted is True
+

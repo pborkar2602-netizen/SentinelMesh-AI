@@ -101,6 +101,7 @@ def exact_mcnemar_test(
         return {
             "b": b,
             "c": c,
+            "n": 0,
             "p_value": 1.0,
             "cohens_g": 0.0,
             "odds_ratio": 1.0,
@@ -108,14 +109,13 @@ def exact_mcnemar_test(
         }
 
     k = min(b, c)
-    # Exact two-sided binomial test p-value: 2 * sum_{i=0..k} binom(n, i) * 0.5^n
-    # Use log-binomial summation to avoid float overflow on large n
-    tail_prob = 0.0
-    for i in range(k + 1):
-        # binom(n, i) * (0.5)^n
-        tail_prob += math.comb(n, i) * (0.5 ** n)
-
-    two_sided_p = min(1.0, 2.0 * tail_prob)
+    try:
+        from scipy.stats import binomtest
+        two_sided_p = float(binomtest(k, n, 0.5, alternative='two-sided').pvalue)
+    except Exception:
+        # Fallback to math log-space binomial test
+        tail_prob = sum(math.comb(n, i) * (0.5 ** n) for i in range(k + 1))
+        two_sided_p = min(1.0, 2.0 * tail_prob)
 
     # Cohen's g = | b / (b + c) - 0.5 |
     cohens_g = abs(b / float(n) - 0.5)
@@ -131,7 +131,8 @@ def exact_mcnemar_test(
     return {
         "b": b,
         "c": c,
-        "p_value": round(two_sided_p, 6),
+        "n": n,
+        "p_value": two_sided_p,
         "cohens_g": round(cohens_g, 4),
         "odds_ratio": odds_ratio,
         "interpretation": interpretation
@@ -162,8 +163,8 @@ def holm_bonferroni_correction(
 
         results[orig_idx] = {
             "rank": k,
-            "raw_p": round(p_val, 6),
-            "threshold": round(threshold, 6),
+            "raw_p": p_val,
+            "threshold": threshold,
             "reject_null": reject
         }
 

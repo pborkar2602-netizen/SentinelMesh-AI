@@ -112,7 +112,6 @@ def evaluate_injecagent(split_name: str = "dev") -> Dict[str, Any]:
         B2_StaticRegex(),
         B3_NoTaint(),
         B4_FullSentinelMesh(),
-        B5_LLMJudge(),
     ]
 
     results_by_system = {b.name: {"total": len(cases), "dh_total": 0, "dh_blocked": 0, "ds_total": 0, "ds_blocked": 0, "benign_total": len(cases), "benign_allowed": 0} for b in baselines}

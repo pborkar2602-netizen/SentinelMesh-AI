@@ -1,5 +1,7 @@
 {
   "evaluation": "Text-Level Prompt Injection Rule Baseline",
+  "claim": "a six-phrase list has low recall on natural-language injections",
+  "open_ml_classifier": "not evaluated (offline environment; deep learning framework weights not bundled)",
   "split": "test",
   "deepset": {
     "dataset": "deepset/prompt-injections",

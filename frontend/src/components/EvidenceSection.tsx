@@ -20,7 +20,7 @@ export const EvidenceSection: React.FC = () => {
             Wilson 95% CI: <span className="font-mono text-slate-200">[88.6%, 94.3%]</span>
           </p>
           <div className="text-[11px] text-slate-500 mt-2 font-mono">
-            N = 431 test cases · 0 tool exclusions
+            N = 359 test cases · 0 tool exclusions
           </div>
         </div>
 
@@ -36,7 +36,7 @@ export const EvidenceSection: React.FC = () => {
             Wilson 95% CI: <span className="font-mono text-slate-200">[91.0%, 96.0%]</span>
           </p>
           <div className="text-[11px] text-slate-500 mt-2 font-mono">
-            N = 433 test cases · Zero exfil leakage
+            N = 364 test cases · Zero exfil leakage
           </div>
         </div>
 
@@ -147,7 +147,7 @@ export const EvidenceSection: React.FC = () => {
                   <tr className="hover:bg-white/[0.02]">
                     <td className="py-3 px-3 font-semibold text-white">InjecAgent (Zhan 2024)</td>
                     <td className="py-3 px-3 text-slate-400">Test (70%)</td>
-                    <td className="py-3 px-3">431</td>
+                    <td className="py-3 px-3">359</td>
                     <td className="py-3 px-3">Direct Harm Prevention</td>
                     <td className="py-3 px-3 text-rose-400">0.0% (B0)</td>
                     <td className="py-3 px-3 font-bold text-emerald-400">91.9%</td>
@@ -156,7 +156,7 @@ export const EvidenceSection: React.FC = () => {
                   <tr className="hover:bg-white/[0.02]">
                     <td className="py-3 px-3 font-semibold text-white">InjecAgent (Zhan 2024)</td>
                     <td className="py-3 px-3 text-slate-400">Test (70%)</td>
-                    <td className="py-3 px-3">433</td>
+                    <td className="py-3 px-3">364</td>
                     <td className="py-3 px-3">Data Stealing Prevention</td>
                     <td className="py-3 px-3 text-rose-400">0.0% (B0)</td>
                     <td className="py-3 px-3 font-bold text-emerald-400">94.0%</td>
@@ -165,16 +165,16 @@ export const EvidenceSection: React.FC = () => {
                   <tr className="hover:bg-white/[0.02]">
                     <td className="py-3 px-3 font-semibold text-white">AgentDojo Static Tasks</td>
                     <td className="py-3 px-3 text-slate-400">Test (70%)</td>
-                    <td className="py-3 px-3">72</td>
+                    <td className="py-3 px-3">39</td>
                     <td className="py-3 px-3">Attack Block Rate</td>
                     <td className="py-3 px-3 text-rose-400">0.0% (B0)</td>
                     <td className="py-3 px-3 font-bold text-emerald-400">100.0%</td>
-                    <td className="py-3 px-3 text-slate-400">[94.9%, 100.0%]</td>
+                    <td className="py-3 px-3 text-slate-400">[91.0%, 100.0%]</td>
                   </tr>
                   <tr className="hover:bg-white/[0.02]">
                     <td className="py-3 px-3 font-semibold text-white">deepset/prompt-injections</td>
                     <td className="py-3 px-3 text-slate-400">Test (70%)</td>
-                    <td className="py-3 px-3">144</td>
+                    <td className="py-3 px-3">381</td>
                     <td className="py-3 px-3">Static Regex Detection Recall</td>
                     <td className="py-3 px-3 text-rose-400">1.4% (Regex)</td>
                     <td className="py-3 px-3 font-bold text-emerald-400">91.9% (Provenance)</td>
@@ -183,7 +183,7 @@ export const EvidenceSection: React.FC = () => {
                   <tr className="hover:bg-white/[0.02]">
                     <td className="py-3 px-3 font-semibold text-white">Tensor Trust Hijacking</td>
                     <td className="py-3 px-3 text-slate-400">Test (70%)</td>
-                    <td className="py-3 px-3">70</td>
+                    <td className="py-3 px-3">549</td>
                     <td className="py-3 px-3">Prompt Hijacking Recall</td>
                     <td className="py-3 px-3 text-rose-400">0.0% (Regex)</td>
                     <td className="py-3 px-3 font-bold text-emerald-400">94.0% (Provenance)</td>
@@ -191,12 +191,12 @@ export const EvidenceSection: React.FC = () => {
                   </tr>
                   <tr className="hover:bg-white/[0.02]">
                     <td className="py-3 px-3 font-semibold text-white">ai4privacy Evaluation</td>
-                    <td className="py-3 px-3 text-slate-400">Validation</td>
+                    <td className="py-3 px-3 text-slate-400">Test (70%)</td>
                     <td className="py-3 px-3">1,028</td>
                     <td className="py-3 px-3">PII Vault Extraction F1</td>
                     <td className="py-3 px-3 text-slate-400">N/A</td>
-                    <td className="py-3 px-3 font-bold text-emerald-400">0.958 F1</td>
-                    <td className="py-3 px-3 text-slate-400">SSN: 100% Prec</td>
+                    <td className="py-3 px-3 font-bold text-emerald-400">0.958 F1 (Email)</td>
+                    <td className="py-3 px-3 text-slate-400">SSN Prec: 100% | Phone Rec: 94.2%</td>
                   </tr>
                 </tbody>
               </table>
@@ -208,9 +208,9 @@ export const EvidenceSection: React.FC = () => {
         {activeTab === 'mcnemar' && (
           <div className="space-y-4 animate-in fade-in duration-200">
             <p className="text-xs text-slate-300 leading-relaxed font-mono">
-              Exact two-sided McNemar tests for paired nominal data comparing SentinelMesh (B4)
-              against competitive baselines B0, B1, and B2. Family-wise error rate is controlled at &alpha; = 0.05
-              using the Holm-Bonferroni step-down correction.
+              Exact two-sided McNemar tests (computed via scipy.stats.binomtest) for paired nominal data comparing
+              SentinelMesh (B4) against baselines on the InjecAgent test partition (N = 723). Family-wise error rate is
+              controlled at &alpha; = 0.05 using the Holm-Bonferroni step-down correction.
             </p>
 
             <div className="overflow-x-auto">
@@ -228,39 +228,47 @@ export const EvidenceSection: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-white/5 text-slate-300">
                   <tr className="hover:bg-white/[0.02]">
-                    <td className="py-3 px-3 font-semibold text-white">B4 (SentinelMesh) vs B0 (No Gateway)</td>
-                    <td className="py-3 px-3">b=17, c=0</td>
-                    <td className="py-3 px-3 font-bold text-emerald-400">7.63 &times; 10<sup>-6</sup></td>
+                    <td className="py-3 px-3 font-semibold text-white">B4 (SentinelMesh) vs B0 (No Defense)</td>
+                    <td className="py-3 px-3">b=672, c=0 (n=672)</td>
+                    <td className="py-3 px-3 font-bold text-emerald-400">1.02 &times; 10<sup>-202</sup></td>
+                    <td className="py-3 px-3">0.0125</td>
+                    <td className="py-3 px-3">0.50 (Max)</td>
+                    <td className="py-3 px-3">&infin;</td>
+                    <td className="py-3 px-3 font-bold text-emerald-400">Reject Null (p &lt; &alpha;)</td>
+                  </tr>
+                  <tr className="hover:bg-white/[0.02]">
+                    <td className="py-3 px-3 font-semibold text-white">B4 (SentinelMesh) vs B1 (Domain Allowlist)</td>
+                    <td className="py-3 px-3">b=234, c=0 (n=234)</td>
+                    <td className="py-3 px-3 font-bold text-emerald-400">7.24 &times; 10<sup>-71</sup></td>
+                    <td className="py-3 px-3">0.0500</td>
+                    <td className="py-3 px-3">0.50 (Max)</td>
+                    <td className="py-3 px-3">&infin;</td>
+                    <td className="py-3 px-3 font-bold text-emerald-400">Reject Null (p &lt; &alpha;)</td>
+                  </tr>
+                  <tr className="hover:bg-white/[0.02]">
+                    <td className="py-3 px-3 font-semibold text-white">B4 (SentinelMesh) vs B2 (Static Regex / Phrase)</td>
+                    <td className="py-3 px-3">b=672, c=0 (n=672)</td>
+                    <td className="py-3 px-3 font-bold text-emerald-400">1.02 &times; 10<sup>-202</sup></td>
                     <td className="py-3 px-3">0.0167</td>
                     <td className="py-3 px-3">0.50 (Max)</td>
                     <td className="py-3 px-3">&infin;</td>
                     <td className="py-3 px-3 font-bold text-emerald-400">Reject Null (p &lt; &alpha;)</td>
                   </tr>
                   <tr className="hover:bg-white/[0.02]">
-                    <td className="py-3 px-3 font-semibold text-white">B4 (SentinelMesh) vs B1 (Regex Injection)</td>
-                    <td className="py-3 px-3">b=7, c=0</td>
-                    <td className="py-3 px-3 font-bold text-emerald-400">0.0156</td>
+                    <td className="py-3 px-3 font-semibold text-white">B4 (SentinelMesh) vs B3 (Taint Disabled Ablation)</td>
+                    <td className="py-3 px-3">b=659, c=0 (n=659)</td>
+                    <td className="py-3 px-3 font-bold text-emerald-400">8.36 &times; 10<sup>-199</sup></td>
                     <td className="py-3 px-3">0.0250</td>
                     <td className="py-3 px-3">0.50 (Max)</td>
                     <td className="py-3 px-3">&infin;</td>
                     <td className="py-3 px-3 font-bold text-emerald-400">Reject Null (p &lt; &alpha;)</td>
                   </tr>
-                  <tr className="hover:bg-white/[0.02]">
-                    <td className="py-3 px-3 font-semibold text-white">B4 (SentinelMesh) vs B2 (Isolated Allowlist)</td>
-                    <td className="py-3 px-3">b=17, c=0</td>
-                    <td className="py-3 px-3 font-bold text-emerald-400">7.63 &times; 10<sup>-6</sup></td>
-                    <td className="py-3 px-3">0.0167</td>
-                    <td className="py-3 px-3">0.50 (Max)</td>
-                    <td className="py-3 px-3">&infin;</td>
-                    <td className="py-3 px-3 font-bold text-emerald-400">Reject Null (p &lt; &alpha;)</td>
-                  </tr>
-                  <tr className="hover:bg-white/[0.02]">
-                    <td className="py-3 px-3 font-semibold text-white">B3 Ablation: Taint Disabled</td>
-                    <td className="py-3 px-3">Direct Harm: 3.6% | Data Stealing: 0.0%</td>
-                    <td className="py-3 px-3" colSpan={4}>
-                      Confirming Hypothesis 1d: Disabling taint collapses security back to pure lexical baseline.
+                  <tr className="hover:bg-white/[0.02] opacity-60">
+                    <td className="py-3 px-3 font-semibold text-slate-400">B5: LLM Safety Judge</td>
+                    <td className="py-3 px-3" colSpan={5}>
+                      Judge not evaluated (no recorded LLM API verdicts; stub removed per preregistered protocol)
                     </td>
-                    <td className="py-3 px-3 font-bold text-rose-400">Critical Layer</td>
+                    <td className="py-3 px-3 font-mono text-slate-400">Not Evaluated</td>
                   </tr>
                 </tbody>
               </table>

@@ -106,7 +106,7 @@ def run_baseline_comparison(scenario_dirs: List[str]) -> Dict[str, Any]:
         B2_StaticRegex(),
         B3_NoTaint(),
         B4_FullSentinelMesh(),
-        B5_LLMJudge(),
+        # B5_LLMJudge removed: judge not evaluated (no recorded LLM verdicts)
     ]
 
     # Evaluate all baselines on all scenarios
