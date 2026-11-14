@@ -12,6 +12,8 @@ class ContextSource(BaseModel):
     snippet: str | None = None
 
 class ToolCallRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     agent_id: str = Field(..., description="ID of the agent initiating the call (e.g. hr-agent)")
     session_id: str = Field(..., description="Unique session/run ID")
     tool_name: str = Field(..., description="Name of the tool being called (e.g. read_doc, send_email)")

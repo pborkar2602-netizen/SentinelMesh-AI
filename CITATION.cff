@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use SentinelMesh in your research, please cite it as below."
+authors:
+  - name: "Google DeepMind SentinelMesh Team"
+title: "SentinelMesh: Provable Dynamic Taint and Intent Gateway for Autonomous LLM Multi-Agent Systems"
+version: 3.0.0
+date-released: 2026-11-14
+url: "https://github.com/google-deepmind/sentinelmesh"
+license: "MIT"
+keywords:
+  - "ai-safety"
+  - "llm-security"
+  - "agentic-ai"
+  - "indirect-prompt-injection"
+  - "dynamic-taint-analysis"
+  - "formal-verification"

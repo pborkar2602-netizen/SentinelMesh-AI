@@ -1,0 +1,54 @@
+{
+  "concurrency_1": {
+    "concurrency": 1,
+    "total_requests": 200,
+    "successful_responses": 200,
+    "wall_time_seconds": 7.702,
+    "throughput_req_per_sec": 25.97,
+    "latency_ms_p50": 35.406,
+    "latency_ms_p90": 77.642,
+    "latency_ms_p95": 90.626,
+    "latency_ms_p99": 134.393,
+    "latency_ms_max": 232.301,
+    "latency_ms_mean": 38.362
+  },
+  "concurrency_5": {
+    "concurrency": 5,
+    "total_requests": 200,
+    "successful_responses": 200,
+    "wall_time_seconds": 5.739,
+    "throughput_req_per_sec": 34.85,
+    "latency_ms_p50": 129.265,
+    "latency_ms_p90": 256.836,
+    "latency_ms_p95": 315.331,
+    "latency_ms_p99": 423.078,
+    "latency_ms_max": 486.011,
+    "latency_ms_mean": 142.551
+  },
+  "concurrency_20": {
+    "concurrency": 20,
+    "total_requests": 200,
+    "successful_responses": 200,
+    "wall_time_seconds": 5.611,
+    "throughput_req_per_sec": 35.64,
+    "latency_ms_p50": 425.542,
+    "latency_ms_p90": 889.759,
+    "latency_ms_p95": 1247.793,
+    "latency_ms_p99": 2724.64,
+    "latency_ms_max": 2788.601,
+    "latency_ms_mean": 521.102
+  },
+  "concurrency_50": {
+    "concurrency": 50,
+    "total_requests": 200,
+    "successful_responses": 200,
+    "wall_time_seconds": 8.648,
+    "throughput_req_per_sec": 23.13,
+    "latency_ms_p50": 1850.55,
+    "latency_ms_p90": 3393.441,
+    "latency_ms_p95": 3828.986,
+    "latency_ms_p99": 4541.425,
+    "latency_ms_max": 5063.084,
+    "latency_ms_mean": 1993.675
+  }
+}

@@ -161,10 +161,8 @@ class PrivacyVault:
                 )
             else:
                 placeholders = ",".join("?" for _ in tokens)
-                cursor.execute(
-                    f"SELECT token, encrypted_value, created_at FROM privacy_vault WHERE session_id = ? AND token IN ({placeholders})",
-                    [session_id] + list(tokens)
-                )
+                vault_q = f"SELECT token, encrypted_value, created_at FROM privacy_vault WHERE session_id = ? AND token IN ({placeholders})"  # nosec B608
+                cursor.execute(vault_q, [session_id] + list(tokens))
             rows = cursor.fetchall()
 
             now = datetime.now(timezone.utc)

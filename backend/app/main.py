@@ -1,4 +1,5 @@
 import time
+import json
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
@@ -104,6 +105,19 @@ async def add_timing_middleware(request: Request, call_next):
     response = await call_next(request)
     elapsed_ms = (time.perf_counter() - start) * 1000.0
     response.headers["X-Process-Time-Ms"] = f"{elapsed_ms:.3f}"
+
+    # Structured JSON log (omitting raw request body to preserve privacy / zero raw PII)
+    if not request.url.path.endswith("/health") and not request.url.path.endswith("/metrics"):
+        log_payload = {
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": response.status_code,
+            "latency_ms": round(elapsed_ms, 2),
+            "client_ip": request.client.host if request.client else "unknown",
+        }
+        logger.info(json.dumps(log_payload))
+
     return response
 
 @app.get("/health", tags=["Health"])
@@ -115,6 +129,16 @@ def health_check():
         "version": settings.VERSION,
         "mode": PolicyEngine.get_mode()
     }
+
+@app.get("/metrics", tags=["Observability"])
+@app.get(f"{settings.API_V1_STR}/metrics", tags=["Observability"])
+def prometheus_metrics():
+    from fastapi.responses import PlainTextResponse
+    from backend.app.core.defense_in_depth import PrometheusMetrics
+    return PlainTextResponse(
+        content=PrometheusMetrics.export_metrics(),
+        media_type="text/plain; version=0.0.4; charset=utf-8"
+    )
 
 @app.post("/echo", tags=["Diagnostics"])
 @app.post(f"{settings.API_V1_STR}/echo", tags=["Diagnostics"])

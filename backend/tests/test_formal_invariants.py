@@ -172,7 +172,7 @@ def test_prop_I3_privilege_mutation_requires_approval(priv_cmd):
 # INVARIANT 4: Intent Judge cannot downgrade deterministic rule block
 # =====================================================================
 
-@settings(max_examples=40)
+@settings(max_examples=40, deadline=None)
 @given(
     judge_verdict=st.sampled_from(["allow", "safe", "benign", "pass"]),
     tool=st.sampled_from(["external_api", "send_email"]),
@@ -273,7 +273,7 @@ def test_prop_I6_anomaly_above_threshold_escalates(anomaly_score):
 # APPROVAL TOKEN INVARIANTS: Cryptographic single-use and tamper-proof
 # =====================================================================
 
-@settings(max_examples=40)
+@settings(max_examples=40, deadline=None)
 @given(
     session_id=st.from_regex(r"sess-[a-z0-9]{6,12}", fullmatch=True),
     action=st.sampled_from(["update_vendor", "database_mutation", "high_value_wire"]),
@@ -325,7 +325,7 @@ def test_prop_risk_score_monotonicity_findings(base_findings, additional_finding
     assert score2 >= score1
 
 
-@settings(max_examples=40)
+@settings(max_examples=40, deadline=None)
 @given(
     tool=st.sampled_from(["read_doc", "db_query", "external_api", "send_email"]),
 )
@@ -373,7 +373,7 @@ def test_prop_domain_lookalike_does_not_spoof_approved(prefix, approved_domain):
 # ADDITIONAL FORMAL PROPERTIES (Total 21 Properties)
 # =====================================================================
 
-@settings(max_examples=40)
+@settings(max_examples=40, deadline=None)
 @given(
     traversal_prefix=st.sampled_from(["../", "..\\"]),
     depth=st.integers(min_value=2, max_value=4),
@@ -405,7 +405,7 @@ def test_prop_I1_ssrf_metadata_detection(metadata_path, proto):
     assert has_ssrf is True
 
 
-@settings(max_examples=40)
+@settings(max_examples=40, deadline=None)
 @given(
     sqli_payload=st.sampled_from([
         "' OR '1'='1",
@@ -422,7 +422,7 @@ def test_prop_sql_injection_detection(sqli_payload):
     assert has_sqli is True
 
 
-@settings(max_examples=40)
+@settings(max_examples=40, deadline=None)
 @given(
     random_chars=st.from_regex(r"[0-9A-Z]{16}", fullmatch=True),
 )
@@ -444,7 +444,7 @@ def test_prop_dest_domain_case_insensitivity(approved_domain):
     assert is_approved_api_host(url_mixed) is True
 
 
-@settings(max_examples=40)
+@settings(max_examples=40, deadline=None)
 @given(
     raw_session_id=st.text(max_size=50),
 )

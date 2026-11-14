@@ -33,13 +33,14 @@ def get_simulation_stats(exclude_benchmark: bool = Query(True)):
     including the counter of 'would have blocked N actions' in monitor mode.
     """
     conn = get_connection()
-    bench_sql = "WHERE source != 'benchmark' AND session_id NOT LIKE 'sess-bench-%' AND session_id NOT LIKE 'sess-lat-%' AND tool_name != 'tool_return'" if exclude_benchmark else "WHERE tool_name != 'tool_return'"
-    cur = conn.execute(f"""
-        SELECT decision, COUNT(*) as cnt
-        FROM audit_events
-        {bench_sql}
-        GROUP BY decision
-    """)
+    base_query = (
+        "SELECT decision, COUNT(*) as cnt FROM audit_events "
+        "WHERE source != 'benchmark' AND session_id NOT LIKE 'sess-bench-%' AND session_id NOT LIKE 'sess-lat-%' AND tool_name != 'tool_return' "
+        "GROUP BY decision"
+        if exclude_benchmark
+        else "SELECT decision, COUNT(*) as cnt FROM audit_events WHERE tool_name != 'tool_return' GROUP BY decision"
+    )
+    cur = conn.execute(base_query)
     rows = cur.fetchall()
 
     counts = {r["decision"]: int(r["cnt"]) for r in rows}

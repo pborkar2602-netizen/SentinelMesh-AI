@@ -2,8 +2,9 @@ import os
 import time
 import logging
 from datetime import datetime, timezone
-from fastapi import APIRouter, status
+from fastapi import APIRouter, status, Header
 from pydantic import BaseModel
+from typing import Optional
 
 from backend.app.schemas.gateway import ToolCallRequest, GatewayDecisionResponse
 from backend.app.core.gateway import GatewayCore
@@ -28,8 +29,24 @@ router = APIRouter(prefix="/gateway", tags=["Gateway"])
 
 
 @router.post("/execute", response_model=GatewayDecisionResponse, status_code=status.HTTP_200_OK)
-def execute_tool_call(request: ToolCallRequest) -> GatewayDecisionResponse:
+def execute_tool_call(
+    request: ToolCallRequest,
+    x_agent_key: Optional[str] = Header(None, alias="X-Agent-Key"),
+) -> GatewayDecisionResponse:
     start_time = time.perf_counter()
+
+    # 0. Perimeter Defense-in-Depth checks
+    from backend.app.core.defense_in_depth import (
+        verify_agent_perimeter_auth,
+        RateLimiter,
+        enforce_payload_caps,
+        PrometheusMetrics,
+    )
+    verify_agent_perimeter_auth(request.agent_id, x_agent_key)
+    enforce_payload_caps(request.arguments, request.context_sources)
+    RateLimiter.get_instance().check_rate_limit(request.agent_id)
+    RateLimiter.get_instance().check_rate_limit(request.session_id)
+
     req_conn = get_connection()
     token = set_request_connection(req_conn)
     try:
@@ -221,6 +238,8 @@ def execute_tool_call(request: ToolCallRequest) -> GatewayDecisionResponse:
         sum_measured = sum(stage_timings.values())
         response_serialization_ms = round(max(0.001, total_latency_ms - sum_measured), 3)
         stage_timings["response_serialization"] = response_serialization_ms
+
+        PrometheusMetrics.record_decision(decision, total_latency_ms, findings)
 
         return GatewayDecisionResponse(
             trace_id=request.trace_id,

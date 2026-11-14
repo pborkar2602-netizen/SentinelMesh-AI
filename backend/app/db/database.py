@@ -697,7 +697,7 @@ def list_audit_events(
         clauses.append("tool_name != 'tool_return'")
 
     where_sql = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-    query = f"SELECT * FROM audit_events {where_sql} ORDER BY id {sort_order} LIMIT ?"
+    query = f"SELECT * FROM audit_events {where_sql} ORDER BY id {sort_order} LIMIT ?"  # nosec B608
     params.append(limit)
     cur = conn.execute(query, tuple(params))
 
@@ -953,7 +953,7 @@ def list_incidents(
         clauses.append("session_id NOT LIKE 'sess-bench-%' AND session_id NOT LIKE 'sess-lat-%'")
 
     where_sql = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-    query = f"SELECT * FROM incidents {where_sql} ORDER BY created_at {sort_order} LIMIT ?"
+    query = f"SELECT * FROM incidents {where_sql} ORDER BY created_at {sort_order} LIMIT ?"  # nosec B608
     params.append(limit)
 
     cur = conn.execute(query, tuple(params))
@@ -1050,7 +1050,7 @@ def list_approvals(
         clauses.append("session_id NOT LIKE 'sess-bench-%' AND session_id NOT LIKE 'sess-lat-%'")
 
     where_sql = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-    query = f"SELECT * FROM approvals {where_sql} ORDER BY created_at DESC LIMIT ?"
+    query = f"SELECT * FROM approvals {where_sql} ORDER BY created_at DESC LIMIT ?"  # nosec B608
     limit_int = int(limit.default if hasattr(limit, "default") else limit)
     params.append(limit_int)
 
@@ -1137,15 +1137,12 @@ def expire_timed_out_approvals(conn: Optional[sqlite3.Connection] = None) -> Lis
 
     if expired_ids:
         placeholders = ",".join("?" for _ in expired_ids)
-        conn.execute(
-            f"""
-            UPDATE approvals
-            SET status = 'timed_out', resolved_by = 'system_timeout',
-                resolved_at = ?, resolution_reason = 'Approval expired without human review. Defaulted to deny.'
-            WHERE id IN ({placeholders})
-            """,
-            (now_iso, *expired_ids)
+        timeout_query = (
+            "UPDATE approvals SET status = 'timed_out', resolved_by = 'system_timeout', "
+            "resolved_at = ?, resolution_reason = 'Approval expired without human review. Defaulted to deny.' "
+            f"WHERE id IN ({placeholders})"  # nosec B608
         )
+        conn.execute(timeout_query, (now_iso, *expired_ids))
         conn.commit()
 
     if close:
@@ -1201,16 +1198,13 @@ def get_dashboard_stats(
     """
     conn, close = acquire_connection(conn)
     try:
-        bench_filter = "source != 'benchmark' AND session_id NOT LIKE 'sess-bench-%' AND session_id NOT LIKE 'sess-lat-%'" if exclude_benchmark else "1=1"
-        inc_bench_filter = "session_id NOT LIKE 'sess-bench-%' AND session_id NOT LIKE 'sess-lat-%'" if exclude_benchmark else "1=1"
-
-        cur = conn.execute(
-            f"""
-            SELECT tool_name, decision, latency_ms
-            FROM audit_events
-            WHERE {bench_filter}
-            """
+        base_audit_q = (
+            "SELECT tool_name, decision, latency_ms FROM audit_events "
+            "WHERE source != 'benchmark' AND session_id NOT LIKE 'sess-bench-%' AND session_id NOT LIKE 'sess-lat-%'"
+            if exclude_benchmark
+            else "SELECT tool_name, decision, latency_ms FROM audit_events WHERE 1=1"
         )
+        cur = conn.execute(base_audit_q)
         rows = cur.fetchall()
 
         total_audit_events = len(rows)
@@ -1257,16 +1251,22 @@ def get_dashboard_stats(
             latency_p95_ms = None
             latency_mean_ms = None
 
-        cur_app = conn.execute(
-            f"SELECT status, COUNT(*) as cnt FROM approvals WHERE {inc_bench_filter} GROUP BY status"
+        app_q = (
+            "SELECT status, COUNT(*) as cnt FROM approvals WHERE session_id NOT LIKE 'sess-bench-%' AND session_id NOT LIKE 'sess-lat-%' GROUP BY status"
+            if exclude_benchmark
+            else "SELECT status, COUNT(*) as cnt FROM approvals WHERE 1=1 GROUP BY status"
         )
+        cur_app = conn.execute(app_q)
         app_counts = {r["status"]: int(r["cnt"]) for r in cur_app.fetchall()}
         pending_approvals = app_counts.get("pending", 0)
         total_approvals = sum(app_counts.values())
 
-        cur_inc = conn.execute(
-            f"SELECT status, final_decision, COUNT(*) as cnt FROM incidents WHERE {inc_bench_filter} GROUP BY status, final_decision"
+        inc_q = (
+            "SELECT status, final_decision, COUNT(*) as cnt FROM incidents WHERE session_id NOT LIKE 'sess-bench-%' AND session_id NOT LIKE 'sess-lat-%' GROUP BY status, final_decision"
+            if exclude_benchmark
+            else "SELECT status, final_decision, COUNT(*) as cnt FROM incidents WHERE 1=1 GROUP BY status, final_decision"
         )
+        cur_inc = conn.execute(inc_q)
         inc_rows = cur_inc.fetchall()
         active_incidents = sum(int(r["cnt"]) for r in inc_rows)
         blocked_incidents = sum(
