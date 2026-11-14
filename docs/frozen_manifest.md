@@ -61,7 +61,24 @@ This manifest records the immutable cryptographic SHA-256 hashes of the baseline
 | `backend/app/judge/intent_judge.py` | `8273281d11cd54a7d8b39cb0e35df1df1fd006327b4b58bfaf0cf44a359454fe` |
 | `backend/app/judge/schema.py` | `66b95113664f258af31698cd31080913f94ce9801f394488693e6cbfe598a663` |
 
-### 7. Verification Command (`rules-v2-frozen`)
+### 7. Held-Out v2 Scenario Files (`benchmark/scenarios/held_out_v2/`)
+
+| File Path | SHA-256 Digest |
+|---|---|
+| `benchmark/scenarios/held_out_v2/v2_a1.json` | `71a7fbed443cfba6cd48e2c1b4387cfc769c3c027108d951f4f70084e3e16e51` |
+| `benchmark/scenarios/held_out_v2/v2_a2.json` | `48ba0e0e1dcd7868e4ab07365a964330a2b484bcc11828653b16de7cf67873c2` |
+| `benchmark/scenarios/held_out_v2/v2_a3.json` | `79378fcaccb0369cc4e56f0ebc390c0437166d987bd97cfcb1ddef524fbe1f95` |
+| `benchmark/scenarios/held_out_v2/v2_a4.json` | `1067b5799a8334e864c8e9b83e597f1fb047f28ee1eb94568f8a6388d5e7eeb5` |
+| `benchmark/scenarios/held_out_v2/v2_a5.json` | `cdd11277672a802341bcdd6264349d10c124017d931e114ead1d3e95b2806380` |
+| `benchmark/scenarios/held_out_v2/v2_a6.json` | `44d00e4eef0fd5f535262a3a444551f848d089875206f74d1a9dac9c5f4816a5` |
+| `benchmark/scenarios/held_out_v2/v2_b1.json` | `c27d0cc939b52d69365e6619ed5fe86eacab14a5163f138b000b5b373a2fea5f` |
+| `benchmark/scenarios/held_out_v2/v2_b2.json` | `568084172c9eae1b850009e3f53595a58edd256c1d238adc46a778a7796e53bf` |
+| `benchmark/scenarios/held_out_v2/v2_b3.json` | `4f9f063cf103b9e8014a0a2096a29f134f9f023d15359977ef4e2f2556c7d6c7` |
+| `benchmark/scenarios/held_out_v2/v2_b4.json` | `3622d665a7a3844dd841ce73ebd8a627fff52605027dcac82739a23a8997ccaf` |
+| `benchmark/scenarios/held_out_v2/v2_b5.json` | `8db35a7528d9f00ce8224c411bb0de2ac78a6322ae58ebc66ea8056fc8592c72` |
+| `benchmark/scenarios/held_out_v2/v2_b6.json` | `f8947520dd70512fdf3fc4c3bb81391cbfef16e45a7fc97ac3297f088468e021` |
+
+### 8. Verification Command (`rules-v2-frozen`)
 
 ```bash
 python -c "

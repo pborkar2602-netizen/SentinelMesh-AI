@@ -83,7 +83,7 @@ export const AttackChainPanel: React.FC<AttackChainPanelProps> = ({ incident }) 
                       ? 'bg-am/15 text-am border-am/30'
                       : 'bg-bg2 text-mut border-line'
                   }`}>
-                    {step.status.replace(/_/g, ' ')}
+                    {(step.status || step.decision || '').replace(/_/g, ' ')}
                   </span>
                 </div>
 

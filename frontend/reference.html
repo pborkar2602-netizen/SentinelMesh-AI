@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SentinelMesh AI – Security for AI agents</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Manrope:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f5f6fb;--ink:#0b1020;--mut:#566079;--line:rgba(10,16,32,.1);--pan:rgba(255,255,255,.72);--cy:#0891b2;--vi:#6d3df0;--ro:#d6246e;--am:#b7791f;--gr:#0a9a63;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#04050a;--ink:#eaf0ff;--mut:#8b93ad;--line:rgba(255,255,255,.09);--pan:rgba(14,17,30,.62);--cy:#38e8ff;--vi:#8b5cff;--ro:#ff4d8d;--am:#ffb84d;--gr:#3dffb0}}
+:root[data-theme="dark"]{--bg:#04050a;--ink:#eaf0ff;--mut:#8b93ad;--line:rgba(255,255,255,.09);--pan:rgba(14,17,30,.62);--cy:#38e8ff;--vi:#8b5cff;--ro:#ff4d8d;--am:#ffb84d;--gr:#3dffb0}
+html{scroll-behavior:smooth;scroll-padding-top:90px}*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 Manrope,system-ui,sans-serif;overflow-x:clip}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;opacity:.05;z-index:90;background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence baseFrequency='.9' numOctaves='2'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>")}
+.w{max-width:1200px;margin:auto;padding:0 20px}.mono{font-family:"JetBrains Mono",monospace}
+h1,h2,h3{font-family:Unbounded,sans-serif;font-weight:500;letter-spacing:-.03em;margin:0;line-height:1.08}
+.cursor{position:fixed;left:0;top:0;width:520px;height:520px;margin:-260px 0 0 -260px;border-radius:50%;pointer-events:none;z-index:1;background:radial-gradient(circle,color-mix(in srgb,var(--vi) 20%,transparent),transparent 65%);will-change:transform}
+#pg{position:fixed;top:0;left:0;height:2px;width:100%;transform-origin:0;transform:scaleX(0);background:linear-gradient(90deg,var(--cy),var(--vi),var(--ro));z-index:95}
+#hz{position:fixed;top:0;left:0;right:0;height:58px;z-index:60}
+#nv{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));left:0;right:0;z-index:70;display:grid;place-items:start center;pointer-events:none}
+#hd,#bar{grid-area:1/1}
+#hd{pointer-events:auto;display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:var(--pan);backdrop-filter:blur(16px);border-radius:999px;padding:7px 16px;font:600 12px "JetBrains Mono";cursor:pointer;color:var(--ink);transition:.5s cubic-bezier(.2,.9,.2,1)}
+#hd i{width:7px;height:7px;border-radius:50%;background:var(--cy);animation:pl 2.2s infinite}#hd s{color:var(--mut);text-decoration:none;font-size:11px}
+#bar{position:relative;display:flex;gap:2px;padding:6px;border:1px solid var(--line);border-radius:22px;background:var(--pan);backdrop-filter:blur(24px);box-shadow:0 24px 60px -24px #000;opacity:0;transform:translateY(-16px) scale(.92);filter:blur(10px);pointer-events:none;transition:.6s cubic-bezier(.2,.9,.2,1)}
+#nv.open #bar{opacity:1;transform:none;filter:none;pointer-events:auto}#nv.open #hd{opacity:0;transform:translateY(-22px) scale(.88);pointer-events:none}
+#bar button{position:relative;z-index:1;border:0;background:none;color:var(--mut);font:600 13px Manrope;padding:9px 14px;border-radius:16px;cursor:pointer;display:flex;gap:8px;align-items:center;transition:color .3s;white-space:nowrap}
+#bar button:hover,#bar button.on{color:var(--ink)}#bar button kbd{font:10px "JetBrains Mono";opacity:.45}
+#nv.open #bar button{animation:dr .55s both;animation-delay:calc(var(--i)*45ms)}@keyframes dr{from{opacity:0;transform:translateY(-10px)}}
+.ind{position:absolute;top:6px;bottom:6px;left:0;width:0;border-radius:16px;border:1px solid var(--line);background:linear-gradient(120deg,color-mix(in srgb,var(--cy) 28%,transparent),color-mix(in srgb,var(--vi) 28%,transparent));transition:.55s cubic-bezier(.3,1.35,.4,1)}
+
+.btn{display:inline-flex;align-items:center;gap:10px;border:0;border-radius:999px;padding:13px 24px;font:700 14px Manrope;color:#04050a;background:linear-gradient(120deg,var(--cy),var(--vi) 55%,var(--ro));background-size:180% 100%;cursor:pointer;text-decoration:none;transition:.4s;box-shadow:0 10px 40px -10px var(--vi)}
+.btn:hover{background-position:100% 0;transform:translateY(-2px)}.btn.g{background:transparent;color:var(--ink);box-shadow:none;border:1px solid var(--line)}.btn.s{padding:9px 18px}
+.hero{position:relative;min-height:100vh;display:grid;align-items:center;text-align:center;overflow:hidden;padding:130px 0 90px}
+.hero canvas{position:absolute;inset:0;width:100%;height:100%}
+.rays{position:absolute;inset:-25% -10% auto;height:95%;background:conic-gradient(from 168deg at 50% 0%,transparent,color-mix(in srgb,var(--cy) 38%,transparent) 7%,transparent 13%,color-mix(in srgb,var(--vi) 45%,transparent) 21%,transparent 28%,color-mix(in srgb,var(--ro) 34%,transparent) 36%,transparent 44%);filter:blur(30px);-webkit-mask:linear-gradient(#000,transparent 88%);mask:linear-gradient(#000,transparent 88%);animation:sway 13s ease-in-out infinite alternate}
+@keyframes sway{to{transform:rotate(-7deg) scale(1.1)}}
+.hero::after{content:"";position:absolute;inset:auto 0 0;height:30%;background:linear-gradient(transparent,var(--bg))}
+.hero .w{position:relative;z-index:3}
+.pill{display:inline-flex;gap:10px;align-items:center;border:1px solid var(--line);border-radius:999px;padding:7px 16px;font-size:13px;color:var(--mut);background:var(--pan);backdrop-filter:blur(10px)}
+.pill i{width:8px;height:8px;border-radius:50%;background:var(--gr);animation:pl 1.8s infinite}@keyframes pl{70%{box-shadow:0 0 0 10px transparent}0%{box-shadow:0 0 0 0 var(--gr)}}
+h1{font-size:clamp(38px,6.6vw,92px);margin:26px auto 22px;max-width:15ch}
+.gt{background:linear-gradient(100deg,var(--cy),var(--vi),var(--ro),var(--cy));background-size:250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:sh 7s linear infinite}@keyframes sh{to{background-position:250% 0}}
+.hero p.lead{max-width:640px;margin:0 auto 34px;color:var(--mut);font-size:18px}.cta{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+.tick{margin:60px auto 0;max-width:560px;text-align:left;border:1px solid var(--line);border-radius:18px;background:var(--pan);backdrop-filter:blur(16px);padding:14px 18px;font-size:12px;min-height:104px}
+.mq{border-block:1px solid var(--line);overflow:hidden;padding:14px 0;display:grid;gap:10px}.mq div{display:flex;gap:12px;width:max-content;animation:mq 40s linear infinite}.mq div:nth-child(2){animation-direction:reverse;animation-duration:52s}
+@keyframes mq{to{transform:translateX(-50%)}}.mq span{border:1px solid var(--line);border-radius:999px;padding:6px 16px;font-size:13px;color:var(--mut);white-space:nowrap}
+section{padding:110px 0}.eb{color:var(--cy);font:600 12px "JetBrains Mono";letter-spacing:.14em;text-transform:uppercase;margin-bottom:16px}
+h2{font-size:clamp(30px,4.2vw,56px);max-width:18ch}.sub{color:var(--mut);max-width:560px;margin:18px 0 44px}
+.card{position:relative;border:1px solid var(--line);border-radius:24px;background:var(--pan);backdrop-filter:blur(14px);padding:26px;overflow:hidden}
+.card::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:0;transition:.3s;background:radial-gradient(420px circle at var(--mx,50%) var(--my,50%),color-mix(in srgb,var(--vi) 22%,transparent),transparent 45%)}.card:hover::before{opacity:1}
+.con{display:grid;grid-template-columns:1.05fr .95fr;gap:16px}.con .A{grid-row:span 2}
+.hd{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:22px}
+.seg{display:flex;border:1px solid var(--line);border-radius:999px;padding:3px}.seg button{border:0;background:none;color:var(--mut);padding:7px 16px;border-radius:999px;font:600 13px Manrope;cursor:pointer;transition:.25s}.seg .on{background:var(--ink);color:var(--bg)}
+.st{display:grid;grid-template-columns:42px 1fr;gap:14px;padding:12px 0;opacity:.3;transition:.5s;position:relative}.st.on{opacity:1}
+.st i{width:42px;height:42px;border-radius:14px;display:grid;place-items:center;font:600 12px "JetBrains Mono";border:1px solid var(--line);transition:.4s}
+.st.on i{border-color:var(--cy);box-shadow:0 0 24px -4px var(--cy);color:var(--cy)}.st.ro.on i{border-color:var(--ro);box-shadow:0 0 28px -2px var(--ro);color:var(--ro)}.st.gr.on i{border-color:var(--gr);box-shadow:0 0 28px -2px var(--gr);color:var(--gr)}
+.st b{display:block;font-size:15px}.st small{color:var(--mut)}
+.vd{margin-top:14px;padding:16px 18px;border-radius:16px;font-weight:700;display:none}.vd.show{display:block;animation:pop .5s}@keyframes pop{from{transform:scale(.95);opacity:0}}
+.vd.ok{background:color-mix(in srgb,var(--gr) 14%,transparent);border:1px solid var(--gr);color:var(--gr)}.vd.bad{background:color-mix(in srgb,var(--ro) 14%,transparent);border:1px solid var(--ro);color:var(--ro)}
+.B{padding:0}.B canvas{display:block;width:100%;height:230px}.B .rw{display:grid;grid-template-columns:116px 1fr;gap:20px;align-items:center;padding:20px 26px 26px;border-top:1px solid var(--line)}
+.ga{position:relative;width:116px;height:116px}.ga svg{transform:rotate(-90deg)}.ga circle{fill:none;stroke-width:9}.ga .fg{stroke-linecap:round;stroke-dasharray:314;stroke-dashoffset:314;transition:stroke-dashoffset 1s cubic-bezier(.2,.8,.2,1),stroke .4s}
+.ga div{position:absolute;inset:0;display:grid;place-content:center;text-align:center}.ga strong{font:700 28px Unbounded}.ga span{font-size:11px;color:var(--mut)}
+.br{font-size:12px;margin-bottom:9px;color:var(--mut)}.br u{display:block;height:6px;border-radius:4px;background:var(--line);margin-top:4px;overflow:hidden;text-decoration:none}.br u i{display:block;height:100%;width:0;border-radius:4px;transition:width 1s cubic-bezier(.2,.8,.2,1)}
+.fd{font-size:12px;height:220px;overflow:hidden;display:flex;flex-direction:column;gap:7px}.ln{animation:in .4s}@keyframes in{from{transform:translateY(8px);opacity:0}}
+.t{display:inline-block;min-width:58px;font-weight:600}.gr{color:var(--gr)}.ro{color:var(--ro)}.am{color:var(--am)}.cy{color:var(--cy)}.vi{color:var(--vi)}
+.bn{display:grid;grid-template-columns:repeat(6,1fr);gap:16px}.bn .c4{grid-column:span 4}.bn .c2{grid-column:span 2}.bn .c3{grid-column:span 3}
+.bn h3{font-size:21px;margin:18px 0 10px}.bn p{color:var(--mut);margin:0 0 20px;font-size:15px}.code{font:12px/1.7 "JetBrains Mono";border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:color-mix(in srgb,var(--bg) 60%,transparent)}
+.ico{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,color-mix(in srgb,var(--cy) 30%,transparent),color-mix(in srgb,var(--vi) 30%,transparent));font:700 14px "JetBrains Mono"}
+.rs{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.rs .n{font:700 clamp(34px,4vw,56px) Unbounded;background:linear-gradient(120deg,var(--ink),var(--cy));-webkit-background-clip:text;background-clip:text;color:transparent}.rs p{margin:6px 0 0;color:var(--mut);font-size:14px}
+.note{margin-top:22px;color:var(--mut);font-size:13px;border-left:2px solid var(--am);padding-left:14px}
+footer{border-top:1px solid var(--line);padding:40px 0;color:var(--mut);font-size:14px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.rv{opacity:0;transform:translateY(30px);transition:.9s cubic-bezier(.2,.8,.2,1)}.rv.in{opacity:1;transform:none}
+:focus-visible{outline:2px solid var(--cy);outline-offset:3px}
+@media(max-width:900px){.con,.rs{grid-template-columns:1fr}.con .A{grid-row:auto}.bn{grid-template-columns:1fr}.bn>*{grid-column:auto!important}nav a{display:none}.rs{grid-template-columns:1fr 1fr}}
+.xs .g2{display:grid;grid-template-columns:1.25fr 1fr;gap:16px;margin-bottom:16px}.xs .g3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.xs .card h3{font-size:16px;margin-bottom:12px}.xs .card p,.xs .card li{color:var(--mut);font-size:14px;margin:0 0 8px}.xs .card ul{padding-left:18px;margin:0}
+.gl{border-bottom:1px dashed var(--cy);cursor:help;position:relative;color:var(--ink)}.gl::after{content:attr(data-tip);position:absolute;left:50%;bottom:calc(100% + 10px);width:250px;transform:translate(-50%,6px);padding:10px 12px;border-radius:12px;background:var(--ink);color:var(--bg);font:400 12px/1.5 Manrope;opacity:0;pointer-events:none;transition:.25s;z-index:20}.gl:hover::after{opacity:1;transform:translate(-50%,0)}
+.xs svg text{font-family:"JetBrains Mono",monospace;fill:var(--ink)}.pa{fill:none;stroke:var(--mut);stroke-width:1.5;stroke-dasharray:4 6;animation:ds 1.2s linear infinite;opacity:.6}@keyframes ds{to{stroke-dashoffset:-20}}
+.nd rect{fill:color-mix(in srgb,var(--bg) 70%,transparent);stroke:var(--line);stroke-width:1.5;transition:.4s}.gw{fill:color-mix(in srgb,var(--cy) 16%,transparent);stroke:var(--cy);stroke-width:2}.rg{fill:none;stroke:var(--cy);animation:rg 2.4s ease-out infinite;transform-origin:390px 150px;transform-box:view-box}@keyframes rg{from{transform:scale(1);opacity:.7}to{transform:scale(1.7);opacity:0}}
+.wf{display:grid;grid-template-columns:130px 1fr 44px;gap:12px;align-items:center;font-size:13px;padding:9px 0;cursor:pointer;border-bottom:1px solid var(--line)}.wf:hover b{color:var(--cy)}.tr{height:10px;background:var(--line);border-radius:6px;position:relative}.tr i{position:absolute;top:0;height:100%;border-radius:6px;width:0;transition:width .9s cubic-bezier(.2,.8,.2,1)}
+.ev{display:none;grid-column:1/-1;font:12px/1.6 "JetBrains Mono";color:var(--mut);border-left:2px solid var(--cy);padding:6px 12px;background:color-mix(in srgb,var(--bg) 50%,transparent);border-radius:0 10px 10px 0}.wf.o .ev{display:block;animation:in .4s}
+.big{font:700 44px Unbounded;margin:14px 0 0}.sw{display:flex;gap:14px;align-items:flex-start;padding:14px 0;border-bottom:1px solid var(--line);cursor:pointer}.sw p{margin:0!important;font-size:13px!important}.sw b{display:block;font-size:14px}
+.tg{flex:none;width:44px;height:26px;border-radius:99px;border:1px solid var(--line);background:var(--line);position:relative;transition:.3s}.tg::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--mut);transition:.35s cubic-bezier(.3,1.5,.4,1)}.sw.on .tg{background:color-mix(in srgb,var(--gr) 35%,transparent);border-color:var(--gr)}.sw.on .tg::after{left:21px;background:var(--gr)}.sw.dis{opacity:.4;pointer-events:none}
+.stat{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}.stat div{border:1px solid var(--line);border-radius:14px;padding:10px 14px}.stat b{display:block;font:700 24px Unbounded}.stat span{font-size:11px;color:var(--mut)}
+.chain{display:flex;overflow-x:auto;padding:10px 2px 18px}.blk{flex:none;width:176px;border:1px solid var(--line);border-radius:16px;padding:14px;background:var(--pan);transition:.5s;font:11px/1.6 "JetBrains Mono"}.blk b{display:block;font:600 12px "JetBrains Mono"}.blk.bad{border-color:var(--ro);background:color-mix(in srgb,var(--ro) 12%,transparent)}.blk.ok{border-color:var(--gr)}
+.lk{flex:none;width:26px;align-self:center;height:2px;background:repeating-linear-gradient(90deg,var(--mut) 0 4px,transparent 4px 8px);background-size:8px 2px;animation:ds 1s linear infinite}
+.msg{padding:12px 16px;border-radius:14px;font-weight:700;margin-top:6px}.msg.ok{color:var(--gr);background:color-mix(in srgb,var(--gr) 12%,transparent);border:1px solid var(--gr)}.msg.bad{color:var(--ro);background:color-mix(in srgb,var(--ro) 12%,transparent);border:1px solid var(--ro)}
+@media(max-width:900px){.xs .g2,.xs .g3{grid-template-columns:1fr}#bar{flex-wrap:wrap;max-width:94vw}.wf{grid-template-columns:96px 1fr 40px}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.rv{opacity:1;transform:none}}
+</style></head><body>
+<div class="cursor" id="cur"></div><div id="pg"></div>
+<div id="hz"></div><div id="nv"><button id="hd" aria-label="Open navigation"><i></i><span id="hl">Home</span><s>hover · N</s></button><nav id="bar" aria-label="Sections"><span class="ind" id="ind"></span></nav></div>
+<header class="hero" id="home"><div class="rays"></div><canvas id="hc"></canvas>
+<div class="w"><span class="pill"><i></i>Autonomous, privacy-preserving security for AI agents</span>
+<h1>Every agent action, <span class="gt">inspected</span> before it happens.</h1>
+<p class="lead">AI agents read documents, query databases and send email on your behalf. SentinelMesh sits in the middle, rebuilds the attack chain, and stops the action that should never run.</p>
+<div class="cta"><a class="btn" href="#demo" id="go">Watch an attack get stopped →</a><a class="btn g" href="#how">How it works</a></div>
+<div class="tick mono" id="tick"></div></div></header>
+<div class="mq" aria-hidden="true"><div id="m1"></div><div id="m2"></div></div>
+<section id="demo"><div class="w"><div class="eb rv">Live simulation</div><h2 class="rv">Watch a poisoned résumé try to steal payroll.</h2>
+<p class="sub rv">Same attack, two modes. In Monitor the agent succeeds. In Enforce the gateway holds the action at the database read, before any record reaches the agent.</p>
+<div class="con rv">
+<div class="card A"><div class="hd"><div class="seg"><button id="mM">Monitor</button><button id="mE" class="on">Enforce</button></div><button class="btn s" id="run">Run attack ▶</button></div><div id="chain"></div><div class="vd" id="vd"></div></div>
+<div class="card B"><canvas id="mc"></canvas><div class="rw"><div class="ga"><svg width="116" height="116" viewBox="0 0 116 116"><circle cx="58" cy="58" r="50" stroke="var(--line)"/><circle class="fg" id="fg" cx="58" cy="58" r="50" stroke="var(--cy)"/></svg><div><strong id="sc">0</strong><span>risk</span></div></div><div id="bars"></div></div></div>
+<div class="card C mono"><div class="fd" id="fd"></div></div></div></div></section>
+<section id="explain" class="xs"><div class="w"><div class="eb rv">Explain</div><h2 class="rv">Why was it held? Follow the evidence.</h2>
+<p class="sub rv">A file marked <span class="gl" data-tip="Taint: once an agent reads content from outside the company, everything it does next in that session is treated with suspicion.">untrusted</span> told hr-agent to read payroll and email it out. The <span class="gl" data-tip="Gateway: the checkpoint every agent tool call must pass through before it runs.">gateway</span> held the read, so nothing was exposed.</p>
+<div class="g2 rv"><div class="card"><h3>Where the attack was cut</h3><div id="f1"></div><button class="btn g" id="rp">Replay ↻</button></div>
+<div class="card"><h3>Why it scored 100 / 100</h3><p>Click a row to see the evidence behind it.</p><div id="wf"></div><div class="big" id="tot">0</div></div></div>
+<div class="g3 rv"><div class="card"><h3>What happened</h3><ul><li>resume.pdf was read and marked untrusted by the gateway.</li><li>Page 2 hid an instruction to email payroll data.</li><li>hr-agent asked for salary and ssn.</li><li>The read was held before it ran.</li></ul></div>
+<div class="card"><h3>Why SentinelMesh acted</h3><p>Three independent signals agreed: untrusted input in the session, a read the task never asked for, and an unapproved destination. No single signal had to be perfect.</p></div>
+<div class="card"><h3>Without SentinelMesh</h3><p>hr-agent reads three salary rows and emails them to recruiter@ext-hiring.com. The email is delivered, and the only trace is an ordinary tool call.</p></div></div>
+<p class="note rv">Illustrative incident based on the poisoned-résumé benchmark scenario. Numbers are simulated in this prototype.</p></div></section>
+<section id="lab" class="xs"><div class="w"><div class="eb rv">Policy Lab</div><h2 class="rv">Turn a defense off. Replay the same attack.</h2><p class="sub rv">Each layer is independent. Switch them and watch where the attack is stopped, or whether it gets through.</p>
+<div class="g2 rv"><div class="card" id="sws"></div><div class="card"><h3>Same attack, your configuration</h3><div id="f2"></div><div class="stat"><div><b id="x1">0</b><span>records the agent read</span></div><div><b id="x2">0</b><span>records that left</span></div><div><b id="x3">–</b><span>stopped at</span></div></div><div class="msg" id="mg"></div><p id="tx" style="margin-top:12px"></p></div></div>
+<p class="note rv">Simplified model of the measured ablation on the project’s benchmark. Real results depend on the scenario.</p></div></section>
+<section id="audit" class="xs"><div class="w"><div class="eb rv">Audit</div><h2 class="rv">Change one row. The chain tells on you.</h2><p class="sub rv">Every decision is linked to the one before it with SHA-256. Edit history and every later link fails verification.</p>
+<div class="card rv"><div class="chain" id="ch"></div><div style="display:flex;gap:10px;flex-wrap:wrap;margin:6px 0 14px"><button class="btn" id="tp">Tamper with event 3</button><button class="btn g" id="rs">Restore</button></div><div class="msg ok" id="vm">Verifying…</div></div></div></section>
+<section id="how"><div class="w"><div class="eb rv">Defense in depth</div><h2 class="rv">Six layers. No single point of trust.</h2><p class="sub rv">Each layer is independent, measured, and can be switched off to show what it adds.</p>
+<div class="bn">
+<div class="card c4 rv"><div class="ico">01</div><h3>Taint tracking</h3><p>Anything an agent reads from outside marks the session as untrusted, and the gateway assigns that label itself. A lying agent cannot clear it.</p><div class="code"><span class="am">read_doc</span>(resume.pdf) → session <span class="ro">TAINTED</span><br><span class="am">send_email</span>(ext) → <span class="ro">BLOCK</span> risk 100</div></div>
+<div class="card c2 rv"><div class="ico">02</div><h3>Policy gateway</h3><p>Allow, redact, hold for approval or block, inline.</p><div class="code"><span class="gr">allow</span> · <span class="cy">redact</span> · <span class="am">approve</span> · <span class="ro">block</span></div></div>
+<div class="card c2 rv"><div class="ico">03</div><h3>Privacy vault</h3><p>PII is tokenized before logging. Raw access is role-gated and audited.</p><div class="code">[EMAIL_1] [PERSON_2]<br>[SALARY_1]</div></div>
+<div class="card c4 rv"><div class="ico">04</div><h3>Hash-chained audit</h3><p>Every decision joins a tamper-evident SHA-256 chain. Change one row and verification fails at that exact event.</p><div class="code">0000…a91f → 7c2e…b04d → 51d8…0e3a<br><span class="gr">chain valid</span> · 10 events verified</div></div>
+<div class="card c3 rv"><div class="ico">05</div><h3>Learned baseline</h3><p>Volume, timing and destinations are compared with each agent’s own normal behavior.</p><div class="code">rows 9004 vs median 667<br><span class="am">anomaly</span> · off-hours · new destination</div></div>
+<div class="card c3 rv"><div class="ico">06</div><h3>Signed approvals</h3><p>Privileged actions need a one-time HMAC token bound to the exact action.</p><div class="code">forged · expired · replayed · wrong-action<br>→ <span class="ro">all blocked</span></div></div></div></div></section>
+<section id="results"><div class="w"><div class="eb rv">Evidence</div><h2 class="rv">Measured on scenarios written after the rules were frozen.</h2><p class="sub rv"></p>
+<div class="rs rv"><div class="card"><div class="n"><span data-to="6" data-s="/6">0</span></div><p>attacks detected</p></div><div class="card"><div class="n"><span data-to="0" data-s="">0</span></div><p>records left the company</p></div><div class="card"><div class="n"><span data-to="11" data-s="/12">0</span></div><p>decisions matched</p></div><div class="card"><div class="n"><span data-to="161" data-s="">0</span></div><p>automated tests passing</p></div></div>
+<p class="note rv">Honest scope: 12 held-out scenarios written by the project author, so confidence intervals are wide (detection 61–100%). One benign email was wrongly blocked, and some attacks were held only after the agent read data. The intent judge is a stub and is not counted.</p></div></section>
+<div class="w"><footer><span><b>SentinelMesh AI</b> · internship project</span><span>Simulated data only · no real personal information</span></footer></div>
+<script>
+const $=s=>document.querySelector(s);let mode='enforce';
+const C=()=>{const g=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();return{cy:g('--cy'),vi:g('--vi'),ro:g('--ro'),gr:g('--gr'),mut:g('--mut'),ink:g('--ink')}};
+const mp={x:-999,y:-999,cx:0,cy:0};
+function mesh(cv,o){const cx=cv.getContext('2d'),D=Math.min(devicePixelRatio||1,2),nm=['hr-agent','finance-agent','support-agent','code-agent','ops-agent'];let W,H,N=[],P=[],S=[],K=C(),on=true;
+function init(){K=C();const r=cv.getBoundingClientRect();W=r.width;H=r.height;cv.width=W*D;cv.height=H*D;cx.setTransform(D,0,0,D,0,0);N=[];const cnt=o.d?Math.min(o.max||600,Math.max(o.n,Math.round(W*H/o.d))):o.n;for(let i=0;i<cnt;i++)N.push({x:Math.random()*W,y:Math.random()*H,vx:(Math.random()-.5)*.4,vy:(Math.random()-.5)*.4,n:o.l&&i<5?nm[i]:null,h:0});if(o.l){N[0].x=W*.14;N[0].y=H*.5;N[0].f=1;N.push({x:W*.88,y:H*.5,vx:0,vy:0,f:1,e:1,n:'external',h:0})}}
+function burst(x,y){for(let i=0;i<30;i++){const a=Math.random()*6.28,s=1+Math.random()*3;S.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,l:1})}}
+new IntersectionObserver(e=>on=e[0].isIntersecting).observe(cv);
+function fr(){requestAnimationFrame(fr);if(!on)return;cx.clearRect(0,0,W,H);const r=cv.getBoundingClientRect(),mx=mp.x-r.left,my=mp.y-r.top,L=N.length;
+for(const n of N){if(!n.f){n.x+=n.vx;n.y+=n.vy;if(n.x<0||n.x>W)n.vx*=-1;if(n.y<0||n.y>H)n.vy*=-1;if(o.m){const dx=n.x-mx,dy=n.y-my,d=Math.hypot(dx,dy);if(d<170&&d>1){const f=(170-d)/170;n.x+=dx/d*f*2.4;n.y+=dy/d*f*2.4}}}n.h*=.96}
+cx.lineWidth=1;cx.strokeStyle=K.cy;const CS=o.m?135:120,G={};for(let i=0;i<L;i++){const n=N[i],k=(n.x/CS|0)+','+(n.y/CS|0);(G[k]=G[k]||[]).push(i)}
+for(let i=0;i<L;i++){const a=N[i],gx=a.x/CS|0,gy=a.y/CS|0;for(let ox=-1;ox<=1;ox++)for(let oy=-1;oy<=1;oy++){const c=G[(gx+ox)+','+(gy+oy)];if(!c)continue;for(const j of c){if(j<=i)continue;const b=N[j],d=Math.hypot(a.x-b.x,a.y-b.y);if(d<CS){cx.globalAlpha=(1-d/135)*.5;cx.beginPath();cx.moveTo(a.x,a.y);cx.lineTo(b.x,b.y);cx.stroke()}}}}
+if(o.m)for(const n of N){const d=Math.hypot(n.x-mx,n.y-my);if(d<190){cx.globalAlpha=(1-d/190)*.9;cx.strokeStyle=K.ro;cx.beginPath();cx.moveTo(n.x,n.y);cx.lineTo(mx,my);cx.stroke()}}
+for(let k=0,mk=Math.max(1,Math.round(L/90));k<mk;k++)if(Math.random()<.12){const a=N[Math.floor(Math.random()*L)],b=N.find(z=>z!==a&&Math.hypot(a.x-z.x,a.y-z.y)<135);if(b)P.push({a,b,t:0,s:.02+Math.random()*.02,c:K.vi})}
+for(let i=P.length-1;i>=0;i--){const p=P[i];p.t+=p.s;const x=p.a.x+(p.b.x-p.a.x)*p.t,y=p.a.y+(p.b.y-p.a.y)*p.t;
+if(p.k&&p.bl&&p.t>.5){burst(x,y);N[0].h=1;P.splice(i,1);continue}if(p.t>=1){if(p.k){burst(p.b.x,p.b.y);p.b.h=1}P.splice(i,1);continue}
+cx.globalAlpha=1;cx.fillStyle=p.c;cx.shadowColor=p.c;cx.shadowBlur=p.k?20:9;cx.beginPath();cx.arc(x,y,p.k?4.5:2.2,0,6.28);cx.fill();cx.shadowBlur=0}
+for(let i=S.length-1;i>=0;i--){const s=S[i];s.x+=s.vx;s.y+=s.vy;s.l-=.03;if(s.l<=0){S.splice(i,1);continue}cx.globalAlpha=s.l;cx.fillStyle=K.ro;cx.fillRect(s.x,s.y,2.6,2.6)}
+cx.globalAlpha=1;cx.font='11px "JetBrains Mono"';for(const n of N){const big=n.n,c=n.e?K.ro:big?K.cy:K.mut;cx.fillStyle=c;cx.shadowColor=c;cx.shadowBlur=big?14:0;cx.beginPath();cx.arc(n.x,n.y,big?5:2,0,6.28);cx.fill();cx.shadowBlur=0;
+if(n.h>.05){cx.strokeStyle=K.ro;cx.lineWidth=2;cx.globalAlpha=n.h;cx.beginPath();cx.arc(n.x,n.y,6+(1-n.h)*36,0,6.28);cx.stroke();cx.lineWidth=1;cx.globalAlpha=1}
+if(big){cx.fillStyle=K.ink;cx.globalAlpha=.8;cx.fillText(n.n,n.x+9,n.y+4);cx.globalAlpha=1}}}
+init();fr();addEventListener('resize',init);
+return{atk(bl){if(o.l)P.push({a:N[0],b:N[N.length-1],t:0,s:.013,k:1,bl,c:K.ro})},init}}
+const hero=mesh($('#hc'),{n:90,m:1,d:3900,max:600}),mini=mesh($('#mc'),{n:30,l:1});
+addEventListener('pointermove',e=>{mp.x=e.clientX;mp.y=e.clientY;$('#cur').style.transform=`translate(${e.clientX}px,${e.clientY}px)`;const c=e.target.closest&&e.target.closest('.card');if(c){const r=c.getBoundingClientRect();c.style.setProperty('--mx',e.clientX-r.left+'px');c.style.setProperty('--my',e.clientY-r.top+'px')}});
+const th=['LLM01 Prompt injection','LLM02 Sensitive data disclosure','LLM06 Excessive agency','LLM07 System prompt leakage','LLM08 Context poisoning','LLM10 Unbounded consumption','SSRF to cloud metadata','Credential leakage','Forged approval tokens','Low-and-slow exfiltration','Off-hours bulk reads','Markdown image exfiltration'];
+['#m1','#m2'].forEach(s=>$(s).innerHTML=th.concat(th).map(t=>`<span>${t}</span>`).join(''));
+const steps=[['01','Résumé uploaded','Untrusted file enters hr-agent’s session','am'],['02','Hidden instruction found','“Send the salary list to an outside address”','ro'],['03','Sensitive read requested','salary and ssn are not part of the task','am'],['04','External send attempted','send_email → recruiter@ext-hiring.com','ro'],['05','Policy decision','Waiting for the policy engine…','gr']];
+$('#chain').innerHTML=steps.map((s,i)=>`<div class="st ${s[3]}" id="s${i}"><i>${s[0]}</i><div><b>${s[1]}</b><small id="d${i}">${s[2]}</small></div></div>`).join('');
+const bars=[['Untrusted taint','var(--am)',38],['Sensitive data','var(--vi)',15],['External destination','var(--ro)',25],['Rule findings','var(--cy)',22]];
+$('#bars').innerHTML=bars.map((b,i)=>`<div class="br">${b[0]}<u><i id="b${i}" style="background:${b[1]}"></i></u></div>`).join('');
+function feed(t,c,m){const l=document.createElement('div');l.className='ln';l.innerHTML=`<b class="t ${c}">${t}</b> ${m}`;$('#fd').prepend(l);while($('#fd').children.length>11)$('#fd').lastChild.remove();const k=l.cloneNode(true);$('#tick').prepend(k);while($('#tick').children.length>4)$('#tick').lastChild.remove()}
+const calls=['hr-agent · read_doc(policy.pdf)','finance-agent · db_query(invoices)','support-agent · crm.lookup(4821)','code-agent · git.diff(main)','ops-agent · api.get(/status)'];
+setInterval(()=>{Math.random()<.2?feed('MASK','cy','PII tokenized before logging'):feed('ALLOW','gr',calls[Math.floor(Math.random()*5)])},1500);
+function score(v){const f=$('#fg');f.style.strokeDashoffset=314*(1-v/100);f.style.stroke=v>70?'var(--ro)':v>35?'var(--am)':'var(--cy)';let s=+$('#sc').textContent;const t=setInterval(()=>{s+=s<v?1:-1;$('#sc').textContent=s;if(s==v)clearInterval(t)},11)}
+const bar=(i,v)=>$('#b'+i).style.width=v?bars[i][2]*2.6+'%':'0';let T=[];
+function reset(){T.forEach(clearTimeout);T=[];steps.forEach((s,i)=>{$('#s'+i).className='st '+s[3];$('#d'+i).textContent=s[2]});$('#vd').className='vd';bars.forEach((_,i)=>bar(i,0));score(0)}
+function run(){reset();const at=(m,f)=>T.push(setTimeout(f,m)),on=i=>$('#s'+i).classList.add('on');
+at(200,()=>{on(0);feed('TAINT','am','resume.pdf marked untrusted');bar(0,1);score(26)});
+at(1200,()=>{on(1);feed('INJECT','ro','hidden instruction detected');bar(2,1);score(48)});
+at(2300,()=>{on(2);feed('READ','am','salary, ssn requested outside task scope');bar(1,1);score(64);mini.atk(mode==='enforce')});
+if(mode==='enforce')at(3100,()=>{$('#s2').className='st ro on';$('#d2').textContent='Held for approval before the read';steps.slice(3).forEach((_,k)=>$('#d'+(k+3)).textContent='Never reached');on(4);$('#s4').className='st gr on';$('#d4').textContent='Policy held the read. Nothing left the company.';bar(3,1);score(96);feed('HOLD','ro','db_query held · 0 records exposed');const v=$('#vd');v.className='vd show ok';v.textContent='Held at the database read. 0 records exposed, 0 left the company.'});
+else{at(3300,()=>{on(3);feed('SEND','am','send_email → external address');bar(3,1);score(88)});at(4400,()=>{on(4);$('#s4').className='st ro on';$('#d4').textContent='Monitor mode: alert only, action allowed';feed('LEAK','ro','1 record sent outside · alert only');score(98);const v=$('#vd');v.className='vd show bad';v.textContent='Leaked. Payroll data left the company. Switch to Enforce to stop it.'})}}
+$('#run').onclick=run;$('#go').addEventListener('click',()=>setTimeout(run,900));
+const sm=m=>{mode=m;$('#mM').classList.toggle('on',m==='monitor');$('#mE').classList.toggle('on',m==='enforce');run()};$('#mM').onclick=()=>sm('monitor');$('#mE').onclick=()=>sm('enforce');
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');e.target.querySelectorAll('[data-to]').forEach(c=>{const to=+c.dataset.to;let v=0;const t=setInterval(()=>{v+=Math.max(1,Math.ceil(to/40));if(v>=to){v=to;clearInterval(t)}c.textContent=v+c.dataset.s},30)});io.unobserve(e.target)}}),{threshold:.18});
+document.querySelectorAll('.rv').forEach(e=>io.observe(e));
+const q=(s,r=document)=>r.querySelector(s),qa=(s,r=document)=>[...r.querySelectorAll(s)];
+const SEC=[['home','Home'],['demo','Live demo'],['explain','Explain'],['lab','Policy Lab'],['audit','Audit'],['how','Defenses'],['results','Results']];
+const nbar=q('#bar'),nv=q('#nv'),ind=q('#ind');let nct,curS='';
+SEC.forEach((s,i)=>{const b=document.createElement('button');b.dataset.id=s[0];b.style.setProperty('--i',i);b.innerHTML=s[1]+'<kbd>'+(i+1)+'</kbd>';b.onclick=()=>jump(s[0]);nbar.append(b)});
+const mvI=()=>{const b=q('#bar button.on');if(b){ind.style.left=b.offsetLeft+'px';ind.style.width=b.offsetWidth+'px'}};
+const nOpen=()=>{clearTimeout(nct);nv.classList.add('open');requestAnimationFrame(mvI)},nClose=d=>{clearTimeout(nct);nct=setTimeout(()=>nv.classList.remove('open'),d)};
+q('#hz').onmouseenter=nOpen;q('#hd').onclick=nOpen;nbar.onmouseenter=()=>clearTimeout(nct);nbar.onmouseleave=()=>nClose(650);
+function jump(id){document.getElementById(id).scrollIntoView({behavior:'smooth',block:'start'});nClose(900)}
+let lastY=scrollY,upAcc=0;function sc(){const y=scrollY;q('#pg').style.transform='scaleX('+y/Math.max(1,document.body.scrollHeight-innerHeight)+')';
+if(y<lastY)upAcc+=lastY-y;else upAcc=0;if(upAcc>200&&y>200){nOpen();nClose(2200);upAcc=0}lastY=y;
+let c='home';for(const s of SEC)if(document.getElementById(s[0]).getBoundingClientRect().top<innerHeight*.4)c=s[0];
+if(c!==curS){curS=c;qa('#bar button').forEach(b=>b.classList.toggle('on',b.dataset.id===c));q('#hl').textContent=SEC.find(s=>s[0]===c)[1];mvI()}}
+addEventListener('scroll',sc,{passive:true});sc();document.fonts.ready.then(mvI);
+addEventListener('keydown',e=>{if(/INPUT|TEXTAREA/.test(e.target.tagName))return;if(e.key==='n'||e.key==='N')nv.classList.contains('open')?nClose(0):nOpen();if(e.key>='1'&&e.key<='7')jump(SEC[e.key-1][0]);if(e.key==='Escape')nClose(0)});
+const NS='http://www.w3.org/2000/svg';
+function flowSvg(h){h.innerHTML=`<svg viewBox="0 0 640 290" width="100%" role="img" aria-label="Data flow from untrusted file to agent, gateway, then database or email"><path class="pa" d="M118 150H192"/><path class="pa" d="M268 150H348"/><path class="pa" d="M432 150C480 150 495 70 528 70"/><path class="pa" d="M432 150C480 150 495 230 528 230"/>
+<g class="nd"><rect x="12" y="122" width="106" height="56" rx="14" style="stroke:var(--am)"/><text x="65" y="146" text-anchor="middle" font-size="11">resume.pdf</text><text x="65" y="162" text-anchor="middle" font-size="9" style="fill:var(--am)">untrusted</text>
+<rect x="192" y="122" width="76" height="56" rx="14"/><text x="230" y="154" text-anchor="middle" font-size="11">hr-agent</text>
+<rect class="nb" x="528" y="42" width="104" height="56" rx="14"/><text x="580" y="66" text-anchor="middle" font-size="11">payroll DB</text><text class="ns" x="580" y="82" text-anchor="middle" font-size="9" style="fill:var(--mut)">idle</text>
+<rect class="nm" x="528" y="202" width="104" height="56" rx="14"/><text x="580" y="226" text-anchor="middle" font-size="11">outside email</text><text class="nl" x="580" y="242" text-anchor="middle" font-size="9" style="fill:var(--mut)">idle</text></g>
+<circle class="rg" cx="390" cy="150" r="40"/><circle class="gw" cx="390" cy="150" r="40"/><text x="390" y="146" text-anchor="middle" font-size="10" style="font-weight:700">SENTINEL</text><text x="390" y="160" text-anchor="middle" font-size="9" style="fill:var(--cy)">gateway</text>
+<text class="stt" x="390" y="214" text-anchor="middle" font-size="12" style="font-weight:700"></text><circle class="pk" r="6" cx="-20" cy="-20" style="fill:var(--ro)"/><g class="fx"></g></svg>`;return h.firstChild}
+function runF(svg,seq,fin){const t=svg._t=(svg._t||0)+1,P=qa('.pa',svg),pk=q('.pk',svg),st=q('.stt',svg);q('.fx',svg).innerHTML='';st.textContent='';q('.nb',svg).style.stroke='';q('.nm',svg).style.stroke='';q('.ns',svg).textContent='idle';q('.nl',svg).textContent='idle';pk.style.opacity=1;let i=0,pt={x:65,y:150};
+function nx(){if(t!==svg._t)return;if(i>=seq.length){fx();return}const[pi,to]=seq[i++],p=P[pi],L=p.getTotalLength(),t0=performance.now(),D=620*Math.max(.3,to);if(pi===2)q('.ns',svg).textContent='reading…';
+function f(n){if(t!==svg._t)return;const k=Math.min(1,(n-t0)/D);pt=p.getPointAtLength(L*to*k);pk.setAttribute('cx',pt.x);pk.setAttribute('cy',pt.y);k<1?requestAnimationFrame(f):nx()}requestAnimationFrame(f)}
+function fx(){pk.style.opacity=0;const g=q('.fx',svg);for(let j=0;j<16;j++){const c=document.createElementNS(NS,'circle');c.setAttribute('r',2.4);c.setAttribute('cx',pt.x);c.setAttribute('cy',pt.y);c.style.fill=fin.c;g.append(c);const a=j/16*6.28;c.animate([{transform:'translate(0,0)',opacity:1},{transform:'translate('+Math.cos(a)*38+'px,'+Math.sin(a)*38+'px)',opacity:0}],{duration:800,easing:'ease-out'})}
+st.textContent=fin.t;st.style.fill=fin.c;if(fin.db){q('.nb',svg).style.stroke='var(--am)';q('.ns',svg).textContent=fin.db}if(fin.ml){q('.nm',svg).style.stroke='var(--ro)';q('.nl',svg).textContent=fin.ml}}
+nx()}
+const OUTF={hold:{s:[[0,1],[1,1]],f:{t:'HELD AT READ',c:'var(--gr)'}},block:{s:[[0,1],[1,1],[2,1],[3,.45]],f:{t:'BLOCKED AT SEND',c:'var(--am)',db:'3 rows read'}},leak:{s:[[0,1],[1,1],[2,1],[3,1]],f:{t:'DATA LEAKED',c:'var(--ro)',db:'3 rows read',ml:'3 rows received'}}};
+const f1=flowSvg(q('#f1')),f2=flowSvg(q('#f2'));
+const WFD=[['Untrusted taint',38,'var(--am)','resume.pdf → source: document · trust: UNTRUSTED (assigned by the gateway, not the agent)'],['Sensitive data',15,'var(--vi)','db_query(salary, ssn) · task: “summarize résumé” · columns not mentioned in the task'],['External destination',25,'var(--ro)','recruiter@ext-hiring.com is not in the approved recipient list'],['Rule findings',22,'var(--cy)','hidden instruction pattern found on page 2 of resume.pdf']];
+function incF(){let c=0;q('#wf').innerHTML=WFD.map((w,i)=>{const s=c;c+=w[1];return'<div class="wf"><span>'+w[0]+'</span><div class="tr"><i style="left:'+s+'%;background:'+w[2]+'" data-w="'+w[1]+'"></i></div><b>+'+w[1]+'</b><div class="ev">'+w[3]+'</div></div>'}).join('');
+qa('#wf .wf').forEach(e=>e.onclick=()=>e.classList.toggle('o'));qa('#wf i').forEach((e,i)=>setTimeout(()=>e.style.width=e.dataset.w+'%',250+i*260));let n=0;const tt=setInterval(()=>{n+=2;q('#tot').textContent=n;if(n>=100)clearInterval(tt)},22);runF(f1,OUTF.hold.s,OUTF.hold.f)}
+q('#rp').onclick=()=>runF(f1,OUTF.hold.s,OUTF.hold.f);
+const LYR=[['taint','Taint tracking','Marks the session untrusted once outside content is read.'],['pre','Pre-read protection','Holds reads of sensitive data the task never asked for. Needs taint tracking.'],['rules','Domain and content rules','Blocks unapproved recipients and known attack patterns.'],['base','Learned baseline','Flags behavior outside this agent’s normal.']];const LS={taint:1,pre:1,rules:1,base:1};
+function labF(){q('#sws').innerHTML='<h3>Defense layers</h3>'+LYR.map(l=>'<div class="sw '+(LS[l[0]]?'on':'')+' '+(l[0]==='pre'&&!LS.taint?'dis':'')+'" data-k="'+l[0]+'"><div class="tg"></div><div><b>'+l[1]+'</b><p>'+l[2]+'</p></div></div>').join('');
+qa('#sws .sw').forEach(e=>e.onclick=()=>{const k=e.dataset.k;LS[k]=!LS[k];if(!LS.taint)LS.pre=0;labF()});
+let o,x=3,y=0,w,tx;if(LS.pre&&LS.taint){o='hold';x=0;w='Held at the database read';tx='The session was tainted and the task never mentioned salary or SSN, so the read never ran.'}
+else if(LS.taint){o='block';w='Email blocked';tx='Three rows were read, then a tainted session was stopped from sending them to an unapproved address.'}
+else if(LS.rules){o='block';w='Email blocked';tx='The domain rule blocked ext-hiring.com. A lookalike of an approved domain would have slipped past this layer alone.'}
+else if(LS.base){o='block';w='Email flagged';tx='The destination was never seen for this agent, so the send was held for review.'}
+else{o='leak';y=3;w='Nothing stopped it';tx='No layer objected. Payroll rows left the company.'}
+q('#x1').textContent=x;q('#x2').textContent=y;q('#x3').textContent=o==='hold'?'read':o==='leak'?'never':'send';const m=q('#mg');m.className='msg '+(o==='leak'?'bad':'ok');m.textContent=w;q('#tx').textContent=tx;runF(f2,OUTF[o].s,OUTF[o].f)}
+const EVT=[['read_doc(resume.pdf)','allow'],['db_query(salary, ssn)','held'],['send_email(ext)','block'],['tool_return','recorded'],['raw_access(officer)','audit'],['approval','denied']];let chn=[];const Z0='0'.repeat(64);
+async function sha(s){if(crypto.subtle){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}let h=5381;for(const c of s)h=(h*33^c.charCodeAt(0))>>>0;return h.toString(16).padStart(8,'0').repeat(8)}
+async function chInit(){let p=Z0;chn=[];for(const e of EVT){const h=await sha(e[0]+'|'+e[1]+'|'+p);chn.push({t:e[0],d:e[1],h,p});p=h}chPaint(-1)}
+function chPaint(bad){q('#ch').innerHTML=chn.map((b,i)=>'<div class="blk '+(bad<0?'':i>=bad?'bad':'ok')+'"><b>#'+(i+1)+' '+b.t+'</b><span style="color:var(--'+(b.d==='block'||b.d==='denied'?'ro':b.d==='held'?'am':'gr')+')">'+b.d+'</span><br>hash '+b.h.slice(0,6)+'…'+b.h.slice(-4)+'<br>prev '+b.p.slice(0,6)+'…'+b.p.slice(-4)+'</div>'+(i<chn.length-1?'<div class="lk"></div>':'')).join('');const m=q('#vm');m.className='msg '+(bad<0?'ok':'bad');m.textContent=bad<0?'Chain valid · '+chn.length+' events verified':'Hash mismatch at event '+(bad+1)+'. Events '+(bad+1)+'–'+chn.length+' can no longer be trusted.'}
+async function chVf(){let p=Z0,bad=-1;for(let i=0;i<chn.length;i++){const h=await sha(chn[i].t+'|'+chn[i].d+'|'+p);if(h!==chn[i].h&&bad<0)bad=i;p=h}chPaint(bad)}
+q('#tp').onclick=()=>{if(chn[2]){chn[2].d='allow';chPaint(-1);setTimeout(chVf,450)}};q('#rs').onclick=chInit;
+labF();chInit();const once=(sel,fn)=>new IntersectionObserver((e,o)=>{if(e[0].isIntersecting){fn();o.disconnect()}},{threshold:.3}).observe(q(sel));once('#explain',incF);once('#lab',labF);
+feed('ALLOW','gr','hr-agent · read_doc(policy.pdf)');feed('MASK','cy','PII tokenized before logging');feed('ALLOW','gr','finance-agent · db_query(invoices)');
+</script></body></html>

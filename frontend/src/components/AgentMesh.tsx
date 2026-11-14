@@ -2,277 +2,426 @@ import React, { useEffect, useRef } from 'react';
 import { AuditEvent } from '../types';
 
 interface AgentMeshProps {
-  latestEvent?: AuditEvent | null;
+  mode: 'hero' | 'console';
+  events?: AuditEvent[];
+  attackPulseTrigger?: { blocked: boolean; seq: number } | null;
+  className?: string;
+  canvasId?: string;
 }
 
-export const AgentMesh: React.FC<AgentMeshProps> = ({ latestEvent }) => {
+interface MeshNode {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  n: string | null;
+  h: number;
+  f?: number;
+  e?: number;
+}
+
+interface MeshPacket {
+  a: MeshNode;
+  b: MeshNode;
+  t: number;
+  s: number;
+  c: string;
+  k?: number;
+  bl?: boolean;
+}
+
+interface MeshSpark {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  l: number;
+}
+
+const AGENT_NAMES = ['hr-agent', 'finance-agent', 'support-agent', 'code-agent', 'ops-agent'];
+
+export const AgentMesh: React.FC<AgentMeshProps> = ({
+  mode,
+  events = [],
+  attackPulseTrigger,
+  className = '',
+  canvasId,
+}) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const packetsRef = useRef<any[]>([]);
-  const sparksRef = useRef<any[]>([]);
-  const nodesRef = useRef<any[]>([]);
+  const triggerActionRef = useRef<((bl: boolean) => void) | null>(null);
+  const lastEventIdRef = useRef<number | null>(null);
 
-  const colors = {
-    cy: '#4fb3c7',
-    vi: '#7f8fd6',
-    rd: '#e5484d',
-    am: '#d9a441',
-    gr: '#3fb68b',
-    mut: '#8a94a3',
-    ink: '#e6eaf0',
-    line: '#262d39',
-  };
-
-  // 1. React to real WebSocket events by launching real packets across mesh
   useEffect(() => {
-    if (!latestEvent || nodesRef.current.length === 0) return;
+    const cv = canvasRef.current;
+    if (!cv) return;
+    const cx = cv.getContext('2d');
+    if (!cx) return;
 
-    const nodes = nodesRef.current;
-    const packets = packetsRef.current;
-    const sparks = sparksRef.current;
+    const D = Math.min(window.devicePixelRatio || 1, 2);
+    const isHero = mode === 'hero';
 
-    // Find source node matching agent_id or primary
-    const srcNode = nodes.find((n) => n.name === latestEvent.agent_id) || nodes[0];
-    let dstNode = nodes[nodes.length - 1]; // default external sink
+    // Density rule parameters
+    // Hero: count = clamp(round(width * height / 3900), 90, 600)
+    // Console: 30 nodes, labelled agents
+    const o = isHero
+      ? { n: 90, m: 1, d: 3900, max: 600, l: 0 }
+      : { n: 30, m: 0, d: 0, max: 30, l: 1 };
 
-    if (latestEvent.tool_name === 'db_query') {
-      // route to internal data store node
-      dstNode = nodes[1] || nodes[0];
-    } else if (latestEvent.tool_name === 'read_doc') {
-      // route from document node to agent
-      dstNode = srcNode;
-    }
+    let W = 0;
+    let H = 0;
+    let N: MeshNode[] = [];
+    let P: MeshPacket[] = [];
+    let S: MeshSpark[] = [];
+    let on = true;
+    let rafId = 0;
 
-    const decision = latestEvent.decision;
-    const packetColor =
-      decision === 'block'
-        ? colors.rd
-        : decision === 'would_block'
-        ? colors.am
-        : decision === 'redact'
-        ? colors.vi
-        : colors.cy;
+    const getColors = () => {
+      const g = (prop: string) =>
+        getComputedStyle(document.documentElement).getPropertyValue(prop).trim();
+      return {
+        cy: g('--cy') || '#38e8ff',
+        vi: g('--vi') || '#8b5cff',
+        ro: g('--ro') || '#ff4d8d',
+        am: g('--am') || '#ffb84d',
+        gr: g('--gr') || '#3dffb0',
+        mut: g('--mut') || '#8b93ad',
+        ink: g('--ink') || '#eaf0ff',
+      };
+    };
 
-    srcNode.hot = 1;
+    let K = getColors();
 
-    packets.push({
-      a: srcNode,
-      b: dstNode,
-      t: 0,
-      speed: 0.02,
-      color: packetColor,
-      isBlocked: decision === 'block',
-      onComplete: () => {
-        dstNode.hot = 1;
-        if (decision === 'block') {
-          // Trigger explosion sparks at intercept point
-          for (let i = 0; i < 24; i++) {
-            const angle = Math.random() * 6.28;
-            const speed = 1 + Math.random() * 3;
-            sparks.push({
-              x: dstNode.x,
-              y: dstNode.y,
-              vx: Math.cos(angle) * speed,
-              vy: Math.sin(angle) * speed,
-              life: 1,
-              color: colors.rd,
+    const init = () => {
+      K = getColors();
+      const r = cv.getBoundingClientRect();
+      W = r.width;
+      H = r.height;
+      cv.width = W * D;
+      cv.height = H * D;
+      cx.setTransform(D, 0, 0, D, 0, 0);
+      N = [];
+
+      // Density rule: count = clamp(round(width * height / 3900), 90, 600)
+      const cnt = o.d
+        ? Math.min(o.max || 600, Math.max(o.n, Math.round((W * H) / o.d)))
+        : o.n;
+
+      for (let i = 0; i < cnt; i++) {
+        N.push({
+          x: Math.random() * W,
+          y: Math.random() * H,
+          vx: (Math.random() - 0.5) * 0.4,
+          vy: (Math.random() - 0.5) * 0.4,
+          n: o.l && i < 5 ? AGENT_NAMES[i] : null,
+          h: 0,
+        });
+      }
+
+      if (o.l) {
+        N[0].x = W * 0.14;
+        N[0].y = H * 0.5;
+        N[0].f = 1;
+        N.push({
+          x: W * 0.88,
+          y: H * 0.5,
+          vx: 0,
+          vy: 0,
+          f: 1,
+          e: 1,
+          n: 'external',
+          h: 0,
+        });
+      }
+
+      // Store stats on canvas / window for verification
+      const densityPer100k = W * H > 0 ? (N.length / (W * H)) * 100000 : 0;
+      (cv as any).__meshStats = {
+        nodeCount: N.length,
+        width: W,
+        height: H,
+        area: W * H,
+        densityPer100k,
+      };
+      if (isHero) {
+        (window as any).__heroMeshStats = (cv as any).__meshStats;
+      }
+    };
+
+    const burst = (x: number, y: number) => {
+      for (let i = 0; i < 30; i++) {
+        const a = Math.random() * 6.28;
+        const s = 1 + Math.random() * 3;
+        S.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, l: 1 });
+      }
+    };
+
+    const io = new IntersectionObserver((entries) => {
+      on = entries[0].isIntersecting;
+    });
+    io.observe(cv);
+
+    // Track mouse position
+    const mp = { x: -9999, y: -9999 };
+    const onPointerMove = (e: PointerEvent) => {
+      mp.x = e.clientX;
+      mp.y = e.clientY;
+    };
+    window.addEventListener('pointermove', onPointerMove, { passive: true });
+
+    let lastFrameTime = performance.now();
+    let frameTimes: number[] = [];
+
+    const fr = () => {
+      rafId = requestAnimationFrame(fr);
+      if (!on) return;
+
+      const now = performance.now();
+      const dt = now - lastFrameTime;
+      lastFrameTime = now;
+      if (frameTimes.length > 60) frameTimes.shift();
+      frameTimes.push(dt);
+      if (isHero) {
+        const avgDt = frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length;
+        (window as any).__measuredFrameTimeMs = avgDt;
+        (window as any).__measuredFps = avgDt > 0 ? 1000 / avgDt : 60;
+      }
+
+      cx.clearRect(0, 0, W, H);
+      const r = cv.getBoundingClientRect();
+      const mx = mp.x - r.left;
+      const my = mp.y - r.top;
+      const L = N.length;
+
+      // Update positions
+      for (const n of N) {
+        if (!n.f) {
+          n.x += n.vx;
+          n.y += n.vy;
+          if (n.x < 0 || n.x > W) n.vx *= -1;
+          if (n.y < 0 || n.y > H) n.vy *= -1;
+          if (o.m) {
+            const dx = n.x - mx;
+            const dy = n.y - my;
+            const d = Math.hypot(dx, dy);
+            if (d < 170 && d > 1) {
+              const f = (170 - d) / 170;
+              n.x += (dx / d) * f * 2.4;
+              n.y += (dy / d) * f * 2.4;
+            }
+          }
+        }
+        n.h *= 0.96;
+      }
+
+      // Draw links using spatial grid
+      cx.lineWidth = 1;
+      cx.strokeStyle = K.cy;
+      const CS = o.m ? 135 : 120;
+      const G: Record<string, number[]> = {};
+      for (let i = 0; i < L; i++) {
+        const n = N[i];
+        const k = ((n.x / CS) | 0) + ',' + ((n.y / CS) | 0);
+        (G[k] = G[k] || []).push(i);
+      }
+
+      for (let i = 0; i < L; i++) {
+        const a = N[i];
+        const gx = (a.x / CS) | 0;
+        const gy = (a.y / CS) | 0;
+        for (let ox = -1; ox <= 1; ox++) {
+          for (let oy = -1; oy <= 1; oy++) {
+            const c = G[gx + ox + ',' + (gy + oy)];
+            if (!c) continue;
+            for (const j of c) {
+              if (j <= i) continue;
+              const b = N[j];
+              const d = Math.hypot(a.x - b.x, a.y - b.y);
+              if (d < CS) {
+                cx.globalAlpha = (1 - d / 135) * 0.5;
+                cx.beginPath();
+                cx.moveTo(a.x, a.y);
+                cx.lineTo(b.x, b.y);
+                cx.stroke();
+              }
+            }
+          }
+        }
+      }
+
+      // Link to cursor
+      if (o.m) {
+        for (const n of N) {
+          const d = Math.hypot(n.x - mx, n.y - my);
+          if (d < 190) {
+            cx.globalAlpha = (1 - d / 190) * 0.9;
+            cx.strokeStyle = K.ro;
+            cx.beginPath();
+            cx.moveTo(n.x, n.y);
+            cx.lineTo(mx, my);
+            cx.stroke();
+          }
+        }
+      }
+
+      // Spawn idle packets scaled with node count
+      for (let k = 0, mk = Math.max(1, Math.round(L / 90)); k < mk; k++) {
+        if (Math.random() < 0.12) {
+          const a = N[Math.floor(Math.random() * L)];
+          const b = N.find((z) => z !== a && Math.hypot(a.x - z.x, a.y - z.y) < 135);
+          if (b) {
+            P.push({
+              a,
+              b,
+              t: 0,
+              s: 0.02 + Math.random() * 0.02,
+              c: K.vi,
             });
           }
         }
-      },
-    });
-  }, [latestEvent]);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    let animationFrameId: number;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-
-    let width = 0;
-    let height = 0;
-
-    const nodes = nodesRef.current;
-    const packets = packetsRef.current;
-    const sparks = sparksRef.current;
-    const agentNames = ['hr-agent', 'finance-agent', 'support-agent', 'code-agent', 'ops-agent'];
-
-    const resize = () => {
-      const rect = canvas.parentElement?.getBoundingClientRect();
-      width = rect?.width || 400;
-      height = rect?.height || 360;
-      canvas.width = width * dpr;
-      canvas.height = height * dpr;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-      // Re-init nodes if empty
-      if (nodes.length === 0) {
-        for (let i = 0; i < 18; i++) {
-          nodes.push({
-            x: Math.random() * width,
-            y: 35 + Math.random() * (height - 50),
-            vx: (Math.random() - 0.5) * 0.15,
-            vy: (Math.random() - 0.5) * 0.15,
-            name: i < 5 ? agentNames[i] : null,
-            hot: 0,
-          });
-        }
-        // Fixed primary agent node
-        nodes[0].x = width * 0.18;
-        nodes[0].y = height * 0.52;
-        nodes[0].fx = true;
-
-        // Fixed external destination node
-        nodes.push({
-          x: width * 0.84,
-          y: height * 0.52,
-          vx: 0,
-          vy: 0,
-          name: 'external sink',
-          isExternal: true,
-          fx: true,
-          hot: 0,
-        });
-      }
-    };
-
-    resize();
-    window.addEventListener('resize', resize);
-
-    const render = () => {
-      ctx.clearRect(0, 0, width, height);
-
-      // Update nodes
-      nodes.forEach((n) => {
-        if (!n.fx) {
-          n.x += n.vx;
-          n.y += n.vy;
-          if (n.x < 10 || n.x > width - 10) n.vx *= -1;
-          if (n.y < 30 || n.y > height - 10) n.vy *= -1;
-        }
-        n.hot *= 0.95;
-      });
-
-      // Draw mesh links
-      ctx.lineWidth = 1;
-      for (let i = 0; i < nodes.length; i++) {
-        for (let j = i + 1; j < nodes.length; j++) {
-          const a = nodes[i];
-          const b = nodes[j];
-          const dist = Math.hypot(a.x - b.x, a.y - b.y);
-          if (dist < 110) {
-            ctx.globalAlpha = (1 - dist / 110) * 0.25;
-            ctx.strokeStyle = colors.cy;
-            ctx.beginPath();
-            ctx.moveTo(a.x, a.y);
-            ctx.lineTo(b.x, b.y);
-            ctx.stroke();
-          }
-        }
       }
 
-      // External exfiltration dashed line
-      if (nodes.length > 1) {
-        const primary = nodes[0];
-        const ext = nodes[nodes.length - 1];
-        ctx.globalAlpha = 0.3;
-        ctx.setLineDash([4, 6]);
-        ctx.strokeStyle = colors.am;
-        ctx.beginPath();
-        ctx.moveTo(primary.x, primary.y);
-        ctx.lineTo(ext.x, ext.y);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
-      ctx.globalAlpha = 1;
-
-      // Update & draw real event packets
-      for (let i = packets.length - 1; i >= 0; i--) {
-        const p = packets[i];
-        p.t += p.speed;
+      // Update packets
+      for (let i = P.length - 1; i >= 0; i--) {
+        const p = P[i];
+        p.t += p.s;
         const x = p.a.x + (p.b.x - p.a.x) * p.t;
         const y = p.a.y + (p.b.y - p.a.y) * p.t;
 
-        if (p.t >= 1) {
-          if (p.onComplete) p.onComplete();
-          packets.splice(i, 1);
+        if (p.k && p.bl && p.t > 0.5) {
+          burst(x, y);
+          if (N[0]) N[0].h = 1;
+          P.splice(i, 1);
           continue;
         }
 
-        // Draw packet glowing dot
-        ctx.fillStyle = p.color;
-        ctx.beginPath();
-        ctx.arc(x, y, 3.5, 0, 6.28);
-        ctx.fill();
+        if (p.t >= 1) {
+          if (p.k) {
+            burst(p.b.x, p.b.y);
+            p.b.h = 1;
+          }
+          P.splice(i, 1);
+          continue;
+        }
+
+        cx.globalAlpha = 1;
+        cx.fillStyle = p.c;
+        cx.shadowColor = p.c;
+        cx.shadowBlur = p.k ? 20 : 9;
+        cx.beginPath();
+        cx.arc(x, y, p.k ? 4.5 : 2.2, 0, 6.28);
+        cx.fill();
+        cx.shadowBlur = 0;
       }
 
-      // Update & draw sparks
-      for (let i = sparks.length - 1; i >= 0; i--) {
-        const s = sparks[i];
+      // Update sparks
+      for (let i = S.length - 1; i >= 0; i--) {
+        const s = S[i];
         s.x += s.vx;
         s.y += s.vy;
-        s.life -= 0.035;
-        if (s.life <= 0) {
-          sparks.splice(i, 1);
+        s.l -= 0.03;
+        if (s.l <= 0) {
+          S.splice(i, 1);
           continue;
         }
-        ctx.globalAlpha = s.life;
-        ctx.fillStyle = s.color;
-        ctx.fillRect(s.x, s.y, 2.5, 2.5);
+        cx.globalAlpha = s.l;
+        cx.fillStyle = K.ro;
+        cx.fillRect(s.x, s.y, 2.6, 2.6);
       }
-      ctx.globalAlpha = 1;
 
       // Draw nodes
-      nodes.forEach((n) => {
-        const isExt = n.isExternal;
-        const r = isExt ? 6 : n.name ? 5 : 3;
+      cx.globalAlpha = 1;
+      cx.font = '11px "JetBrains Mono"';
+      for (const n of N) {
+        const big = n.n;
+        const c = n.e ? K.ro : big ? K.cy : K.mut;
+        cx.fillStyle = c;
+        cx.shadowColor = c;
+        cx.shadowBlur = big ? 14 : 0;
+        cx.beginPath();
+        cx.arc(n.x, n.y, big ? 5 : 2, 0, 6.28);
+        cx.fill();
+        cx.shadowBlur = 0;
 
-        // Outer glow on hot / active event
-        if (n.hot > 0.05) {
-          ctx.beginPath();
-          ctx.arc(n.x, n.y, r + 8 * n.hot, 0, 6.28);
-          ctx.fillStyle = isExt ? 'rgba(229,72,77,0.2)' : 'rgba(79,179,199,0.25)';
-          ctx.fill();
+        // Expanding ring on hit
+        if (n.h > 0.05) {
+          cx.strokeStyle = K.ro;
+          cx.lineWidth = 2;
+          cx.globalAlpha = n.h;
+          cx.beginPath();
+          cx.arc(n.x, n.y, 6 + (1 - n.h) * 36, 0, 6.28);
+          cx.stroke();
+          cx.lineWidth = 1;
+          cx.globalAlpha = 1;
         }
 
-        ctx.beginPath();
-        ctx.arc(n.x, n.y, r, 0, 6.28);
-        ctx.fillStyle = isExt ? colors.rd : n.name ? colors.cy : colors.mut;
-        ctx.fill();
-
-        // Node label
-        if (n.name) {
-          ctx.font = '10px monospace';
-          ctx.fillStyle = colors.ink;
-          ctx.fillText(n.name, n.x - 20, n.y - 10);
+        if (big) {
+          cx.fillStyle = K.ink;
+          cx.globalAlpha = 0.85;
+          cx.fillText(n.n || '', n.x + 9, n.y + 4);
+          cx.globalAlpha = 1;
         }
-      });
-
-      animationFrameId = requestAnimationFrame(render);
+      }
     };
 
-    render();
+    init();
+    fr();
+    window.addEventListener('resize', init);
+
+    // Attack trigger dispatcher
+    const atk = (bl: boolean) => {
+      if (N.length >= 2) {
+        const targetNode = N[N.length - 1]; // external or last node
+        P.push({
+          a: N[0],
+          b: targetNode,
+          t: 0,
+          s: 0.013,
+          k: 1,
+          bl,
+          c: K.ro,
+        });
+      }
+    };
+    triggerActionRef.current = atk;
 
     return () => {
-      window.removeEventListener('resize', resize);
-      cancelAnimationFrame(animationFrameId);
+      cancelAnimationFrame(rafId);
+      io.disconnect();
+      window.removeEventListener('resize', init);
+      window.removeEventListener('pointermove', onPointerMove);
     };
-  }, []);
+  }, [mode]);
+
+  // Handle explicit attack pulse triggers
+  useEffect(() => {
+    if (attackPulseTrigger && triggerActionRef.current) {
+      triggerActionRef.current(attackPulseTrigger.blocked);
+    }
+  }, [attackPulseTrigger]);
+
+  // Handle live incoming events driving packets on top
+  useEffect(() => {
+    if (!events || events.length === 0) return;
+    const latest = events[0];
+    if (latest && latest.id !== lastEventIdRef.current) {
+      lastEventIdRef.current = latest.id;
+      if (triggerActionRef.current) {
+        const decision = (latest.decision || '').toLowerCase();
+        if (decision === 'block' || decision === 'would_block') {
+          triggerActionRef.current(true);
+        } else if (decision === 'allow') {
+          triggerActionRef.current(false);
+        }
+      }
+    }
+  }, [events]);
 
   return (
-    <div className="bg-bg1 rounded-xl border border-line p-4 h-full flex flex-col">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-cy" />
-          <h3 className="font-semibold text-sm text-ink font-sans">Real-time Agent Mesh</h3>
-        </div>
-        <span className="text-[11px] font-mono text-mut">Event-Driven Topology</span>
-      </div>
-      <div className="flex-1 w-full relative min-h-[300px]">
-        <canvas ref={canvasRef} className="w-full h-full block rounded-lg bg-bg0/60" />
-      </div>
-    </div>
+    <canvas
+      id={canvasId}
+      ref={canvasRef}
+      className={className}
+      style={{ display: 'block', width: '100%', height: '100%' }}
+    />
   );
 };

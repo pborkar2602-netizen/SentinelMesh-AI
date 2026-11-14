@@ -1,24 +1,33 @@
 import React, { useState, useEffect } from 'react';
-import { SimulationStats } from '../types';
+import { DashboardStats, SimulationStats } from '../types';
 
 interface PolicyManagerProps {
-  onModeChanged?: (newMode: string) => void;
+  policyMode: 'enforce' | 'monitor';
+  stats?: DashboardStats | null;
+  onModeChanged?: (newMode: 'enforce' | 'monitor') => void;
 }
 
-export const PolicyManager: React.FC<PolicyManagerProps> = ({ onModeChanged }) => {
-  const [mode, setMode] = useState<string>('enforce');
-  const [stats, setStats] = useState<SimulationStats | null>(null);
+export const PolicyManager: React.FC<PolicyManagerProps> = ({
+  policyMode,
+  stats: dashboardStats,
+  onModeChanged,
+}) => {
+  const [mode, setMode] = useState<'enforce' | 'monitor'>(policyMode);
+  const [simStats, setSimStats] = useState<SimulationStats | null>(null);
   const [simulationResult, setSimulationResult] = useState<any | null>(null);
   const [simulating, setSimulating] = useState(false);
   const [updatingMode, setUpdatingMode] = useState(false);
 
+  useEffect(() => {
+    setMode(policyMode);
+  }, [policyMode]);
+
   const fetchStats = async () => {
     try {
-      const res = await fetch('/api/v1/policies/simulation/stats');
+      const res = await fetch('/api/v1/policies/simulation/stats?exclude_benchmark=true');
       if (res.ok) {
         const data = await res.json();
-        setStats(data);
-        if (data.current_mode) setMode(data.current_mode);
+        setSimStats(data);
       }
     } catch (err) {
       console.error('Failed to fetch policy simulation stats:', err);
@@ -27,8 +36,6 @@ export const PolicyManager: React.FC<PolicyManagerProps> = ({ onModeChanged }) =
 
   useEffect(() => {
     fetchStats();
-    const interval = setInterval(fetchStats, 5000);
-    return () => clearInterval(interval);
   }, []);
 
   const handleToggleMode = async (newMode: 'enforce' | 'monitor') => {
@@ -37,7 +44,7 @@ export const PolicyManager: React.FC<PolicyManagerProps> = ({ onModeChanged }) =
       const res = await fetch('/api/v1/policies/mode', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: newMode })
+        body: JSON.stringify({ mode: newMode }),
       });
       if (res.ok) {
         setMode(newMode);
@@ -51,7 +58,7 @@ export const PolicyManager: React.FC<PolicyManagerProps> = ({ onModeChanged }) =
     }
   };
 
-  const runSimulation = async () => {
+  const runSimulation = async (targetMode: 'enforce' | 'monitor') => {
     setSimulating(true);
     try {
       const res = await fetch('/api/v1/policies/simulate', {
@@ -59,12 +66,8 @@ export const PolicyManager: React.FC<PolicyManagerProps> = ({ onModeChanged }) =
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           limit: 50,
-          simulated_rules: {
-            block_tainted_external: true,
-            high_sensitivity_requires_approval: true,
-            strict_intent_judge: true
-          }
-        })
+          simulated_mode: targetMode,
+        }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -80,190 +83,175 @@ export const PolicyManager: React.FC<PolicyManagerProps> = ({ onModeChanged }) =
 
   const policyRules = [
     {
+      num: '01',
       id: 'rule-taint',
-      name: 'Untrusted Taint Isolation',
-      desc: 'Strictly blocks data egress to unapproved external endpoints when session is tainted by untrusted input.',
-      category: 'Data Exfiltration',
-      enabled: true,
-      owasp: 'LLM02: Sensitive Info Disclosure'
+      name: 'Untrusted Taint Isolation & Pre-Read Gate',
+      desc: 'Marks sessions tainted when an agent reads untrusted documents and holds sensitive DB queries (salary, SSN, bank_routing) before any rows reach the agent.',
+      category: 'Taint & Pre-Read Protection',
+      owasp: 'LLM01 / LLM02',
+      code: 'read_doc(resume.pdf) → TAINTED | db_query(salaries) → BLOCK',
     },
     {
-      id: 'rule-egress',
-      name: 'High-Sensitivity External Egress Gate',
-      desc: 'Escalates outgoing salary, national ID, and financial data transfers to human approval.',
-      category: 'Privacy & Financial',
-      enabled: true,
-      owasp: 'LLM06: Excessive Agency'
+      num: '02',
+      id: 'rule-sql-writes',
+      name: 'Tainted SQL Write & Sensitive Column Guard',
+      desc: 'Parses SQL AST via sqlglot to intercept UPDATE/INSERT/DELETE statements modifying banking, role, or credential columns when tainted.',
+      category: 'Database Integrity',
+      owasp: 'LLM06: Excessive Agency',
+      code: 'UPDATE vendor_master SET account_number=... → REQUIRE_APPROVAL',
     },
     {
+      num: '03',
       id: 'rule-exploits',
-      name: 'Inline Exploit & Threat Detection',
-      desc: 'Deterministic pattern matching for SSRF metadata IPs, SQL injection, path traversal, and credential leaks.',
-      category: 'System Integrity',
-      enabled: true,
-      owasp: 'LLM01: Prompt Injection'
+      name: 'Inline SSRF, Path Traversal & Secret Egress Guard',
+      desc: 'Blocks cloud metadata SSRF (169.254.169.254), private RFC1918 ranges, high-entropy API keys, and markdown image exfiltration.',
+      category: 'Network & Secrets',
+      owasp: 'LLM02 / SSRF',
+      code: 'GET 169.254.169.254/latest/meta-data/iam → BLOCK (risk 98)',
     },
     {
-      id: 'rule-judge',
-      name: 'Intent-vs-Action LLM Judge Divergence',
-      desc: 'Evaluates stated session task vs pending sensitive tool call on masked payloads. Divergence (≥70) escalates to human approval.',
-      category: 'Alignment',
-      enabled: true,
-      owasp: 'LLM08: Vector & Action Divergence'
-    },
-    {
+      num: '04',
       id: 'rule-baseline',
-      name: 'Learned Behavioral Baseline Anomaly',
-      desc: 'Flags off-hours execution, burst calls/min, and bulk database dumps based on learned median + 3*MAD distribution.',
+      name: 'Learned Behavioral Baseline (Median + 3·MAD)',
+      desc: 'Compares query row volume, off-hours execution, and destination novelty against each agent’s learned historical profile.',
       category: 'Behavioral Anomaly',
-      enabled: true,
-      owasp: 'LLM10: Unbounded Consumption'
+      owasp: 'LLM10: Anomaly Detection',
+      code: 'rows 45 vs hr-agent median 1 → off-hours bulk read flagged',
     },
     {
+      num: '05',
       id: 'rule-privacy',
-      name: 'AES-GCM Encrypted Token Vault & Masking',
-      desc: 'Replaces raw PII in tool payloads and audit logs with format-preserving tokens. Access role-gated to Privacy Officer.',
-      category: 'Privacy Engine',
-      enabled: true,
-      owasp: 'Privacy Compliance'
-    }
+      name: 'AES-GCM Privacy Vault & Format-Preserving Masking',
+      desc: 'Tokenizes raw PII ([SSN_1], [EMAIL_1], [SALARY_1]) prior to logging. Raw decryption requires Privacy Officer role and appends an audit event.',
+      category: 'Privacy Vault',
+      owasp: 'Zero-Trust Logging',
+      code: 'ssn: "123-45-6789" → "[SSN_1]" (AES-256-GCM vault)',
+    },
+    {
+      num: '06',
+      id: 'rule-approvals',
+      name: 'One-Time Action-Bound HMAC Approval Tokens',
+      desc: 'Binds human approvals to the canonical SHA-256 hash of (tool_name, arguments, session_id) with strict nonce replay prevention.',
+      category: 'Cryptographic Auth',
+      owasp: 'Non-Repudiation',
+      code: 'forged · expired · replayed · modified-args → ALL BLOCKED',
+    },
   ];
 
+  const totalEvaluated = dashboardStats?.total_actions ?? simStats?.total_events ?? 0;
+  const blockedCount = dashboardStats?.blocked_actions ?? simStats?.block_count ?? 0;
+  const wouldBlockCount = dashboardStats?.would_block_actions ?? simStats?.would_block_count ?? 0;
+  const approvalCount = dashboardStats?.held_for_approval_actions ?? simStats?.require_approval_count ?? 0;
+
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 shadow-lg space-y-5">
-      {/* Header & Mode Switch */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-gray-800 gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-lg font-bold text-white tracking-wide">Policy Engine & Simulation</h2>
-            <span className={`px-2 py-0.5 text-xs font-semibold rounded ${
-              mode === 'enforce' ? 'bg-red-950 text-red-400 border border-red-800' : 'bg-cyan-950 text-cyan-400 border border-cyan-800'
-            }`}>
-              Mode: {mode.toUpperCase()}
-            </span>
-          </div>
-          <p className="text-xs text-gray-400 mt-0.5">
-            Real-time policy enforcement with shadow simulation and dry-run re-evaluation
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className="flex items-center bg-gray-950 border border-gray-800 rounded-lg p-1">
-            <button
-              disabled={updatingMode}
-              onClick={() => handleToggleMode('enforce')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
-                mode === 'enforce'
-                  ? 'bg-red-700 text-white shadow-sm'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              Enforce Mode
-            </button>
-            <button
-              disabled={updatingMode}
-              onClick={() => handleToggleMode('monitor')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
-                mode === 'monitor'
-                  ? 'bg-cyan-700 text-white shadow-sm'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              Monitor Mode
-            </button>
+    <div className="space-y-6">
+      <div className="card">
+        <div className="hd">
+          <div>
+            <div className="eb">Inline Policy Engine & Dry-Run Replay</div>
+            <h2 className="sec-title" style={{ fontSize: 'clamp(24px, 3vw, 36px)' }}>
+              Deterministic enforcement with shadow replay.
+            </h2>
+            <p className="text-sm text-mut mt-2 max-w-2xl">
+              Switch the live gateway between <strong>Enforce</strong> (blocks and holds dangerous calls inline) and <strong>Monitor</strong> (logs <code className="mono">would_block</code> alerts without stopping execution), or replay stored audit events to preview decision changes.
+            </p>
           </div>
 
-          <button
-            onClick={runSimulation}
-            disabled={simulating}
-            className="px-3.5 py-1.5 bg-purple-700 hover:bg-purple-600 disabled:opacity-50 text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 shadow"
-          >
-            {simulating ? 'Simulating...' : 'Simulate Replay'}
-          </button>
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="seg" role="group" aria-label="Gateway policy mode">
+              <button
+                disabled={updatingMode}
+                className={mode === 'monitor' ? 'on' : ''}
+                onClick={() => handleToggleMode('monitor')}
+              >
+                Monitor
+              </button>
+              <button
+                disabled={updatingMode}
+                className={mode === 'enforce' ? 'on' : ''}
+                onClick={() => handleToggleMode('enforce')}
+              >
+                Enforce
+              </button>
+            </div>
+
+            <button
+              onClick={() => runSimulation(mode === 'enforce' ? 'monitor' : 'enforce')}
+              disabled={simulating}
+              className="btn s"
+            >
+              {simulating
+                ? 'Replaying Audit Chain…'
+                : `Simulate ${mode === 'enforce' ? 'Monitor' : 'Enforce'} Replay ▶`}
+            </button>
+          </div>
         </div>
+
+        {/* Unified DB Counters */}
+        <div className="rs mt-4">
+          <div className="card" style={{ padding: '18px' }}>
+            <div className="n">{blockedCount}</div>
+            <p>Actions Blocked (Enforce)</p>
+          </div>
+          <div className="card" style={{ padding: '18px' }}>
+            <div className="n">{wouldBlockCount}</div>
+            <p>Would Have Leaked (Monitor)</p>
+          </div>
+          <div className="card" style={{ padding: '18px' }}>
+            <div className="n">{approvalCount}</div>
+            <p>Held for Human Approval</p>
+          </div>
+          <div className="card" style={{ padding: '18px' }}>
+            <div className="n">{totalEvaluated}</div>
+            <p>Total Agent Actions Inspected</p>
+          </div>
+        </div>
+
+        {simulationResult && (
+          <div className="mt-5 p-4 rounded-2xl border border-cy/40 bg-cy/5 space-y-2">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <span className="font-display text-sm text-cy">
+                Dry-Run Replay Complete ({simulationResult.events_replayed} stored actions re-evaluated under {simulationResult.simulated_mode.toUpperCase()} mode)
+              </span>
+              <span className="t-badge cy">
+                {simulationResult.decisions_changed} DECISION CHANGES
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-4 text-xs font-mono text-mut pt-1">
+              <span>
+                Allow: <strong className="text-gr">{simulationResult.simulated_distribution?.allow ?? 0}</strong>
+              </span>
+              <span>
+                Block: <strong className="text-ro">{simulationResult.simulated_distribution?.block ?? 0}</strong>
+              </span>
+              <span>
+                Would Block: <strong className="text-ro">{simulationResult.simulated_distribution?.would_block ?? 0}</strong>
+              </span>
+              <span>
+                Approval: <strong className="text-am">{simulationResult.simulated_distribution?.require_approval ?? 0}</strong>
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Shadow Simulation Metrics Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="bg-gray-950 border border-gray-800/80 rounded-lg p-3">
-          <div className="text-[11px] text-gray-400 font-medium uppercase tracking-wider">Shadow Blocks</div>
-          <div className="text-2xl font-black text-amber-400 mt-1">
-            {stats?.would_block_count ?? 0}
-          </div>
-          <div className="text-[10px] text-gray-500 mt-0.5">Would-block in Monitor Mode</div>
-        </div>
-
-        <div className="bg-gray-950 border border-gray-800/80 rounded-lg p-3">
-          <div className="text-[11px] text-gray-400 font-medium uppercase tracking-wider">Active Blocks</div>
-          <div className="text-2xl font-black text-red-400 mt-1">
-            {stats?.block_count ?? 0}
-          </div>
-          <div className="text-[10px] text-gray-500 mt-0.5">Inline blocked actions</div>
-        </div>
-
-        <div className="bg-gray-950 border border-gray-800/80 rounded-lg p-3">
-          <div className="text-[11px] text-gray-400 font-medium uppercase tracking-wider">Approvals Requested</div>
-          <div className="text-2xl font-black text-cyan-400 mt-1">
-            {stats?.require_approval_count ?? 0}
-          </div>
-          <div className="text-[10px] text-gray-500 mt-0.5">Escalated to SecOps queue</div>
-        </div>
-
-        <div className="bg-gray-950 border border-gray-800/80 rounded-lg p-3">
-          <div className="text-[11px] text-gray-400 font-medium uppercase tracking-wider">Total Evaluated</div>
-          <div className="text-2xl font-black text-gray-300 mt-1">
-            {stats?.total_events ?? 0}
-          </div>
-          <div className="text-[10px] text-gray-500 mt-0.5">Events recorded in audit chain</div>
-        </div>
-      </div>
-
-      {/* Simulation Replay Results Banner */}
-      {simulationResult && (
-        <div className="p-3.5 bg-purple-950/40 border border-purple-800/70 rounded-lg text-xs space-y-2">
-          <div className="flex items-center justify-between font-semibold text-purple-300">
-            <span>Policy Replay Simulation Complete</span>
-            <span>{simulationResult.events_replayed} Events Analyzed</span>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-[11px]">
-            <div className="text-gray-300">Allow: {simulationResult.simulated_distribution?.allow ?? 0}</div>
-            <div className="text-red-400">Block: {simulationResult.simulated_distribution?.block ?? 0}</div>
-            <div className="text-cyan-400">Approval: {simulationResult.simulated_distribution?.require_approval ?? 0}</div>
-            <div className="text-yellow-400">Redact: {simulationResult.simulated_distribution?.redact ?? 0}</div>
-          </div>
-          {simulationResult.decision_changes > 0 && (
-            <div className="text-amber-300 text-[11px]">
-              ⚠️ Policy modifications produced {simulationResult.decision_changes} decision changes compared to live verdicts.
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Active Rules List */}
-      <div className="space-y-2">
-        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Active Policy Rules</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-          {policyRules.map((rule) => (
-            <div
-              key={rule.id}
-              className="bg-gray-950 border border-gray-800/80 hover:border-gray-700/80 transition-colors rounded-lg p-3 flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-semibold text-white">{rule.name}</span>
-                  <span className="px-1.5 py-0.5 text-[10px] rounded bg-emerald-950 text-emerald-400 border border-emerald-800">
-                    Active
-                  </span>
-                </div>
-                <p className="text-[11px] text-gray-400 leading-relaxed mb-2">{rule.desc}</p>
+      {/* Six Defense-in-Depth Rules */}
+      <div className="bn">
+        {policyRules.map((rule, idx) => {
+          const spanClass =
+            idx === 0 || idx === 3 ? 'c4' : idx === 1 || idx === 2 ? 'c2' : 'c3';
+          return (
+            <div key={rule.id} className={`card ${spanClass}`}>
+              <div className="flex items-center justify-between">
+                <div className="ico">{rule.num}</div>
+                <span className="t-badge gr">ACTIVE · {rule.owasp}</span>
               </div>
-              <div className="flex items-center justify-between text-[10px] text-gray-500 pt-2 border-t border-gray-900 font-mono">
-                <span>{rule.category}</span>
-                <span className="text-purple-400">{rule.owasp}</span>
-              </div>
+              <h3>{rule.name}</h3>
+              <p>{rule.desc}</p>
+              <div className="code">{rule.code}</div>
             </div>
-          ))}
-        </div>
+          );
+        })}
       </div>
     </div>
   );

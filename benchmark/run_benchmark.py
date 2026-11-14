@@ -7,6 +7,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# Always run benchmark against the isolated benchmark database so it never pollutes the demo/dashboard DB
+os.environ.setdefault("SENTINEL_BENCHMARK_MODE", "true")
+os.environ.setdefault("SENTINEL_BENCHMARK_DB_PATH", "./sentinelmesh_benchmark.db")
+
 import argparse
 from typing import List
 
@@ -22,6 +26,8 @@ from benchmark.harness.reporter import (
 def run_warm_up(runner: BenchmarkRunner, count: int = 10) -> None:
     """Sends warm-up tool calls through the gateway to eliminate cold-start overhead."""
     import datetime
+    os.environ["SENTINEL_BENCHMARK_MODE"] = "true"
+    os.environ.setdefault("SENTINEL_BENCHMARK_DB_PATH", "./sentinelmesh_benchmark.db")
     now = datetime.datetime.now(datetime.timezone.utc)
     for i in range(count):
         runner.execute_single_call(
@@ -51,7 +57,7 @@ def main() -> int:
     parser.add_argument(
         "--split",
         type=str,
-        choices=["all", "dev", "dev_v1_heldout", "held_out"],
+        choices=["all", "dev", "dev_v1_heldout", "held_out", "held_out_v2"],
         default="all",
         help="Filter scenarios by split",
     )
@@ -96,6 +102,11 @@ def main() -> int:
         if held_out_dir.exists():
             scenario_files.extend(sorted(held_out_dir.glob("*.json")))
 
+    if args.split == "held_out_v2":
+        held_out_v2_dir = base_dir / "held_out_v2"
+        if held_out_v2_dir.exists():
+            scenario_files.extend(sorted(held_out_v2_dir.glob("*.json")))
+
     if not scenario_files:
         print(f"Error: No scenario files found in {base_dir}")
         return 1
@@ -107,8 +118,16 @@ def main() -> int:
             print(f"Error: Scenario '{args.scenario_id}' not found.")
             return 1
 
-    # 2. Initialize Runner and Warm Up
+    # 2. Initialize Runner and Warm Up (always in isolated in-process benchmark DB unless --use-http is explicitly set)
+    from backend.tests.conftest import DirectClient
+    from backend.app.db.database import init_db
+    os.environ["SENTINEL_BENCHMARK_MODE"] = "true"
+    os.environ.setdefault("SENTINEL_BENCHMARK_DB_PATH", "./sentinelmesh_benchmark.db")
+    init_db()
     runner = BenchmarkRunner(gateway_url=args.gateway_url)
+    if os.environ.get("SENTINEL_BENCHMARK_USE_HTTP", "").lower() not in ("true", "1", "yes"):
+        runner.http_client = None
+        runner._direct_client = DirectClient()
     print(f"Executing {args.warm_up_calls} gateway warm-up calls...")
     run_warm_up(runner, count=args.warm_up_calls)
     print("Warm-up complete. Replaying benchmark scenarios...\n")
@@ -122,9 +141,9 @@ def main() -> int:
 
     # 4. Compute Metrics per Split and Overall
     dev_results = [r for r in results if r.split in ("dev", "dev_v1_heldout")]
-    held_out_results = [r for r in results if r.split == "held_out"]
+    held_out_results = [r for r in results if r.split in ("held_out", "held_out_v2")]
 
-    dev_metrics = compute_benchmark_metrics(dev_results)
+    dev_metrics = compute_benchmark_metrics(dev_results) if dev_results else None
     held_out_metrics = compute_benchmark_metrics(held_out_results) if held_out_results else None
     overall_metrics = compute_benchmark_metrics(results)
 

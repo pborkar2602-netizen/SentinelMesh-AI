@@ -37,6 +37,7 @@ class GatewayDecisionResponse(BaseModel):
     timestamp: datetime
     prev_hash: str = ""
     event_hash: str = ""
+    source: str | None = "demo"
     redacted_arguments: dict[str, Any] | None = None
     approval_id: str | None = None
     tool_output: Any | None = None
@@ -60,6 +61,7 @@ class AuditEventRead(BaseModel):
     timestamp: datetime
     prev_hash: str = ""
     event_hash: str = ""
+    source: str | None = "demo"
 
 class AgentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)

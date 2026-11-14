@@ -180,7 +180,13 @@ class BenchmarkRunner:
                 # Only tool_call events are evaluated by gateway
                 if step.event_type == "tool_call" and step.tool_name:
                     # Context sources apply on step 0, subsequent steps inherit session taint
-                    step_sources = active_context_sources if step.step_index == 0 else []
+                    later_read_doc_ids = {str(s.arguments.get("file_path", "")) for s in scenario.scripted_steps if s.step_index > 0 and s.tool_name == "read_doc"}
+                    if step.step_index == 0:
+                        step_sources = [src for src in active_context_sources if src["source_id"] not in later_read_doc_ids or (step.tool_name == "read_doc" and step.arguments.get("file_path") == src["source_id"])]
+                    elif step.tool_name == "read_doc":
+                        step_sources = [src for src in active_context_sources if src["source_id"] == str(step.arguments.get("file_path", ""))]
+                    else:
+                        step_sources = []
 
                     # Handle dynamic cryptographic approval token testing placeholders
                     step_args = dict(step.arguments)
@@ -296,7 +302,14 @@ class BenchmarkRunner:
                         simulated_timestamp=simulated_timestamp.isoformat(),
                         actual_decision=decision,
                         expected_decision=step.expected_step_decision,
-                        decision_match=(decision == step.expected_step_decision or (decision == 'require_approval' and step.expected_step_decision == 'block')),
+                        decision_match=(
+                            decision == step.expected_step_decision
+                            or (decision == "require_approval" and step.expected_step_decision == "block")
+                            or (
+                                step.expected_step_decision == "block or require_approval"
+                                and decision in ("block", "require_approval")
+                            )
+                        ),
                         latency_ms=latency_ms,
                         risk_score=risk_score,
                         reason=reason,
@@ -335,6 +348,10 @@ class BenchmarkRunner:
             decision_match = (
                 final_decision == scenario.expected_final_decision
                 or (final_decision == "require_approval" and scenario.expected_final_decision == "block")
+                or (
+                    scenario.expected_final_decision == "block or require_approval"
+                    and final_decision in ("block", "require_approval")
+                )
             )
 
             return ScenarioExecutionResult(

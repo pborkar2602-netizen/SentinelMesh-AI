@@ -1,9 +1,11 @@
 import hashlib
 import json
+import os
 import sqlite3
 import logging
 import threading
 import contextvars
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
@@ -27,8 +29,40 @@ def reset_request_connection(token):
 _connection_pool: Dict[Tuple[int, str], sqlite3.Connection] = {}
 _conn_lock = threading.Lock()
 
+def is_benchmark_session_id(session_id: Optional[str]) -> bool:
+    if not session_id:
+        return False
+    s = session_id.lower()
+    return (
+        s.startswith("sess-bench-")
+        or s.startswith("sess-warm")
+        or s.startswith("sess-coldstart")
+        or s.startswith("sess-benign-r")
+        or s.startswith("sess-flagged-r")
+    )
+
+def infer_event_source(session_id: Optional[str] = None, explicit_source: Optional[str] = None) -> str:
+    if explicit_source in ("benchmark", "demo"):
+        return explicit_source
+    if os.environ.get("SENTINEL_BENCHMARK_MODE", "").lower() in ("true", "1", "yes") or os.environ.get("BENCHMARK_MODE", "").lower() in ("true", "1", "yes"):
+        return "benchmark"
+    if is_benchmark_session_id(session_id):
+        return "benchmark"
+    return "demo"
+
 def get_db_path() -> str:
-    url = settings.DATABASE_URL
+    explicit_path = os.environ.get("SENTINEL_DB_PATH") or os.environ.get("DEMO_DB")
+    if explicit_path:
+        return explicit_path
+    url = settings.DATABASE_URL or ""
+    default_urls = {"./sentinelmesh.db", "sqlite:///./sentinelmesh.db", "sqlite+aiosqlite:///./sentinelmesh.db"}
+    if url and url not in default_urls:
+        if ":///" in url:
+            return url.split(":///")[-1]
+        return url
+    # Benchmark runs always use a separate benchmark database so they never pollute the demo/dashboard DB
+    if os.environ.get("SENTINEL_BENCHMARK_MODE", "").lower() in ("true", "1", "yes") or os.environ.get("BENCHMARK_MODE", "").lower() in ("true", "1", "yes"):
+        return os.environ.get("SENTINEL_BENCHMARK_DB_PATH", "./sentinelmesh_benchmark.db")
     if ":///" in url:
         return url.split(":///")[-1]
     return url or "./sentinelmesh.db"
@@ -269,9 +303,14 @@ def init_db(db_path: Optional[str] = None) -> None:
             is_tainted INTEGER NOT NULL DEFAULT 0,
             tainted_by TEXT NOT NULL DEFAULT '[]',
             started_at TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT 'demo',
             FOREIGN KEY(agent_id) REFERENCES agents(id) ON DELETE CASCADE
         );
         """)
+        try:
+            conn.execute("ALTER TABLE sessions ADD COLUMN source TEXT NOT NULL DEFAULT 'demo';")
+        except Exception:
+            pass
 
         conn.execute("""
         CREATE TABLE IF NOT EXISTS audit_events (
@@ -290,10 +329,15 @@ def init_db(db_path: Optional[str] = None) -> None:
             timestamp TEXT NOT NULL,
             prev_hash TEXT NOT NULL,
             event_hash TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT 'demo',
             FOREIGN KEY(agent_id) REFERENCES agents(id),
             FOREIGN KEY(session_id) REFERENCES sessions(id)
         );
         """)
+        try:
+            conn.execute("ALTER TABLE audit_events ADD COLUMN source TEXT NOT NULL DEFAULT 'demo';")
+        except Exception:
+            pass
 
         conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_trace ON audit_events(trace_id);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_agent ON audit_events(agent_id);")
@@ -465,17 +509,19 @@ def save_session(session_dict: Dict[str, Any], conn: Optional[sqlite3.Connection
         tainted_by_json = json.dumps(tainted_by)
     else:
         tainted_by_json = str(tainted_by)
+    src = infer_event_source(session_dict["id"], session_dict.get("source"))
 
     with conn:
         conn.execute(
             """
-            INSERT INTO sessions (id, agent_id, task_description, status, is_tainted, tainted_by, started_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO sessions (id, agent_id, task_description, status, is_tainted, tainted_by, started_at, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 task_description=excluded.task_description,
                 status=excluded.status,
                 is_tainted=excluded.is_tainted,
-                tainted_by=excluded.tainted_by
+                tainted_by=excluded.tainted_by,
+                source=excluded.source
             """,
             (
                 session_dict["id"],
@@ -484,7 +530,8 @@ def save_session(session_dict: Dict[str, Any], conn: Optional[sqlite3.Connection
                 session_dict.get("status", "ACTIVE"),
                 1 if session_dict.get("is_tainted") else 0,
                 tainted_by_json,
-                session_dict.get("started_at", datetime.now(timezone.utc).isoformat())
+                session_dict.get("started_at", datetime.now(timezone.utc).isoformat()),
+                src,
             )
         )
     if close:
@@ -555,12 +602,13 @@ def save_audit_event(event_dict: Dict[str, Any], conn: Optional[sqlite3.Connecti
                     )
                 )
 
+            src = infer_event_source(event_dict["session_id"], event_dict.get("source"))
             cur_sess = conn.execute("SELECT id FROM sessions WHERE id = ?", (event_dict["session_id"],))
             if not cur_sess.fetchone():
                 conn.execute(
                     """
-                    INSERT INTO sessions (id, agent_id, task_description, status, is_tainted, tainted_by, started_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO sessions (id, agent_id, task_description, status, is_tainted, tainted_by, started_at, source)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         event_dict["session_id"],
@@ -569,7 +617,8 @@ def save_audit_event(event_dict: Dict[str, Any], conn: Optional[sqlite3.Connecti
                         "ACTIVE",
                         0,
                         json.dumps([]),
-                        datetime.now(timezone.utc).isoformat()
+                        datetime.now(timezone.utc).isoformat(),
+                        src,
                     )
                 )
 
@@ -584,9 +633,9 @@ def save_audit_event(event_dict: Dict[str, Any], conn: Optional[sqlite3.Connecti
                 INSERT INTO audit_events (
                     trace_id, agent_id, session_id, tool_name, arguments,
                     context_sources, decision, reason, risk_score, risk_breakdown,
-                    latency_ms, timestamp, prev_hash, event_hash
+                    latency_ms, timestamp, prev_hash, event_hash, source
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     event_dict["trace_id"],
@@ -602,7 +651,8 @@ def save_audit_event(event_dict: Dict[str, Any], conn: Optional[sqlite3.Connecti
                     event_dict.get("latency_ms", 0.0),
                     event_dict.get("timestamp", datetime.now(timezone.utc).isoformat()),
                     prev_hash,
-                    "" # temporary hash placeholder
+                    "", # temporary hash placeholder
+                    src,
                 )
             )
             event_id = cur.lastrowid
@@ -629,17 +679,27 @@ def list_audit_events(
     limit: int = 50,
     agent_id: Optional[str] = None,
     order: str = "asc",
+    exclude_benchmark: bool = False,
+    exclude_tool_return: bool = False,
     conn: Optional[sqlite3.Connection] = None
 ) -> List[Dict[str, Any]]:
     conn, close = acquire_connection(conn)
 
     sort_order = "DESC" if order.lower() == "desc" else "ASC"
+    clauses = []
+    params: list[Any] = []
     if agent_id:
-        query = f"SELECT * FROM audit_events WHERE agent_id = ? ORDER BY id {sort_order} LIMIT ?"
-        cur = conn.execute(query, (agent_id, limit))
-    else:
-        query = f"SELECT * FROM audit_events ORDER BY id {sort_order} LIMIT ?"
-        cur = conn.execute(query, (limit,))
+        clauses.append("agent_id = ?")
+        params.append(agent_id)
+    if exclude_benchmark:
+        clauses.append("source != 'benchmark' AND session_id NOT LIKE 'sess-bench-%' AND session_id NOT LIKE 'sess-lat-%'")
+    if exclude_tool_return:
+        clauses.append("tool_name != 'tool_return'")
+
+    where_sql = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    query = f"SELECT * FROM audit_events {where_sql} ORDER BY id {sort_order} LIMIT ?"
+    params.append(limit)
+    cur = conn.execute(query, tuple(params))
 
     rows = cur.fetchall()
     if close:
@@ -651,6 +711,7 @@ def list_audit_events(
         d["arguments"] = json.loads(d["arguments"])
         d["context_sources"] = json.loads(d["context_sources"])
         d["risk_breakdown"] = json.loads(d["risk_breakdown"])
+        d["source"] = d.get("source") or infer_event_source(d.get("session_id"))
         events.append(d)
     return events
 
@@ -873,6 +934,7 @@ def list_incidents(
     agent_id: Optional[str] = None,
     limit: int = 50,
     order: str = "desc",
+    exclude_benchmark: bool = False,
     conn: Optional[sqlite3.Connection] = None
 ) -> List[Dict[str, Any]]:
     conn, close = acquire_connection(conn)
@@ -887,6 +949,8 @@ def list_incidents(
     if agent_id:
         clauses.append("agent_id = ?")
         params.append(agent_id)
+    if exclude_benchmark:
+        clauses.append("session_id NOT LIKE 'sess-bench-%' AND session_id NOT LIKE 'sess-lat-%'")
 
     where_sql = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     query = f"SELECT * FROM incidents {where_sql} ORDER BY created_at {sort_order} LIMIT ?"
@@ -961,12 +1025,15 @@ def get_approval(approval_id: str, conn: Optional[sqlite3.Connection] = None) ->
         d["masked_arguments"] = json.loads(d["masked_arguments"])
     except Exception:
         pass
+    reason_str = d.get("reason") or ""
+    d["reasons"] = [reason_str] if reason_str else []
     return d
 
 def list_approvals(
     status: Optional[str] = None,
     agent_id: Optional[str] = None,
     limit: int = 50,
+    exclude_benchmark: bool = False,
     conn: Optional[sqlite3.Connection] = None
 ) -> List[Dict[str, Any]]:
     conn, close = acquire_connection(conn)
@@ -979,6 +1046,8 @@ def list_approvals(
     if agent_id:
         clauses.append("agent_id = ?")
         params.append(agent_id)
+    if exclude_benchmark:
+        clauses.append("session_id NOT LIKE 'sess-bench-%' AND session_id NOT LIKE 'sess-lat-%'")
 
     where_sql = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     query = f"SELECT * FROM approvals {where_sql} ORDER BY created_at DESC LIMIT ?"
@@ -997,6 +1066,8 @@ def list_approvals(
             d["masked_arguments"] = json.loads(d["masked_arguments"])
         except Exception:
             pass
+        reason_str = d.get("reason") or ""
+        d["reasons"] = [reason_str] if reason_str else []
         results.append(d)
     return results
 
@@ -1118,5 +1189,121 @@ def save_vendor_master(
         )
     if close:
         conn.close()
+
+
+def get_dashboard_stats(
+    exclude_benchmark: bool = True,
+    conn: Optional[sqlite3.Connection] = None
+) -> Dict[str, Any]:
+    """
+    Computes unified, authoritative totals directly from the database for all dashboard counters.
+    Excludes benchmark/latency harness runs when exclude_benchmark=True.
+    """
+    conn, close = acquire_connection(conn)
+    try:
+        bench_filter = "source != 'benchmark' AND session_id NOT LIKE 'sess-bench-%' AND session_id NOT LIKE 'sess-lat-%'" if exclude_benchmark else "1=1"
+        inc_bench_filter = "session_id NOT LIKE 'sess-bench-%' AND session_id NOT LIKE 'sess-lat-%'" if exclude_benchmark else "1=1"
+
+        cur = conn.execute(
+            f"""
+            SELECT tool_name, decision, latency_ms
+            FROM audit_events
+            WHERE {bench_filter}
+            """
+        )
+        rows = cur.fetchall()
+
+        total_audit_events = len(rows)
+        tool_return_events = 0
+        total_actions = 0
+        allowed_actions = 0
+        blocked_actions = 0
+        would_block_actions = 0
+        held_for_approval_actions = 0
+        redacted_actions = 0
+        latencies: List[float] = []
+
+        for r in rows:
+            tname = r["tool_name"]
+            dec = (r["decision"] or "").lower()
+            lat = float(r["latency_ms"] or 0.0)
+            if tname == "tool_return" or dec == "recorded":
+                tool_return_events += 1
+                continue
+            total_actions += 1
+            if dec == "allow":
+                allowed_actions += 1
+            elif dec == "block":
+                blocked_actions += 1
+            elif dec == "would_block":
+                would_block_actions += 1
+            elif dec == "require_approval":
+                held_for_approval_actions += 1
+            elif dec == "redact":
+                redacted_actions += 1
+            if lat > 0.0:
+                latencies.append(lat)
+
+        latencies.sort()
+        if latencies:
+            n = len(latencies)
+            p50_idx = min(n - 1, max(0, int(round(0.50 * (n - 1)))))
+            p95_idx = min(n - 1, max(0, int(round(0.95 * (n - 1)))))
+            latency_p50_ms: Optional[float] = round(latencies[p50_idx], 1)
+            latency_p95_ms: Optional[float] = round(latencies[p95_idx], 1)
+            latency_mean_ms: Optional[float] = round(sum(latencies) / n, 1)
+        else:
+            latency_p50_ms = None
+            latency_p95_ms = None
+            latency_mean_ms = None
+
+        cur_app = conn.execute(
+            f"SELECT status, COUNT(*) as cnt FROM approvals WHERE {inc_bench_filter} GROUP BY status"
+        )
+        app_counts = {r["status"]: int(r["cnt"]) for r in cur_app.fetchall()}
+        pending_approvals = app_counts.get("pending", 0)
+        total_approvals = sum(app_counts.values())
+
+        cur_inc = conn.execute(
+            f"SELECT status, final_decision, COUNT(*) as cnt FROM incidents WHERE {inc_bench_filter} GROUP BY status, final_decision"
+        )
+        inc_rows = cur_inc.fetchall()
+        active_incidents = sum(int(r["cnt"]) for r in inc_rows)
+        blocked_incidents = sum(
+            int(r["cnt"])
+            for r in inc_rows
+            if (r["status"] or "").upper() in ("BLOCKED", "PREVENTED", "HELD_FOR_APPROVAL")
+            or (r["final_decision"] or "").lower() in ("block", "require_approval", "redact")
+        )
+
+        cur_ag = conn.execute("SELECT COUNT(*) as cnt FROM agents")
+        ag_row = cur_ag.fetchone()
+        active_agents = int(ag_row["cnt"]) if ag_row else 5
+
+        chain_info = verify_chain_detailed(conn=conn)
+
+        return {
+            "total_actions": total_actions,
+            "total_audit_events": total_audit_events,
+            "tool_return_events": tool_return_events,
+            "allowed_actions": allowed_actions,
+            "blocked_actions": blocked_actions,
+            "would_block_actions": would_block_actions,
+            "held_for_approval_actions": held_for_approval_actions,
+            "redacted_actions": redacted_actions,
+            "pending_approvals": pending_approvals,
+            "total_approvals": total_approvals,
+            "active_incidents": active_incidents,
+            "blocked_incidents": blocked_incidents,
+            "active_agents": active_agents,
+            "latency_p50_ms": latency_p50_ms,
+            "latency_p95_ms": latency_p95_ms,
+            "latency_mean_ms": latency_mean_ms,
+            "chain_verification": chain_info,
+        }
+    finally:
+        if close:
+            conn.close()
+
 
 

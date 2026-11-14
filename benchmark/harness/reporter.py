@@ -62,29 +62,35 @@ def generate_ascii_report(
         f"- Test Suite Mode:     {suite_mode_str}",
         f"- Intent Judge Status: {'evaluated (real LLM)' if judge_evaluated else 'judge not evaluated'}",
         f"- Date & Time:         {now_utc}",
-        "",
-        "-" * 100,
-        f"DEV SET EVALUATION [dev (seen)] ({dev_metrics['summary']['attack_count']} Attacks, {dev_metrics['summary']['benign_count']} Benign)",
-        "* Label: dev (seen) — Tuned Calibration Results (Used for rule/threshold tuning; not generalization evidence)",
-        f"- Detection Rate:            {dev_metrics['rates']['detection_rate']['percentage']:>7} ({dev_metrics['summary']['attacks_detected']}/{dev_metrics['summary']['attack_count']})       [95% CI: {dev_metrics['rates']['detection_rate']['ci_95'][0]*100:.1f}% - {dev_metrics['rates']['detection_rate']['ci_95'][1]*100:.1f}%]",
-        f"- Decision-Match Rate:       {dev_metrics['rates']['decision_match_rate']['percentage']:>7} ({dev_metrics['summary']['decision_matches']}/{dev_metrics['summary']['total_scenarios']})       [95% CI: {dev_metrics['rates']['decision_match_rate']['ci_95'][0]*100:.1f}% - {dev_metrics['rates']['decision_match_rate']['ci_95'][1]*100:.1f}%]",
-        f"- False Positive Rate:       {dev_metrics['rates']['false_positive_rate']['percentage']:>7} ({dev_metrics['summary']['benign_false_positives']}/{dev_metrics['summary']['benign_count']})       [95% CI: {dev_metrics['rates']['false_positive_rate']['ci_95'][0]*100:.1f}% - {dev_metrics['rates']['false_positive_rate']['ci_95'][1]*100:.1f}%]",
-        f"- Prevention Rate:           {dev_metrics['rates']['prevention_rate']['percentage']:>7} ({dev_metrics['summary']['attacks_prevented']}/{dev_metrics['summary']['attack_count']})       [95% CI: {dev_metrics['rates']['prevention_rate']['ci_95'][0]*100:.1f}% - {dev_metrics['rates']['prevention_rate']['ci_95'][1]*100:.1f}%]",
-        f"- Records Exposed to Agent:  {dev_metrics['records']['total_records_exposed_to_agent']:>7} records across {dev_metrics['records']['attacks_with_exposed_records']} attacks",
-        f"- Records Exfiltrated:       {dev_metrics['records']['total_records_exfiltrated']:>7} records (Target: 0)",
-        f"- Late Detections:           {dev_metrics['records']['late_detections_count']:>7} attacks blocked at egress after prior read",
     ]
+    if dev_metrics and dev_metrics['summary']['total_scenarios'] > 0:
+        lines.extend([
+            "",
+            "-" * 100,
+            f"DEV SET EVALUATION [dev (seen)] ({dev_metrics['summary']['attack_count']} Attacks, {dev_metrics['summary']['benign_count']} Benign)",
+            "* Label: dev (seen) — Tuned Calibration Results (Used for rule/threshold tuning; not generalization evidence)",
+            f"- Detection Rate:            {dev_metrics['rates']['detection_rate']['percentage']:>7} ({dev_metrics['summary']['attacks_detected']}/{dev_metrics['summary']['attack_count']})       [95% CI: {dev_metrics['rates']['detection_rate']['ci_95'][0]*100:.1f}% - {dev_metrics['rates']['detection_rate']['ci_95'][1]*100:.1f}%]",
+            f"- Decision-Match Rate:       {dev_metrics['rates']['decision_match_rate']['percentage']:>7} ({dev_metrics['summary']['decision_matches']}/{dev_metrics['summary']['total_scenarios']})       [95% CI: {dev_metrics['rates']['decision_match_rate']['ci_95'][0]*100:.1f}% - {dev_metrics['rates']['decision_match_rate']['ci_95'][1]*100:.1f}%]",
+            f"- False Positive Rate:       {dev_metrics['rates']['false_positive_rate']['percentage']:>7} ({dev_metrics['summary']['benign_false_positives']}/{dev_metrics['summary']['benign_count']})       [95% CI: {dev_metrics['rates']['false_positive_rate']['ci_95'][0]*100:.1f}% - {dev_metrics['rates']['false_positive_rate']['ci_95'][1]*100:.1f}%]",
+            f"- Prevention Rate:           {dev_metrics['rates']['prevention_rate']['percentage']:>7} ({dev_metrics['summary']['attacks_prevented']}/{dev_metrics['summary']['attack_count']})       [95% CI: {dev_metrics['rates']['prevention_rate']['ci_95'][0]*100:.1f}% - {dev_metrics['rates']['prevention_rate']['ci_95'][1]*100:.1f}%]",
+            f"- Records Exposed to Agent:  {dev_metrics['records']['total_records_exposed_to_agent']:>7} records across {dev_metrics['records']['attacks_with_exposed_records']} attacks",
+            f"- Records Exfiltrated:       {dev_metrics['records']['total_records_exfiltrated']:>7} records (Target: 0)",
+            f"- Late Detections:           {dev_metrics['records']['late_detections_count']:>7} attacks blocked at egress after prior read",
+        ])
 
     if held_out_metrics and held_out_metrics['summary']['total_scenarios'] > 0:
         lines.extend([
             "",
             "-" * 100,
             f"HELD-OUT SET EVALUATION ({held_out_metrics['summary']['attack_count']} Attacks, {held_out_metrics['summary']['benign_count']} Benign)",
-            "* Label: Generalization Evidence (Evaluated ONCE post-freeze; never tuned against)",
+            "* Label: generalization evidence, small sample, scenarios written by the project author",
             f"- Detection Rate:            {held_out_metrics['rates']['detection_rate']['percentage']:>7} ({held_out_metrics['summary']['attacks_detected']}/{held_out_metrics['summary']['attack_count']})       [95% CI: {held_out_metrics['rates']['detection_rate']['ci_95'][0]*100:.1f}% - {held_out_metrics['rates']['detection_rate']['ci_95'][1]*100:.1f}%]",
             f"- Decision-Match Rate:       {held_out_metrics['rates']['decision_match_rate']['percentage']:>7} ({held_out_metrics['summary']['decision_matches']}/{held_out_metrics['summary']['total_scenarios']})       [95% CI: {held_out_metrics['rates']['decision_match_rate']['ci_95'][0]*100:.1f}% - {held_out_metrics['rates']['decision_match_rate']['ci_95'][1]*100:.1f}%]",
             f"- False Positive Rate:       {held_out_metrics['rates']['false_positive_rate']['percentage']:>7} ({held_out_metrics['summary']['benign_false_positives']}/{held_out_metrics['summary']['benign_count']})       [95% CI: {held_out_metrics['rates']['false_positive_rate']['ci_95'][0]*100:.1f}% - {held_out_metrics['rates']['false_positive_rate']['ci_95'][1]*100:.1f}%]",
             f"- Prevention Rate:           {held_out_metrics['rates']['prevention_rate']['percentage']:>7} ({held_out_metrics['summary']['attacks_prevented']}/{held_out_metrics['summary']['attack_count']})       [95% CI: {held_out_metrics['rates']['prevention_rate']['ci_95'][0]*100:.1f}% - {held_out_metrics['rates']['prevention_rate']['ci_95'][1]*100:.1f}%]",
+            f"- Records Exposed to Agent:  {held_out_metrics['records']['total_records_exposed_to_agent']:>7} records across {held_out_metrics['records']['attacks_with_exposed_records']} attacks",
+            f"- Records Exfiltrated:       {held_out_metrics['records']['total_records_exfiltrated']:>7} records (Target: 0)",
+            f"- Late Detections:           {held_out_metrics['records']['late_detections_count']:>7} attacks blocked at egress after prior read",
         ])
 
     lat = overall_metrics["latency_ms"]

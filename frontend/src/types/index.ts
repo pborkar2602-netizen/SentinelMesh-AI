@@ -1,4 +1,4 @@
-export type DecisionType = 'allow' | 'block' | 'would_block' | 'redact' | 'require_approval';
+export type DecisionType = 'allow' | 'block' | 'would_block' | 'redact' | 'require_approval' | 'recorded';
 
 export interface AuditEvent {
   id: number;
@@ -13,7 +13,7 @@ export interface AuditEvent {
     is_untrusted: boolean;
     snippet?: string;
   }>;
-  decision: DecisionType;
+  decision: DecisionType | string;
   reason: string;
   risk_score: number;
   risk_breakdown: Record<string, any>;
@@ -21,6 +21,7 @@ export interface AuditEvent {
   timestamp: string;
   prev_hash?: string;
   event_hash?: string;
+  source?: string;
   findings?: Array<{
     name: string;
     severity: string;
@@ -39,15 +40,19 @@ export interface Agent {
 }
 
 export interface ChainStep {
-  step_number: number;
+  step?: number;
+  step_number?: number;
   tool_name: string;
   title: string;
-  icon: string;
-  arguments: Record<string, any>;
+  icon?: string;
+  arguments?: Record<string, any>;
   decision: string;
-  status: string;
-  risk_score: number;
-  reason: string;
+  status?: string;
+  risk_score?: number;
+  reason?: string;
+  description?: string;
+  details?: string;
+  latency_ms?: number;
   timestamp: string;
 }
 
@@ -56,8 +61,8 @@ export interface Incident {
   session_id: string;
   agent_id: string;
   title: string;
-  status: 'BLOCKED' | 'WOULD_BLOCK' | 'OPEN';
-  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM';
+  status: 'BLOCKED' | 'WOULD_BLOCK' | 'OPEN' | string;
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | string;
   entry_point: string;
   affected_data: string;
   final_decision: string;
@@ -85,7 +90,8 @@ export interface ApprovalRequest {
   masked_arguments: Record<string, any>;
   action_hash: string;
   status: 'pending' | 'approved' | 'denied' | 'timed_out';
-  reasons: string[];
+  reason?: string;
+  reasons?: string[];
   risk_score: number;
   expires_at: string;
   resolved_by?: string;
@@ -99,7 +105,32 @@ export interface SimulationStats {
   total_events: number;
   would_block_count: number;
   block_count: number;
+  blocked_count?: number;
   require_approval_count: number;
   redact_count: number;
+  redacted_count?: number;
   allow_count: number;
+  allowed_count?: number;
+}
+
+export interface DashboardStats {
+  total_actions: number;
+  total_audit_events: number;
+  tool_return_events: number;
+  allowed_actions: number;
+  blocked_actions: number;
+  would_block_actions: number;
+  held_for_approval_actions: number;
+  redacted_actions: number;
+  pending_approvals: number;
+  total_approvals: number;
+  active_incidents: number;
+  blocked_incidents: number;
+  active_agents: number;
+  latency_p50_ms: number | null;
+  latency_p95_ms: number | null;
+  latency_mean_ms: number | null;
+  chain_verification: AuditVerification;
+  policy_mode: 'enforce' | 'monitor';
+  demo_mode: boolean;
 }

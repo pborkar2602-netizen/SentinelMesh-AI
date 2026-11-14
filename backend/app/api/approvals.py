@@ -23,12 +23,14 @@ class PreApproveRequest(BaseModel):
 def get_approvals(
     status: Optional[str] = Query(None, description="Filter by status: pending, approved, denied, timed_out"),
     agent_id: Optional[str] = Query(None, description="Filter by agent ID"),
-    limit: int = Query(50, ge=1, le=200)
+    limit: int = Query(50, ge=1, le=200),
+    exclude_benchmark: bool = Query(False, description="Hide benchmark/latency harness approvals")
 ):
     """Lists approval requests with masked payload previews and remaining TTL."""
     # Run timeout sweep before listing
     ApprovalService.check_and_expire()
-    return list_approvals(status=status, agent_id=agent_id, limit=limit)
+    excl = bool(exclude_benchmark.default if hasattr(exclude_benchmark, "default") else exclude_benchmark)
+    return list_approvals(status=status, agent_id=agent_id, limit=limit, exclude_benchmark=excl)
 
 @router.get("/{approval_id}", response_model=Dict[str, Any])
 def get_single_approval(approval_id: str):

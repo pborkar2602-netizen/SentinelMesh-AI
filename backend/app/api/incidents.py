@@ -27,12 +27,19 @@ def get_incidents(
     status: Optional[str] = None,
     agent_id: Optional[str] = None,
     limit: int = Query(50, ge=1, le=100),
-    order: str = Query("desc", pattern="^(asc|desc)$")
+    order: str = Query("desc", pattern="^(asc|desc)$"),
+    exclude_benchmark: bool = Query(False, description="Hide benchmark/latency harness incidents")
 ) -> List[IncidentResponse]:
     """
     List reconstructed security incidents.
     """
-    incidents = list_incidents(status=status, agent_id=agent_id, limit=limit, order=order)
+    incidents = list_incidents(
+        status=status,
+        agent_id=agent_id,
+        limit=limit,
+        order=order,
+        exclude_benchmark=exclude_benchmark,
+    )
     return [IncidentResponse(**inc) for inc in incidents]
 
 @router.get("/{incident_id}", response_model=IncidentResponse)

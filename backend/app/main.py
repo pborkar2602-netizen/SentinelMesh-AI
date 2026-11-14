@@ -15,7 +15,9 @@ from backend.app.api.audit import router as audit_router
 from backend.app.api.privacy import router as privacy_router
 from backend.app.api.auth import router as auth_router
 from backend.app.api.approvals import router as approvals_router
+from backend.app.api.stats import router as stats_router
 from backend.app.api.websocket import ws_manager
+from backend.app.core.policy_engine import PolicyEngine
 
 logging.basicConfig(
     level=logging.INFO,
@@ -81,6 +83,7 @@ app.include_router(audit_router, prefix=settings.API_V1_STR)
 app.include_router(privacy_router, prefix=settings.API_V1_STR)
 app.include_router(auth_router, prefix=settings.API_V1_STR)
 app.include_router(approvals_router, prefix=settings.API_V1_STR)
+app.include_router(stats_router, prefix=settings.API_V1_STR)
 
 @app.websocket("/ws/events")
 async def websocket_event_feed(websocket: WebSocket):
@@ -110,7 +113,7 @@ def health_check():
         "status": "healthy",
         "service": settings.PROJECT_NAME,
         "version": settings.VERSION,
-        "mode": "pass-through (Milestone 1)"
+        "mode": PolicyEngine.get_mode()
     }
 
 @app.post("/echo", tags=["Diagnostics"])

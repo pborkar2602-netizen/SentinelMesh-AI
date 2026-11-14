@@ -27,21 +27,22 @@ def set_policy_mode(payload: ModeUpdate):
     return {"mode": updated}
 
 @router.get("/simulation/stats")
-def get_simulation_stats():
+def get_simulation_stats(exclude_benchmark: bool = Query(True)):
     """
     Returns live metrics on monitored vs enforced policies,
     including the counter of 'would have blocked N actions' in monitor mode.
     """
     conn = get_connection()
-    cur = conn.execute("""
+    bench_sql = "WHERE source != 'benchmark' AND session_id NOT LIKE 'sess-bench-%' AND session_id NOT LIKE 'sess-lat-%' AND tool_name != 'tool_return'" if exclude_benchmark else "WHERE tool_name != 'tool_return'"
+    cur = conn.execute(f"""
         SELECT decision, COUNT(*) as cnt
         FROM audit_events
+        {bench_sql}
         GROUP BY decision
     """)
     rows = cur.fetchall()
-    conn.close()
 
-    counts = {r["decision"]: r["cnt"] for r in rows}
+    counts = {r["decision"]: int(r["cnt"]) for r in rows}
     total_events = sum(counts.values())
 
     return {
@@ -49,9 +50,12 @@ def get_simulation_stats():
         "total_events": total_events,
         "would_block_count": counts.get("would_block", 0),
         "blocked_count": counts.get("block", 0),
+        "block_count": counts.get("block", 0),
         "allowed_count": counts.get("allow", 0),
+        "allow_count": counts.get("allow", 0),
         "require_approval_count": counts.get("require_approval", 0),
         "redacted_count": counts.get("redact", 0),
+        "redact_count": counts.get("redact", 0),
         "breakdown": counts
     }
 
@@ -61,12 +65,14 @@ def simulate_policy_reevaluation(req: SimulationRequest):
     Replays the last N stored events against a simulated policy configuration
     and reports which decisions would change (e.g. allowed -> would_block / block).
     """
-    events = list_audit_events(limit=req.limit, order="desc")
+    events = list_audit_events(limit=req.limit, order="desc", exclude_benchmark=True, exclude_tool_return=True)
     if not events:
         return {
             "events_replayed": 0,
             "decisions_changed": 0,
             "simulated_mode": req.simulated_mode,
+            "simulated_distribution": {"allow": 0, "block": 0, "would_block": 0, "require_approval": 0, "redact": 0},
+            "decision_changes": [],
             "changes": []
         }
 
@@ -75,6 +81,7 @@ def simulate_policy_reevaluation(req: SimulationRequest):
     orig_high_sens = PolicyEngine._high_sensitivity_external_action
 
     changes = []
+    sim_dist: Dict[str, int] = {"allow": 0, "block": 0, "would_block": 0, "require_approval": 0, "redact": 0}
     try:
         PolicyEngine.set_mode(req.simulated_mode)
         if req.high_sensitivity_action:
@@ -112,6 +119,7 @@ def simulate_policy_reevaluation(req: SimulationRequest):
                 anomaly_score=anomaly_score,
                 anomaly_reasons=anomaly_reasons
             )
+            sim_dist[sim_decision] = sim_dist.get(sim_decision, 0) + 1
 
             if sim_decision != orig_decision:
                 changes.append({
@@ -120,7 +128,8 @@ def simulate_policy_reevaluation(req: SimulationRequest):
                     "tool_name": tool_name,
                     "original_decision": orig_decision,
                     "simulated_decision": sim_decision,
-                    "simulated_reason": sim_reason
+                    "simulated_reason": sim_reason,
+                    "reason": sim_reason,
                 })
 
     finally:
@@ -132,5 +141,7 @@ def simulate_policy_reevaluation(req: SimulationRequest):
         "events_replayed": len(events),
         "decisions_changed": len(changes),
         "simulated_mode": req.simulated_mode,
+        "simulated_distribution": sim_dist,
+        "decision_changes": changes,
         "changes": changes
     }
