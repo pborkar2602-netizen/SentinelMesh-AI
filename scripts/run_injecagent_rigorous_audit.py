@@ -40,7 +40,7 @@ from benchmark.adapters.injecagent_adapter import (
     map_attacker_tool,
 )
 from backend.app.detection.rules import run_all_detectors
-from benchmark.harness.statistics import wilson_score_interval, exact_mcnemar_test
+from benchmark.harness.statistics import wilson_score_interval, cluster_paired_permutation_test
 
 SALT = b"sentinelmesh_v3_group_cluster_salt"
 
@@ -276,11 +276,12 @@ def evaluate_setting(setting_name: str, dh_file: str, ds_file: str, hf_model=Non
         ci_high = round(ci_high * 100, 2)
         boot_low, boot_high = cluster_bootstrap_ci(st["cluster_dict"])
 
-        s_verdicts = st["verdicts"]
-        b_cnt = sum(1 for v_s, v_b in zip(s_verdicts, b4_verdicts) if v_b == 1 and v_s == 0)
-        c_cnt = sum(1 for v_s, v_b in zip(s_verdicts, b4_verdicts) if v_s == 1 and v_b == 0)
-        mcn_res = exact_mcnemar_test(b_cnt, c_cnt) if (b_cnt + c_cnt) > 0 else {"p_value": 1.0}
-        p_val = mcn_res["p_value"] if isinstance(mcn_res, dict) else mcn_res
+        # Compute cluster-level block rates for paired permutation test against B4
+        b4_cluster_dict = stats[B4_FullSentinelMesh.name]["cluster_dict"]
+        s_cluster_rates = {c: sum(vals) / max(len(vals), 1) for c, vals in st["cluster_dict"].items()}
+        b4_cluster_rates = {c: sum(vals) / max(len(vals), 1) for c, vals in b4_cluster_dict.items()}
+
+        perm_res = cluster_paired_permutation_test(s_cluster_rates, b4_cluster_rates, n_permutations=100000, seed=42)
 
         label_note = ""
         if "Exploratory" in s_name:
@@ -297,10 +298,12 @@ def evaluate_setting(setting_name: str, dh_file: str, ds_file: str, hf_model=Non
             "benign_fp_pct": fp_rate,
             "wilson_ci": [ci_low, ci_high],
             "cluster_bootstrap_ci": [boot_low, boot_high],
-            "mcnemar_vs_b4": {
-                "b": b_cnt,
-                "c": c_cnt,
-                "p_value": p_val,
+            "cluster_paired_test_vs_b4": {
+                "n_clusters": perm_res["n_clusters"],
+                "n_discordant_clusters": perm_res["n_discordant_clusters"],
+                "mean_difference": perm_res["mean_diff"],
+                "p_value": perm_res["p_value"],
+                "test_type": "paired_cluster_sign_flip_permutation_100k"
             }
         })
 
@@ -352,10 +355,10 @@ def main():
         print("\n" + "=" * 95)
         print(f"SETTING: {res['setting'].upper()} (N={res['total_test_cases']}, Clusters={res['unique_clusters']})")
         print("=" * 95)
-        print(f"{'System':<35} | {'Prev Rate':<10} | {'DH Prev':<9} | {'DS Prev':<9} | {'FP Rate':<8} | {'Cluster 95% CI':<16} | {'p (vs B4)'}")
-        print("-" * 95)
+        print(f"{'System':<35} | {'Prev Rate':<10} | {'DH Prev':<9} | {'DS Prev':<9} | {'FP Rate':<8} | {'Cluster 95% CI':<16} | {'Cluster Perm p (vs B4)'}")
+        print("-" * 105)
         for row in res["summary"]:
-            p_str = f"{row['mcnemar_vs_b4']['p_value']:.4e}" if 'B4' not in row['system'] or 'Exploratory' in row['system'] else "ref"
+            p_str = f"{row['cluster_paired_test_vs_b4']['p_value']:.4e}" if 'B4' not in row['system'] or 'Exploratory' in row['system'] else "ref"
             ci_str = f"[{row['cluster_bootstrap_ci'][0]:.1f}, {row['cluster_bootstrap_ci'][1]:.1f}]"
             name_disp = row['system']
             if row['label_note']:

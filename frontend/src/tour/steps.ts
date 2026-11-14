@@ -31,7 +31,7 @@ export const TOUR_STEPS: TourStep[] = [
   {
     targetId: 'mode-seg',
     title: 'Where It Was Cut: Monitor vs. Enforce',
-    description: 'In Enforce mode, the attack is halted inline at Step 3 before sensitive database execution (0 records exposed). In Monitor mode, the attack runs unhindered, exposing 45 payroll records.',
+    description: 'In Enforce mode, the attack is halted inline at Step 3 before sensitive database execution (0 records exposed). In Monitor mode, the attack runs unhindered, exposing 3 payroll records (derived from scenario data; simulated 45 across enterprise cohorts).',
     badge: 'Step 4 / 9 · Where Cut',
     position: 'bottom',
   },

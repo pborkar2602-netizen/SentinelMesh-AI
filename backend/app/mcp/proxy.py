@@ -133,7 +133,28 @@ class MCPGatewayProxy:
             )
 
             # Evaluate inline via Gateway Core
-            decision_resp: GatewayDecisionResponse = execute_tool_call(gateway_req)
+            try:
+                decision_resp: GatewayDecisionResponse = execute_tool_call(gateway_req)
+            except Exception as e:
+                # FAIL-CLOSED: Any exception in the gateway pipeline must halt tool execution
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": f"SECURITY BLOCK [FAIL-CLOSED]: SentinelMesh Gateway error ({type(e).__name__}: {e}). Tool execution blocked."
+                            }
+                        ],
+                        "isError": True,
+                        "meta": {
+                            "decision": "block",
+                            "fail_closed": True,
+                            "error": str(e)
+                        }
+                    }
+                }
 
             if decision_resp.decision == "allow":
                 return {

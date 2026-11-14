@@ -861,6 +861,116 @@ def verify_chain_detailed(conn: Optional[sqlite3.Connection] = None) -> Dict[str
         "message": f"Hash chain verified: {len(rows)} events intact"
     }
 
+_chain_checkpoint = {
+    "last_id": 0,
+    "last_hash": GENESIS_PREV_HASH,
+    "verified_count": 0
+}
+_checkpoint_lock = threading.Lock()
+
+def reset_chain_checkpoint():
+    with _checkpoint_lock:
+        _chain_checkpoint["last_id"] = 0
+        _chain_checkpoint["last_hash"] = GENESIS_PREV_HASH
+        _chain_checkpoint["verified_count"] = 0
+
+def verify_chain_incremental(conn: Optional[sqlite3.Connection] = None) -> Dict[str, Any]:
+    """
+    Incremental audit chain verification.
+    Verifies only new links appended since the last verified checkpoint.
+    """
+    conn, close = acquire_connection(conn)
+    with _checkpoint_lock:
+        last_id = _chain_checkpoint["last_id"]
+        expected_prev = _chain_checkpoint["last_hash"]
+        v_count = _chain_checkpoint["verified_count"]
+
+        cur = conn.execute("SELECT * FROM audit_events WHERE id > ? ORDER BY id ASC", (last_id,))
+        rows = cur.fetchall()
+
+        if not rows:
+            if close:
+                conn.close()
+            return {
+                "valid": True,
+                "events_verified": v_count,
+                "new_events_verified": 0,
+                "head_hash": expected_prev,
+                "tampered_event_id": None,
+                "message": f"Chain verified incrementally: {v_count} events intact (0 new)",
+                "verification_mode": "incremental"
+            }
+
+        head_hash = expected_prev
+        for row in rows:
+            d = dict(row)
+            event_id = d["id"]
+            stored_prev_hash = d["prev_hash"]
+            stored_event_hash = d["event_hash"]
+
+            if stored_prev_hash != expected_prev:
+                if close:
+                    conn.close()
+                return {
+                    "valid": False,
+                    "events_verified": v_count + len(rows),
+                    "head_hash": stored_event_hash,
+                    "tampered_event_id": event_id,
+                    "message": f"Linkage broken at event #{event_id}",
+                    "verification_mode": "incremental"
+                }
+
+            event_data = {
+                "id": event_id,
+                "trace_id": d["trace_id"],
+                "agent_id": d["agent_id"],
+                "session_id": d["session_id"],
+                "tool_name": d["tool_name"],
+                "arguments": json.loads(d["arguments"]) if isinstance(d["arguments"], str) else d["arguments"],
+                "context_sources": json.loads(d["context_sources"]) if isinstance(d["context_sources"], str) else d["context_sources"],
+                "decision": d["decision"],
+                "reason": d["reason"],
+                "risk_score": d["risk_score"],
+                "risk_breakdown": json.loads(d["risk_breakdown"]) if isinstance(d["risk_breakdown"], str) else d["risk_breakdown"],
+                "latency_ms": d["latency_ms"],
+                "timestamp": d["timestamp"]
+            }
+            recomputed_hash = compute_event_hash(event_data, stored_prev_hash)
+            if recomputed_hash != stored_event_hash:
+                if close:
+                    conn.close()
+                return {
+                    "valid": False,
+                    "events_verified": v_count + len(rows),
+                    "head_hash": stored_event_hash,
+                    "tampered_event_id": event_id,
+                    "message": f"Content tampering detected at event #{event_id}",
+                    "verification_mode": "incremental"
+                }
+
+            expected_prev = stored_event_hash
+            head_hash = stored_event_hash
+            last_id = event_id
+            v_count += 1
+
+        # Advance verified checkpoint
+        _chain_checkpoint["last_id"] = last_id
+        _chain_checkpoint["last_hash"] = head_hash
+        _chain_checkpoint["verified_count"] = v_count
+
+    if close:
+        conn.close()
+
+    return {
+        "valid": True,
+        "events_verified": v_count,
+        "new_events_verified": len(rows),
+        "head_hash": head_hash,
+        "tampered_event_id": None,
+        "message": f"Chain verified incrementally: {v_count} events intact ({len(rows)} new)",
+        "verification_mode": "incremental"
+    }
+
 def save_incident(incident_dict: Dict[str, Any], conn: Optional[sqlite3.Connection] = None) -> None:
     conn, close = acquire_connection(conn)
 
@@ -1281,7 +1391,7 @@ def get_dashboard_stats(
         ag_row = cur_ag.fetchone()
         active_agents = int(ag_row["cnt"]) if ag_row else 5
 
-        chain_info = verify_chain_detailed(conn=conn)
+        chain_info = verify_chain_incremental(conn=conn)
 
         return {
             "total_actions": total_actions,

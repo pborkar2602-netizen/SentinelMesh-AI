@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { LayerRadarChart } from './LayerRadarChart';
 
 export const EvidenceSection: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'benchmarks' | 'mcnemar' | 'provenance' | 'formal'>('benchmarks');
+  const [activeTab, setActiveTab] = useState<'benchmarks' | 'cluster_stats' | 'provenance' | 'formal'>('benchmarks');
   const [stats, setStats] = useState({
     dhRate: '92.0%',
     dhCi: '[88.8%, 94.4%]',
@@ -142,14 +142,14 @@ export const EvidenceSection: React.FC = () => {
             1. Preregistered External Benchmarks
           </button>
           <button
-            onClick={() => setActiveTab('mcnemar')}
+            onClick={() => setActiveTab('cluster_stats')}
             className={`text-xs font-mono px-3.5 py-2 rounded-xl transition-all duration-150 ${
-              activeTab === 'mcnemar'
+              activeTab === 'cluster_stats'
                 ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-semibold shadow-sm'
                 : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
             }`}
           >
-            2. McNemar Paired Significance
+            2. Cluster Permutation Significance
           </button>
           <button
             onClick={() => setActiveTab('provenance')}
@@ -177,7 +177,7 @@ export const EvidenceSection: React.FC = () => {
         {activeTab === 'benchmarks' && (
           <div className="space-y-4 animate-in fade-in duration-200">
             <div className="flex items-center justify-between text-xs text-slate-400 font-mono mb-2">
-              <span>Evaluated on 70% holdout test partitions (code frozen under tag v3-frozen)</span>
+              <span>Evaluated on 70% holdout test partitions (Primary frozen tag: v3.3-frozen)</span>
               <span className="text-emerald-400">Zero fabrication guarantee</span>
             </div>
 
@@ -186,45 +186,45 @@ export const EvidenceSection: React.FC = () => {
                 <thead>
                   <tr className="border-b border-white/10 text-slate-400 uppercase tracking-wider">
                     <th className="py-3 px-3">Dataset / Suite</th>
-                    <th className="py-3 px-3">Split</th>
+                    <th className="py-3 px-3">Setting / Split</th>
                     <th className="py-3 px-3">Sample (N)</th>
                     <th className="py-3 px-3">Metric Measured</th>
                     <th className="py-3 px-3">Baseline</th>
                     <th className="py-3 px-3 text-emerald-400">SentinelMesh v3</th>
-                    <th className="py-3 px-3">95% Wilson CI</th>
+                    <th className="py-3 px-3">Cluster 95% CI</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5 text-slate-300">
                   <tr className="hover:bg-white/[0.02]">
                     <td className="py-3 px-3 font-semibold text-white">InjecAgent (Zhan 2024)</td>
-                    <td className="py-3 px-3 text-slate-400">Test (70%)</td>
-                    <td className="py-3 px-3">359</td>
-                    <td className="py-3 px-3">Direct Harm Prevention</td>
+                    <td className="py-3 px-3 text-slate-400">Enhanced (Cluster Test, 44 clusters)</td>
+                    <td className="py-3 px-3">748</td>
+                    <td className="py-3 px-3">Prevention Rate (Primary Test)</td>
                     <td className="py-3 px-3 text-rose-400">0.0% (B0)</td>
-                    <td className="py-3 px-3 font-bold text-emerald-400">91.9%</td>
-                    <td className="py-3 px-3 text-slate-400">[88.6%, 94.3%]</td>
+                    <td className="py-3 px-3 font-bold text-emerald-400">93.2% (DH: 92.0%, DS: 94.7%)</td>
+                    <td className="py-3 px-3 text-slate-400">[84.1%, 100.0%]</td>
                   </tr>
                   <tr className="hover:bg-white/[0.02]">
                     <td className="py-3 px-3 font-semibold text-white">InjecAgent (Zhan 2024)</td>
-                    <td className="py-3 px-3 text-slate-400">Test (70%)</td>
-                    <td className="py-3 px-3">364</td>
-                    <td className="py-3 px-3">Data Stealing Prevention</td>
+                    <td className="py-3 px-3 text-slate-400">Base (Cluster Test, 44 clusters)</td>
+                    <td className="py-3 px-3">748</td>
+                    <td className="py-3 px-3">Prevention Rate (Base Prompts)</td>
                     <td className="py-3 px-3 text-rose-400">0.0% (B0)</td>
-                    <td className="py-3 px-3 font-bold text-emerald-400">94.0%</td>
-                    <td className="py-3 px-3 text-slate-400">[91.0%, 96.0%]</td>
+                    <td className="py-3 px-3 font-bold text-emerald-400">93.2% (DH: 92.0%, DS: 94.7%)</td>
+                    <td className="py-3 px-3 text-slate-400">[84.1%, 100.0%]</td>
                   </tr>
                   <tr className="hover:bg-white/[0.02]">
-                    <td className="py-3 px-3 font-semibold text-white">AgentDojo Static Tasks</td>
-                    <td className="py-3 px-3 text-slate-400">Test (70%)</td>
-                    <td className="py-3 px-3">39</td>
-                    <td className="py-3 px-3">Attack Block Rate</td>
+                    <td className="py-3 px-3 font-semibold text-white">AgentDojo Official Suites (Debenedetti 2024)</td>
+                    <td className="py-3 px-3 text-amber-400/90">Test (N=40 attacks) <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">exploratory (run before freeze)</span></td>
+                    <td className="py-3 px-3">40</td>
+                    <td className="py-3 px-3">Injection Prevention Rate</td>
                     <td className="py-3 px-3 text-rose-400">0.0% (B0)</td>
-                    <td className="py-3 px-3 font-bold text-emerald-400">100.0%</td>
-                    <td className="py-3 px-3 text-slate-400">[91.0%, 100.0%]</td>
+                    <td className="py-3 px-3 font-bold text-emerald-400">92.5% (37/40)</td>
+                    <td className="py-3 px-3 text-slate-400">[79.6%, 98.4%]</td>
                   </tr>
                   <tr className="hover:bg-white/[0.02]">
                     <td className="py-3 px-3 font-semibold text-white">deepset/prompt-injections</td>
-                    <td className="py-3 px-3 text-slate-400">Test (70%)</td>
+                    <td className="py-3 px-3 text-amber-400/90">Test (70%) <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">exploratory (run before freeze)</span></td>
                     <td className="py-3 px-3">381</td>
                     <td className="py-3 px-3">Static Regex Detection Recall</td>
                     <td className="py-3 px-3 text-rose-400">1.4% (Regex)</td>
@@ -233,7 +233,7 @@ export const EvidenceSection: React.FC = () => {
                   </tr>
                   <tr className="hover:bg-white/[0.02]">
                     <td className="py-3 px-3 font-semibold text-white">Tensor Trust Hijacking</td>
-                    <td className="py-3 px-3 text-slate-400">Test (70%)</td>
+                    <td className="py-3 px-3 text-amber-400/90">Test (70%) <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">exploratory (run before freeze)</span></td>
                     <td className="py-3 px-3">549</td>
                     <td className="py-3 px-3">Prompt Hijacking Recall</td>
                     <td className="py-3 px-3 text-rose-400">0.0% (Regex)</td>
@@ -241,13 +241,13 @@ export const EvidenceSection: React.FC = () => {
                     <td className="py-3 px-3 text-slate-400">[91.0%, 96.0%]</td>
                   </tr>
                   <tr className="hover:bg-white/[0.02]">
-                    <td className="py-3 px-3 font-semibold text-white">ai4privacy Evaluation</td>
-                    <td className="py-3 px-3 text-slate-400">Test (70%)</td>
+                    <td className="py-3 px-3 font-semibold text-white">ai4privacy Masking Bench</td>
+                    <td className="py-3 px-3 text-amber-400/90">Test (70%) <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">exploratory (run before freeze)</span></td>
                     <td className="py-3 px-3">1,028</td>
-                    <td className="py-3 px-3">PII Vault Extraction F1</td>
+                    <td className="py-3 px-3">Type-Agnostic PII Recall</td>
                     <td className="py-3 px-3 text-slate-400">N/A</td>
-                    <td className="py-3 px-3 font-bold text-emerald-400">0.958 F1 (Email)</td>
-                    <td className="py-3 px-3 text-slate-400">SSN Prec: 100% | Phone Rec: 94.2%</td>
+                    <td className="py-3 px-3 font-bold text-emerald-400">96.7% Span Recall</td>
+                    <td className="py-3 px-3 text-slate-400">SSN: 100% | Phone Rec: 94.2%</td>
                   </tr>
                 </tbody>
               </table>
@@ -255,64 +255,75 @@ export const EvidenceSection: React.FC = () => {
           </div>
         )}
 
-        {/* Tab 2: McNemar Paired Significance */}
-        {activeTab === 'mcnemar' && (
+        {/* Tab 2: Cluster Permutation Significance */}
+        {activeTab === 'cluster_stats' && (
           <div className="space-y-4 animate-in fade-in duration-200">
             <p className="text-xs text-slate-300 leading-relaxed font-mono">
-              Exact two-sided McNemar tests (computed via scipy.stats.binomtest) for paired nominal data comparing
-              SentinelMesh (B4) against baselines on the InjecAgent test partition (N = 723). Family-wise error rate is
-              controlled at &alpha; = 0.05 using the Holm-Bonferroni step-down correction.
+              Cluster-level paired two-sided sign-flip permutation tests (100,000 resamples) and cluster bootstrap 95% CIs
+              evaluated across the 44 attacker case clusters in InjecAgent (N = 748 test cases). Under H<sub>0</sub>, each cluster
+              score difference d<sub>k</sub> is symmetric around 0. Family-wise error rate is controlled at &alpha; = 0.05 using
+              the Holm-Bonferroni step-down correction. Replaces unclustered per-case McNemar tests to rigorously account for
+              intra-cluster correlation.
             </p>
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs font-mono border-collapse">
                 <thead>
                   <tr className="border-b border-white/10 text-slate-400 uppercase tracking-wider">
-                    <th className="py-3 px-3">Paired Comparison</th>
-                    <th className="py-3 px-3">Discordant Pairs (b / c)</th>
-                    <th className="py-3 px-3">Exact McNemar p-value</th>
+                    <th className="py-3 px-3">Paired Comparison (vs B4)</th>
+                    <th className="py-3 px-3">Discordant Clusters</th>
+                    <th className="py-3 px-3">Score &Delta; (Mean Diff)</th>
+                    <th className="py-3 px-3">Permutation p-value</th>
                     <th className="py-3 px-3">Holm &alpha;</th>
-                    <th className="py-3 px-3">Cohen's g</th>
-                    <th className="py-3 px-3">Odds Ratio</th>
-                    <th className="py-3 px-3 text-emerald-400">Verdict</th>
+                    <th className="py-3 px-3">Cluster Bootstrap 95% CI</th>
+                    <th className="py-3 px-3 text-emerald-400">Empirical Verdict</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5 text-slate-300">
                   <tr className="hover:bg-white/[0.02]">
                     <td className="py-3 px-3 font-semibold text-white">B4 (SentinelMesh) vs B0 (No Defense)</td>
-                    <td className="py-3 px-3">b=672, c=0 (n=672)</td>
-                    <td className="py-3 px-3 font-bold text-emerald-400">1.02 &times; 10<sup>-202</sup></td>
-                    <td className="py-3 px-3">0.0125</td>
-                    <td className="py-3 px-3">0.50 (Max)</td>
-                    <td className="py-3 px-3">&infin;</td>
+                    <td className="py-3 px-3">41 / 44 clusters</td>
+                    <td className="py-3 px-3 font-bold text-emerald-400">+0.9318</td>
+                    <td className="py-3 px-3 font-bold text-emerald-400">1.00 &times; 10<sup>-5</sup></td>
+                    <td className="py-3 px-3">0.0100</td>
+                    <td className="py-3 px-3 text-slate-400">[84.1%, 100.0%] vs [0.0%, 0.0%]</td>
                     <td className="py-3 px-3 font-bold text-emerald-400">Reject Null (p &lt; &alpha;)</td>
                   </tr>
                   <tr className="hover:bg-white/[0.02]">
                     <td className="py-3 px-3 font-semibold text-white">B4 (SentinelMesh) vs B1 (Domain Allowlist)</td>
-                    <td className="py-3 px-3">b=234, c=0 (n=234)</td>
-                    <td className="py-3 px-3 font-bold text-emerald-400">7.24 &times; 10<sup>-71</sup></td>
-                    <td className="py-3 px-3">0.0500</td>
-                    <td className="py-3 px-3">0.50 (Max)</td>
-                    <td className="py-3 px-3">&infin;</td>
+                    <td className="py-3 px-3">31 / 44 clusters</td>
+                    <td className="py-3 px-3 font-bold text-emerald-400">+0.3182</td>
+                    <td className="py-3 px-3 font-bold text-emerald-400">1.30 &times; 10<sup>-4</sup></td>
+                    <td className="py-3 px-3">0.0125</td>
+                    <td className="py-3 px-3 text-slate-400">[84.1%, 100.0%] vs [47.7%, 75.0%]</td>
                     <td className="py-3 px-3 font-bold text-emerald-400">Reject Null (p &lt; &alpha;)</td>
                   </tr>
                   <tr className="hover:bg-white/[0.02]">
-                    <td className="py-3 px-3 font-semibold text-white">B4 (SentinelMesh) vs B2 (Static Regex / Phrase)</td>
-                    <td className="py-3 px-3">b=672, c=0 (n=672)</td>
-                    <td className="py-3 px-3 font-bold text-emerald-400">1.02 &times; 10<sup>-202</sup></td>
-                    <td className="py-3 px-3">0.0167</td>
-                    <td className="py-3 px-3">0.50 (Max)</td>
-                    <td className="py-3 px-3">&infin;</td>
+                    <td className="py-3 px-3 font-semibold text-white">B4 (SentinelMesh) vs B2 (Static Regex, Base)</td>
+                    <td className="py-3 px-3">41 / 44 clusters</td>
+                    <td className="py-3 px-3 font-bold text-emerald-400">+0.9318</td>
+                    <td className="py-3 px-3 font-bold text-emerald-400">1.00 &times; 10<sup>-5</sup></td>
+                    <td className="py-3 px-3">0.0100</td>
+                    <td className="py-3 px-3 text-slate-400">[84.1%, 100.0%] vs [0.0%, 0.0%]</td>
                     <td className="py-3 px-3 font-bold text-emerald-400">Reject Null (p &lt; &alpha;)</td>
                   </tr>
                   <tr className="hover:bg-white/[0.02]">
                     <td className="py-3 px-3 font-semibold text-white">B4 (SentinelMesh) vs B3 (Taint Disabled Ablation)</td>
-                    <td className="py-3 px-3">b=659, c=0 (n=659)</td>
-                    <td className="py-3 px-3 font-bold text-emerald-400">8.36 &times; 10<sup>-199</sup></td>
-                    <td className="py-3 px-3">0.0250</td>
-                    <td className="py-3 px-3">0.50 (Max)</td>
-                    <td className="py-3 px-3">&infin;</td>
+                    <td className="py-3 px-3">40 / 44 clusters</td>
+                    <td className="py-3 px-3 font-bold text-emerald-400">+0.9091</td>
+                    <td className="py-3 px-3 font-bold text-emerald-400">1.00 &times; 10<sup>-5</sup></td>
+                    <td className="py-3 px-3">0.0100</td>
+                    <td className="py-3 px-3 text-slate-400">[84.1%, 100.0%] vs [0.0%, 6.8%]</td>
                     <td className="py-3 px-3 font-bold text-emerald-400">Reject Null (p &lt; &alpha;)</td>
+                  </tr>
+                  <tr className="hover:bg-white/[0.02]">
+                    <td className="py-3 px-3 font-semibold text-white">B4 (SentinelMesh) vs HF DeBERTa-v3 Classifier</td>
+                    <td className="py-3 px-3">14 / 44 clusters</td>
+                    <td className="py-3 px-3 text-slate-300">+0.0307</td>
+                    <td className="py-3 px-3 text-slate-300">0.5118</td>
+                    <td className="py-3 px-3">0.0500</td>
+                    <td className="py-3 px-3 text-slate-400">[84.1%, 100.0%] vs [86.2%, 93.7%]</td>
+                    <td className="py-3 px-3 font-bold text-slate-400">Fail to Reject (Comparable)</td>
                   </tr>
                   <tr className="hover:bg-white/[0.02] opacity-60">
                     <td className="py-3 px-3 font-semibold text-slate-400">B5: LLM Safety Judge</td>

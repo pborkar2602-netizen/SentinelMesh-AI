@@ -624,7 +624,7 @@ export function App() {
         setVerdict({
           show: true,
           ok: false,
-          text: 'LEAKED: 45 records exposed to external recipient (Monitor mode)',
+          text: 'LEAKED: 3 records exposed to external recipient (Monitor mode · derived from demo engineering roster)',
         });
       });
     }
@@ -678,7 +678,7 @@ export function App() {
         setVerdict({
           show: true,
           ok: false,
-          text: 'LEAKED: 45 records exposed to external recipient (Monitor mode)',
+          text: 'LEAKED: 3 records exposed to external recipient (Monitor mode · derived from demo engineering roster)',
         });
       }
     },

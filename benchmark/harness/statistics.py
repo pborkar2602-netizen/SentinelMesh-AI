@@ -169,3 +169,46 @@ def holm_bonferroni_correction(
         }
 
     return results
+
+
+def cluster_paired_permutation_test(
+    cluster_scores_a: Dict[str, float],
+    cluster_scores_b: Dict[str, float],
+    n_permutations: int = 100000,
+    seed: int = 42,
+) -> Dict[str, Any]:
+    """
+    Cluster-level paired two-sided sign-flip permutation test over attacker clusters.
+    Under H0, each cluster difference d_k = a_k - b_k is symmetric around 0 (P(d_k) = P(-d_k)).
+    Replaces un-clustered per-case McNemar tests to account for intra-cluster correlation.
+    """
+    import numpy as np
+
+    clusters = sorted(set(cluster_scores_a.keys()).union(cluster_scores_b.keys()))
+    diffs = np.array([cluster_scores_a.get(c, 0.0) - cluster_scores_b.get(c, 0.0) for c in clusters], dtype=np.float64)
+    non_zero = diffs[diffs != 0.0]
+    n_nz = len(non_zero)
+    if n_nz == 0:
+        return {
+            "n_clusters": len(clusters),
+            "n_discordant_clusters": 0,
+            "mean_diff": 0.0,
+            "p_value": 1.0,
+            "test_type": "paired_cluster_sign_flip_permutation"
+        }
+
+    obs_stat = abs(float(np.mean(diffs)))
+    rng = np.random.default_rng(seed)
+    flips = rng.choice([-1.0, 1.0], size=(n_permutations, len(diffs)))
+    perm_stats = np.abs(np.mean(flips * diffs, axis=1))
+    p_val = float(np.mean(perm_stats >= obs_stat - 1e-12))
+    p_val = max(p_val, 1.0 / n_permutations)
+
+    return {
+        "n_clusters": len(clusters),
+        "n_discordant_clusters": n_nz,
+        "mean_diff": round(float(np.mean(diffs)), 4),
+        "p_value": p_val,
+        "test_type": "paired_cluster_sign_flip_permutation"
+    }
+

@@ -68,22 +68,34 @@ class GatewayClient:
                 try:
                     with httpx.Client(timeout=2.0) as client:
                         response = client.post(self.gateway_url, json=payload)
-                except (httpx.ConnectError, Exception):
-                    # Fallback to direct in-process client if background HTTP server is not active
-                    from backend.app.db.database import init_db
-                    init_db()
-                    from backend.tests.conftest import DirectClient
-                    self.http_client = DirectClient()
-                    response = self.http_client.post("/api/v1/gateway/execute", json=payload)
-            response.raise_for_status()
+                except httpx.ConnectError as e:
+                    # In unit tests without running server or explicit client: fallback to direct in-process client
+                    if not os.getenv("SENTINEL_GATEWAY_URL"):
+                        from backend.app.db.database import init_db
+                        init_db()
+                        from backend.tests.conftest import DirectClient
+                        self.http_client = DirectClient()
+                        response = self.http_client.post("/api/v1/gateway/execute", json=payload)
+                    else:
+                        raise ToolBlockedError(f"Gateway Unreachable (ConnectError: {e})", trace_id) from e
+
+            # Check HTTP status codes for fail-closed security response
+            if response.status_code == 429:
+                raise ToolBlockedError(f"Gateway Rate Limited (HTTP 429): fail-closed", trace_id)
+            elif response.status_code >= 500:
+                raise ToolBlockedError(f"Gateway Internal Error (HTTP {response.status_code}): fail-closed", trace_id)
+            elif response.status_code != 200:
+                raise ToolBlockedError(f"Gateway Error (HTTP {response.status_code}): fail-closed", trace_id)
+
             data = response.json()
-        except httpx.ConnectError:
-            raise ConnectionError(
-                f"Could not connect to SentinelMesh Security Gateway at {self.gateway_url}. "
-                "Ensure the gateway is running (e.g. 'docker compose up' or 'python -m uvicorn backend.app.main:app')."
-            )
+        except ToolBlockedError:
+            raise
+        except (httpx.TimeoutException, TimeoutError) as e:
+            raise ToolBlockedError(f"Gateway Timeout: fail-closed", trace_id) from e
+        except httpx.ConnectError as e:
+            raise ToolBlockedError(f"Gateway Unreachable (ConnectError: {e}): fail-closed", trace_id) from e
         except Exception as e:
-            raise RuntimeError(f"Error communicating with SentinelMesh Gateway: {e}")
+            raise ToolBlockedError(f"Gateway Communication Error ({type(e).__name__}: {e}): fail-closed", trace_id) from e
 
         decision = data.get("decision", "allow")
         reason = data.get("reason", "")

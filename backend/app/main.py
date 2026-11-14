@@ -36,6 +36,19 @@ async def lifespan(app: FastAPI):
     token_secret = os.getenv("SENTINEL_TOKEN_SECRET")
 
     if not demo_mode:
+        benchmark_mode = (
+            os.getenv("SENTINEL_BENCHMARK_MODE", "").lower() in ("true", "1", "yes")
+            or os.getenv("BENCHMARK_MODE", "").lower() in ("true", "1", "yes")
+        )
+        if benchmark_mode:
+            err_msg = (
+                "FATAL: Security Boundary Violation. SENTINEL_BENCHMARK_MODE cannot be enabled "
+                "when DEMO_MODE is false (production mode). Rate limit bypasses and benchmark modes "
+                "are strictly forbidden in production."
+            )
+            logger.error(err_msg)
+            raise RuntimeError(err_msg)
+
         if not vault_key or not jwt_secret or not token_secret:
             err_msg = (
                 "FATAL: SentinelMesh AI refused to start. Production mode requires "

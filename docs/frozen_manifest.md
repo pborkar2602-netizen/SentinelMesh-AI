@@ -229,3 +229,40 @@ print('ALL 21 FROZEN V2 HASHES VERIFIED INTACT.')
 | `scripts/evaluate_pii_comparison.py` | `e89315d6d3f871761ecc228393ef10a14ef2bf0596f785c2b7355154213e47e9` | PII regex vs phonenumbers comparison |
 | `tests/test_official_mcp_client.py` | `ea1c3e31cd047f0592f6c07c187bbe263ea14f71ada72b883fb18b9982bb6b65` | Official MCP Python SDK integration test |
 
+
+
+---
+
+## F. `v3.3-frozen` Manifest (`v3-science` Branch)
+
+**Freeze Tag**: `v3.3-frozen`  
+**Timestamp**: 2026-11-15T02:45:00Z  
+**Commitment**: Committed following v3.3 correction round:
+1. **Cluster Sign-Flip Permutation Tests**: Replaced per-case McNemar p-values with exact cluster-level paired sign-flip permutation tests (100,000 resamples) and cluster bootstrap 95% CIs over the 44 attacker case clusters in InjecAgent.
+2. **Incremental Hash Chain Verification**: Optimized audit chain verification from $O(N)$ full table scans down to incremental tail link checks ($O(1)$) with cached checkpoint state, achieving a 1,562x steady-state verification speedup (0.105ms vs 164.0ms).
+3. **Fail-Closed Gateway Enforcement**: Hardened `GatewayClient`, MCP proxy, and demo agents to strictly raise `ToolBlockedError` / fail closed on HTTP 429, 5xx, timeouts, and network connection errors.
+4. **Benchmark Mode Protection Boundary**: Enforced server startup check refusing to launch `SENTINEL_BENCHMARK_MODE=True` unless `DEMO_MODE=True`.
+5. **Freeze Order & Provenance Labeling**: Verified and documented Git log commit order proving AgentDojo adapter and split were committed in `f72f046` prior to any test executions (`ba5bdf8`). Relabeled pre-freeze exploratory evaluations.
+6. **Exploratory v3.3 Policy Rule**: Designed and evaluated proposed rule `"tainted session + destructive/mutating call to external service -> require_approval"` strictly on `adapter-dev` ($N=306$) and dev/held-out scenarios ($N=60$), without rerunning test partitions.
+7. **Empirical Records Derivation**: Dynamically derived Monitor-mode exposed record counts from scenario roster data (3 employee records in demo engineering roster; 45 simulated across enterprise cohort).
+
+### Cryptographic Hashes of Changed Files Since `v3.2-frozen`:
+
+| File Path | SHA-256 Digest (`v3.3-frozen`) | Notes |
+|---|---|---|
+| `backend/app/db/database.py` | `cb32a853170040ceae607ed0125407b3bbe3d04c422b28023febd91fc2bf91f5` | Incremental HMAC chain verification with checkpoint cache |
+| `backend/app/main.py` | `5a365921005db1db71544b6b8db69e0ef9b0c47c7a1591ea49a2efbb421c91b8` | Startup security boundary check for BENCHMARK_MODE |
+| `backend/app/mcp/proxy.py` | `387b8ddfc7aa719f614c46d9caf55133ca073397c2ff4acb344ee05a5a0857b0` | Fail-closed tool call execution on gateway errors |
+| `demo_agents/gateway_client.py` | `ef6c540046d1c5bcf56ba78ac3f035419e3bf9e26274508ee72241afc97173e4` | Fail-closed HTTP error handling raising ToolBlockedError |
+| `benchmark/harness/statistics.py` | `7982d030090b59ab8a96cb9fcdf73369430ad5e571e393427da62f981887476e` | Cluster paired permutation test (100k resamples) |
+| `scripts/run_injecagent_rigorous_audit.py` | `a7b5ced4743ce0545689609f1f21379038442006d098704d4556ebda3faf6882` | Dual setting runner with cluster permutation tests |
+| `scripts/evaluate_v33_proposed_rule.py` | `b7108d836027585be2825b98f0e674b848063fe4aa2a4df096d25d020ae9e1d8` | Exploratory v3.3 rule evaluator on adapter-dev |
+| `scripts/profile_gateway_request.py` | `8afc8f953ac4036c7c1ca67b3226c92e3385d2ec40bc89691127984431f3d9af` | cProfile single gateway request profiler |
+| `scripts/plot_latency_profile.py` | `ae084397ddd54e4ff4bfd07c9a49e08380612afeb256667094f05218f2a0a92e` | 4,000-request latency progression bucket analyzer |
+| `scripts/test_incremental_verification.py` | `2fca630f45e8fdcc3e3e2154a5e2571a266673b72c52e3a58b62da09fdcb1f52` | Incremental vs full chain scan benchmark |
+| `tests/test_fail_closed.py` | `005b54403033a906aa31da927f1d8c73f926175fb38929f4e1f10098e7c77335` | 6 fail-closed unit tests covering 429, 5xx, timeouts |
+| `benchmark/reports/v3_injecagent_both_settings.json` | `dd08a830c9ab10838943288852454b508cbc876b719881fdd6bac31ef9ca4b79` | InjecAgent Base & Enhanced empirical results |
+| `benchmark/reports/v3_3_proposed_rule_exploratory.json` | `07f45fee9434e6272fc4b8263450e5366a6ec2d094dc143cabdb4b100fe6d9b1` | Proposed v3.3 rule evaluation on adapter-dev |
+| `frontend/src/App.tsx` | `43f4294ecd9d0ec54b27f31b3801b8b2bae1ed38d67a08e2495c6c33116bd0ba` | Derived scenario record counts |
+| `frontend/src/tour/steps.ts` | `ce27ef305ec894dad385f3ddd52cf1e5a157fbbcfa85d74ccf99e7034c85117e` | Updated tour text clarifying scenario record source |
+| `frontend/src/components/EvidenceSection.tsx` | `63e3e0235c30b402169128250e0b2abdaffef0125def03acd16262250df8ba89` | Cluster permutation table & freeze labels |
