@@ -49,6 +49,11 @@ def main():
         sys.executable, "-m", "pytest", "backend/tests/test_chaos.py", "-q"
     ])
 
+    # 3b. MCP Proxy test suite
+    run_step("Model Context Protocol (MCP) Gateway Proxy Suite", [
+        sys.executable, "-m", "pytest", "backend/tests/test_mcp_proxy.py", "-q"
+    ])
+
     # 4. Text baseline evaluation
     run_step("Text Baseline Evaluation (deepset prompt-injections, Tensor Trust)", [
         sys.executable, "scripts/evaluate_text_baseline.py"
@@ -72,6 +77,11 @@ def main():
     # 8. Load test
     run_step("Perimeter Gateway Load Testing (Concurrency 1, 5, 20, 50)", [
         sys.executable, "scripts/load_test.py"
+    ])
+
+    # 9. AST Semantic Mutation testing
+    run_step("AST Semantic Mutation Testing (47 mutants across security layers)", [
+        sys.executable, "scripts/run_mutation_tests.py"
     ])
 
     total_time = time.time() - start_total

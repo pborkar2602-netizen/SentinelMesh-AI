@@ -17,6 +17,7 @@ from backend.app.api.privacy import router as privacy_router
 from backend.app.api.auth import router as auth_router
 from backend.app.api.approvals import router as approvals_router
 from backend.app.api.stats import router as stats_router
+from backend.app.mcp.proxy import router as mcp_router
 from backend.app.api.websocket import ws_manager
 from backend.app.core.policy_engine import PolicyEngine
 
@@ -85,6 +86,8 @@ app.include_router(privacy_router, prefix=settings.API_V1_STR)
 app.include_router(auth_router, prefix=settings.API_V1_STR)
 app.include_router(approvals_router, prefix=settings.API_V1_STR)
 app.include_router(stats_router, prefix=settings.API_V1_STR)
+app.include_router(mcp_router, prefix=settings.API_V1_STR)
+app.include_router(mcp_router, prefix="")
 
 @app.websocket("/ws/events")
 async def websocket_event_feed(websocket: WebSocket):

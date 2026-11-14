@@ -15,6 +15,9 @@ test-fuzz:
 test-chaos:
 	python -m pytest backend/tests/test_chaos.py -q
 
+test-mcp:
+	python -m pytest backend/tests/test_mcp_proxy.py -q
+
 lint:
 	python -m bandit -r backend/app -ll
 

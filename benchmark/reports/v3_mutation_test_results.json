@@ -1,11 +1,11 @@
 {
-  "timestamp": "2026-11-14T09:50:45Z",
+  "timestamp": "2026-11-14T10:07:20Z",
   "total_mutants": 47,
   "killed": 43,
   "survived": 4,
   "mutation_score_pct": 91.49,
   "target_met_85_pct": true,
-  "elapsed_seconds": 5.1,
+  "elapsed_seconds": 3.96,
   "mutants": [
     {
       "id": 1,
