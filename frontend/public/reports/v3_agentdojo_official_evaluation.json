@@ -1,0 +1,85 @@
+{
+  "benchmark": "AgentDojo (Official ETH Zurich Suite)",
+  "license": "MIT",
+  "reference": "Debenedetti et al., NeurIPS 2024",
+  "task_accounting": {
+    "total_user_tasks": 97,
+    "total_injection_tasks": 27,
+    "total_combinations": 629,
+    "suites": {
+      "workspace": {
+        "user_tasks": 40,
+        "injection_tasks": 6,
+        "combinations": 240
+      },
+      "travel": {
+        "user_tasks": 20,
+        "injection_tasks": 7,
+        "combinations": 140
+      },
+      "banking": {
+        "user_tasks": 16,
+        "injection_tasks": 9,
+        "combinations": 144
+      },
+      "slack": {
+        "user_tasks": 21,
+        "injection_tasks": 5,
+        "combinations": 105
+      }
+    }
+  },
+  "stratified_sample_size": 40,
+  "results": [
+    {
+      "system": "B0: None (No Defense)",
+      "blocked": 0,
+      "total": 40,
+      "prevention_rate_pct": 0.0,
+      "wilson_ci_95": [
+        0.0,
+        8.76
+      ]
+    },
+    {
+      "system": "B1: Domain Allowlist Only",
+      "blocked": 37,
+      "total": 40,
+      "prevention_rate_pct": 92.5,
+      "wilson_ci_95": [
+        80.14,
+        97.42
+      ]
+    },
+    {
+      "system": "B2: Static Regex / Phrase Matching",
+      "blocked": 0,
+      "total": 40,
+      "prevention_rate_pct": 0.0,
+      "wilson_ci_95": [
+        0.0,
+        8.76
+      ]
+    },
+    {
+      "system": "B3: SentinelMesh (Taint Disabled Ablation)",
+      "blocked": 27,
+      "total": 40,
+      "prevention_rate_pct": 67.5,
+      "wilson_ci_95": [
+        52.02,
+        79.92
+      ]
+    },
+    {
+      "system": "B4: Full SentinelMesh Gateway",
+      "blocked": 37,
+      "total": 40,
+      "prevention_rate_pct": 92.5,
+      "wilson_ci_95": [
+        80.14,
+        97.42
+      ]
+    }
+  ]
+}

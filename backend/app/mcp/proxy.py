@@ -46,8 +46,28 @@ class MCPGatewayProxy:
         params = raw_request.get("params") or {}
         active_sess = session_id or params.get("session_id") or self.default_session_id
 
+        # 0. initialize handler (MCP protocol negotiation)
+        if method == "initialize":
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {
+                        "tools": {"listChanged": False},
+                        "logging": {},
+                    },
+                    "serverInfo": {
+                        "name": "SentinelMesh AI Gateway MCP Proxy",
+                        "version": "0.1.0",
+                    }
+                }
+            }
+        elif method == "notifications/initialized":
+            return None
+
         # 1. tools/list handler
-        if method == "tools/list":
+        elif method == "tools/list":
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,

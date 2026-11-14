@@ -26,7 +26,7 @@ export const TOUR_STEPS: TourStep[] = [
     title: 'Multi-Signal Risk Scoring & Agent Mesh',
     description: 'Dynamic risk scoring synthesizing 6 independent defense signals: syntactic rules, privacy entity vault, provenance taint, behavioral baseline, and policy intent.',
     badge: 'Step 3 / 9 · Risk & Mesh',
-    position: 'bottom',
+    position: 'left',
   },
   {
     targetId: 'mode-seg',
@@ -40,7 +40,7 @@ export const TOUR_STEPS: TourStep[] = [
     title: 'Risk Waterfall & Attribution Evidence',
     description: 'Granular breakdown of why risk scored 100/100: untrusted document source (+35), unapproved sensitive database columns (+30), and unknown external email recipient (+35).',
     badge: 'Step 5 / 9 · Waterfall',
-    position: 'top',
+    position: 'bottom',
   },
   {
     targetId: 'sws',
@@ -54,7 +54,7 @@ export const TOUR_STEPS: TourStep[] = [
     title: 'Policy Lab: Defense Layer Ablation',
     description: 'Toggle individual defense layers off to observe attack penetration and verify the necessity of each barrier under identical adversary payloads.',
     badge: 'Step 7 / 9 · Lab (All Off)',
-    position: 'top',
+    position: 'bottom',
   },
   {
     targetId: 'ch',
@@ -68,6 +68,6 @@ export const TOUR_STEPS: TourStep[] = [
     title: 'Scientific Evidence Dashboard & Defense Radar',
     description: 'Empirical benchmark results across InjecAgent, AgentDojo, and ai4privacy with 5-axis defense layer radar analysis. Rigorously documents statistical sample limits (N=1 anecdotal sample on AgentDojo, phone precision trade-offs).',
     badge: 'Step 9 / 9 · Evidence & Limits',
-    position: 'top',
+    position: 'bottom',
   },
 ];

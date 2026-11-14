@@ -139,6 +139,8 @@ class BenchmarkRunner:
                 res_data = res.json()
 
         latency_ms = round((t_end - t_start) / 1_000_000.0, 3)
+        if not isinstance(res_data, dict) or "decision" not in res_data:
+            raise RuntimeError(f"Gateway execution failed with status or payload: {res_data}")
         return res_data, latency_ms
 
     def replay_scenario(self, scenario: BenchmarkScenario) -> ScenarioExecutionResult:

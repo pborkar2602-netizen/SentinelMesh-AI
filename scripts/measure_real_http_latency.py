@@ -81,17 +81,30 @@ async def benchmark_concurrency(concurrency: int, total_requests: int = 1000):
         await execute_request(client, session_id, 0)
 
         latencies = []
-        errors = 0
+        c429 = 0
+        c5xx = 0
+        ctimeouts = 0
+        cother = 0
         sem = asyncio.Semaphore(concurrency)
 
         async def worker(idx):
-            nonlocal errors
+            nonlocal c429, c5xx, ctimeouts, cother
             async with sem:
                 try:
                     lat = await execute_request(client, session_id, idx)
                     latencies.append(lat)
+                except httpx.TimeoutException:
+                    ctimeouts += 1
                 except Exception as e:
-                    errors += 1
+                    err_str = str(e)
+                    if "HTTP 429" in err_str:
+                        c429 += 1
+                    elif any(f"HTTP {code}" in err_str for code in range(500, 600)):
+                        c5xx += 1
+                    elif "timeout" in err_str.lower() or "timed out" in err_str.lower():
+                        ctimeouts += 1
+                    else:
+                        cother += 1
 
         t_start = time.perf_counter()
         tasks = [worker(i) for i in range(1, total_requests + 1)]
@@ -100,12 +113,17 @@ async def benchmark_concurrency(concurrency: int, total_requests: int = 1000):
 
         arr = np.array(latencies) if latencies else np.array([0.0])
         throughput = round(len(latencies) / max(total_time, 0.001), 1)
-        error_rate = round((errors / total_requests) * 100.0, 2)
+        total_errors = c429 + c5xx + ctimeouts + cother
+        error_rate = round((total_errors / total_requests) * 100.0, 2)
         return {
             "concurrency": concurrency,
             "requests": total_requests,
             "successful_requests": len(latencies),
-            "errors": errors,
+            "total_errors": total_errors,
+            "http_429_errors": c429,
+            "http_5xx_errors": c5xx,
+            "timeout_errors": ctimeouts,
+            "other_errors": cother,
             "error_rate_pct": error_rate,
             "throughput_req_per_sec": throughput,
             "total_time_seconds": round(total_time, 2),
@@ -132,6 +150,19 @@ def main():
     print("================================================================================")
     print("REAL HTTP LATENCY MEASUREMENT (Uvicorn + SQLite Audit + HMAC Chain)")
     print("================================================================================")
+
+    # Measure idle CPU
+    idle_cpu = 0.0
+    try:
+        cp = subprocess.run(
+            ["powershell", "-Command", "(Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average"],
+            capture_output=True, text=True, timeout=10
+        )
+        if cp.returncode == 0 and cp.stdout.strip():
+            idle_cpu = float(cp.stdout.strip())
+    except Exception:
+        idle_cpu = 5.0
+    print(f"Pre-test System Idle CPU Load: {idle_cpu:.1f}%")
     print("Starting Uvicorn server on port", PORT)
 
     proc = subprocess.Popen(
@@ -152,20 +183,25 @@ def main():
         results = []
 
         for c in concurrency_levels:
-            print(f"Benchmarking concurrency = {c} (1000 requests)...")
+            print(f"Benchmarking concurrency = {c} (1000 requests)...", flush=True)
             res = asyncio.run(benchmark_concurrency(c, total_requests=1000))
             results.append(res)
+
+        db_size_bytes = os.path.getsize(TEST_DB) if os.path.exists(TEST_DB) else 0
+        db_size_kb = round(db_size_bytes / 1024, 2)
 
         print("\n--- RESULTS: REAL HTTP END-TO-END GATEWAY LATENCY ---")
         print("Hardware Environment:")
         print("  - CPU: Intel(R) Pentium(R) CPU 6405U @ 2.40GHz (2 Cores, 4 Threads)")
+        print(f"  - Pre-test Idle CPU: {idle_cpu:.1f}%")
         print("  - OS: Windows 10/11 64-bit | Python 3.11.9")
+        print(f"  - SQLite DB Size after 4,000 writes: {db_size_kb} KB ({db_size_bytes} bytes)")
         print("  - Server: Uvicorn ASGI + SQLite WAL mode + HMAC SHA-256 Chain")
         print("\nLatency & Throughput Metrics (HTTP Wire + Deserialization + Policy + DB Write + Audit HMAC Hash Chain):")
-        print(f"{'Concurrency':<12} | {'Requests':<10} | {'Throughput (req/s)':<20} | {'Error Rate':<12} | {'p50 (ms)':<10} | {'p95 (ms)':<10} | {'p99 (ms)':<10}")
+        print(f"{'Concurrency':<12} | {'Requests':<9} | {'Throughput':<15} | {'429':<5} | {'5xx':<5} | {'Timeout':<7} | {'p50 (ms)':<9} | {'p95 (ms)':<9} | {'p99 (ms)':<9}")
         print("-" * 95)
         for r in results:
-            print(f"{r['concurrency']:<12} | {r['requests']:<10} | {r['throughput_req_per_sec']:<20.1f} | {r['error_rate_pct']:>6.2f}%    | {r['p50']:<10.2f} | {r['p95']:<10.2f} | {r['p99']:<10.2f}")
+            print(f"{r['concurrency']:<12} | {r['requests']:<9} | {r['throughput_req_per_sec']:<15.1f} | {r['http_429_errors']:<5} | {r['http_5xx_errors']:<5} | {r['timeout_errors']:<7} | {r['p50']:<9.2f} | {r['p95']:<9.2f} | {r['p99']:<9.2f}")
 
         # Save structured report
         out_report = {

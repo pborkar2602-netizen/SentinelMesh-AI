@@ -98,10 +98,13 @@ class DirectClient:
         url = urllib.parse.urlparse(path)
         clean_path = url.path
         if clean_path == "/api/v1/gateway/execute":
+            from fastapi import HTTPException
             try:
                 req = ToolCallRequest(**(json or {}))
                 res = execute_tool_call(req)
                 return ApiResponse(200, res.model_dump())
+            except HTTPException as he:
+                return ApiResponse(he.status_code, {"detail": he.detail})
             except Exception as e:
                 return ApiResponse(422, {"detail": str(e)})
         elif clean_path == "/api/v1/gateway/tool-return":

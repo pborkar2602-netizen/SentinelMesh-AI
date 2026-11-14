@@ -42,7 +42,8 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({ isOpen, onClose }) => 
         parent = parent.parentElement;
       }
       if (step.targetId !== 'hd') {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+        const scrollBlock = step.position === 'top' ? 'end' : step.position === 'bottom' ? 'start' : 'center';
+        el.scrollIntoView({ behavior: 'smooth', block: scrollBlock, inline: 'nearest' });
       }
     }
 
@@ -155,8 +156,9 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({ isOpen, onClose }) => 
     }
 
     // Absolute viewport clamp: Never allow card to cross top or bottom viewport limits
-    const maxTop = Math.max(PADDING, window.innerHeight - measuredHeight - PADDING);
-    const minTop = PADDING;
+    // For non-hero elements, keep at least 72px from top edge to avoid navigation bar collision
+    const minTop = step.targetId === 'hd' ? PADDING : 72;
+    const maxTop = Math.max(minTop, window.innerHeight - measuredHeight - PADDING);
     const clampedTop = Math.max(minTop, Math.min(maxTop, computedTop));
 
     const maxLeft = Math.max(PADDING, window.innerWidth - CARD_WIDTH - PADDING);

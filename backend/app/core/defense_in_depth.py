@@ -68,6 +68,10 @@ class RateLimiter:
             return cls._instance
 
     def check_rate_limit(self, identifier: str) -> None:
+        if os.environ.get("SENTINEL_BENCHMARK_MODE", "").lower() in ("true", "1", "yes"):
+            return
+        if os.environ.get("SENTINEL_DISABLE_RATE_LIMIT", "").lower() in ("true", "1", "yes"):
+            return
         if identifier not in self.buckets:
             self.buckets[identifier] = TokenBucket(RATE_LIMIT_BURST, RATE_LIMIT_REFILL_PER_SEC)
         if not self.buckets[identifier].consume(1.0):

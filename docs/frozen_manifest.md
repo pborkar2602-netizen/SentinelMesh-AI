@@ -186,3 +186,46 @@ print('ALL 21 FROZEN V2 HASHES VERIFIED INTACT.')
 | `scripts/run_injecagent_enhanced.py` | `0b82a8afd10118c4c3eda467edc11e0a63cdd8ce6a5c7777eba091f6b99bff64` |
 | `scripts/split_and_stats_injecagent.py` | `1c0fd5e839eb2570930d87856ebd803264e1190f433d1be2cd27b04784627340` |
 | `scripts/evaluate_pii_side_by_side.py` | `8dcb1cb98b27118fc5a4da5d762c49dd4c7aec489035cf935bed8d5b2b6dd20e` |
+
+---
+
+## E. `v3.2-frozen` Manifest (`v3-science` Branch)
+
+**Freeze Tag**: `v3.2-frozen`  
+**Timestamp**: 2026-11-15T00:15:00Z  
+**Commitment**: Committed following thorough audit corrections:
+1. Reversion of phone detector to regex following empirical proof of higher recall on conversational text (95.7% vs 63.5%).
+2. Formalization of in-process benchmark mode bypass in token-bucket rate limiter to eliminate synthetic 429 artifacts.
+3. Addition of official MCP protocol initialize handshake in stdio server and proxy.
+4. Evaluation of real AgentDojo suites ($N=40$) and InjecAgent across both Base and Enhanced settings ($N=748$, 44 clusters).
+5. Comprehensive end-to-end HTTP load testing with Uvicorn, SQLite WAL logging, and HMAC SHA-256 chain verification.
+6. Frontend interactive product tour clipping fixes with dynamic positioning and scroll boundaries.
+
+### Cryptographic Hashes of Changed Files Since `rules-v2-frozen`:
+
+| File Path | SHA-256 Digest (`v3.2-frozen`) | Notes |
+|---|---|---|
+| `backend/app/api/approvals.py` | `76dec3d5bac4744132753f90f3fb88ee28e7a608b3a587c9a2771606c84872a3` | Approvals API route handler |
+| `backend/app/api/events.py` | `a4fb99ac2ba80f60e0d67d9d32ce94412d1ab94d2ee5022678a86652716dae53` | Audit event querying and stream |
+| `backend/app/api/gateway.py` | `6d214b16f461fdf4df59b7cdc5b38835aad70fa78eb689eb19d80976e4ae6394` | Core execute route with rate limiter |
+| `backend/app/api/incidents.py` | `adccdd5049ddb065a50615e00f09322bca4935d3dad33cb3b30ede96c35716ba` | Incident timeline serialization |
+| `backend/app/api/policies.py` | `78127a3d8012d5d6fd8771afffc045541a0d246cda18a593f25f20b1d5c957af` | Policy rule management endpoints |
+| `backend/app/api/stats.py` | `83064fd6120fed1aef225aa3c18f7a2b8d4b20ac10485df00a0e716fb670cd53` | Real-time gateway telemetry |
+| `backend/app/config.py` | `d329bbb711c56a1320ac1aa53bfd2f4293c910a1187724c9efdc1b2d2a36e6e3` | Rate limit environment defaults |
+| `backend/app/core/defense_in_depth.py` | `b67279a55051ce55db0daab0cfd5fbebf02647a53526574350d072195f07b6e2` | Token bucket limiter with benchmark mode bypass |
+| `backend/app/db/database.py` | `2beb64b516c01557dd2767a1cc0ea2560af7c37a936f4e29fbeead769f8358ab` | SQLite WAL connection pool & schema |
+| `backend/app/main.py` | `583ff08390bd256378d1bf443c99159de7a480e208e2c88edb74cdc2ffbf1dce` | FastAPI entrypoint and lifespan |
+| `backend/app/mcp/proxy.py` | `069ec46ee9cb5d37e6b7ad1f6345461c64897817e57f422b6b344660dd71d3c8` | Official MCP protocol handshake support |
+| `backend/app/privacy/detectors.py` | `b25477ee06f9aa42784ff916cd4cbb9f5bf19e0f1a2bac76ba67bb12b47e4329` | Reverted phone detector to empirical regex |
+| `backend/app/privacy/vault.py` | `9e0fa144d9f3199016f0fbfdb6fe037cdeb0236dcaf8274b4ce7fec54b266391` | Pseudonymization & reversible token mapping |
+| `backend/app/schemas/gateway.py` | `91421b5d03445abbd82f62f4c843959ade4c42323360323bc4fcc13862e34768` | Request/response Pydantic models |
+| `benchmark/adapters/agentdojo_adapter.py` | `05d41241d40b6599e0151923c57a40b63291a826d29f0827399198f86c184921` | AgentDojo task-suite benchmark adapter |
+| `benchmark/adapters/injecagent_adapter.py` | `df3de6c53ebeee4156a01438ea4501c4923a66d4b0abaea598799fd635b8cb31` | InjecAgent dual-setting benchmark adapter |
+| `benchmark/harness/baselines.py` | `40cf434a0a30197146c076fc18ef58ae12c51c06903c9fd9f9e8056d463938ce` | Standard baselines B0, B1, B2, B3, B4 |
+| `benchmark/harness/statistics.py` | `08252ae410df57ea30c6264540961d4fa9103bde8a51bbb85fea089946fa0867` | McNemar, Wilson score, Holm correction |
+| `scripts/run_injecagent_rigorous_audit.py` | `aa81275cc2bd467118e1cd78bf651e0bd0a322dc8f1f25636e85ae6220839783` | InjecAgent both settings runner |
+| `scripts/measure_real_http_latency.py` | `d0188defde444aa9a6a6718f600d9d91d2f2ec4a06642ceec7ef1ba690cfea91` | Real HTTP Uvicorn 4k load tester |
+| `scripts/run_mutation_tests.py` | `7c58197edd3c7f680c5015eed091764b51a6aab7f3d7f4eb5228647847c5c177` | 47-mutant AST coverage verification |
+| `scripts/evaluate_pii_comparison.py` | `e89315d6d3f871761ecc228393ef10a14ef2bf0596f785c2b7355154213e47e9` | PII regex vs phonenumbers comparison |
+| `tests/test_official_mcp_client.py` | `ea1c3e31cd047f0592f6c07c187bbe263ea14f71ada72b883fb18b9982bb6b65` | Official MCP Python SDK integration test |
+

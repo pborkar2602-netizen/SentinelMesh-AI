@@ -1,0 +1,182 @@
+{
+  "Original Test Partition": {
+    "old_regex": {
+      "entities": {
+        "EMAIL": {
+          "precision": 95.97,
+          "recall": 95.69,
+          "f1": 95.83,
+          "TP": 333,
+          "FP": 14,
+          "FN": 15
+        },
+        "PHONE": {
+          "precision": 48.61,
+          "recall": 95.74,
+          "f1": 64.48,
+          "TP": 315,
+          "FP": 333,
+          "FN": 14
+        },
+        "NATIONAL_ID": {
+          "precision": 40.0,
+          "recall": 3.08,
+          "f1": 5.71,
+          "TP": 8,
+          "FP": 12,
+          "FN": 252
+        },
+        "CREDIT_CARD": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "TP": 0,
+          "FP": 7,
+          "FN": 0
+        }
+      },
+      "type_agnostic": {
+        "precision": 87.28,
+        "recall": 95.2,
+        "f1": 91.07,
+        "TP": 892,
+        "FP": 130,
+        "FN": 45
+      }
+    },
+    "new_phonenumbers": {
+      "entities": {
+        "EMAIL": {
+          "precision": 95.97,
+          "recall": 95.69,
+          "f1": 95.83,
+          "TP": 333,
+          "FP": 14,
+          "FN": 15
+        },
+        "PHONE": {
+          "precision": 30.6,
+          "recall": 63.53,
+          "f1": 41.3,
+          "TP": 209,
+          "FP": 474,
+          "FN": 120
+        },
+        "NATIONAL_ID": {
+          "precision": 40.0,
+          "recall": 3.08,
+          "f1": 5.71,
+          "TP": 8,
+          "FP": 12,
+          "FN": 252
+        },
+        "CREDIT_CARD": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "TP": 0,
+          "FP": 7,
+          "FN": 0
+        }
+      },
+      "type_agnostic": {
+        "precision": 73.04,
+        "recall": 82.39,
+        "f1": 77.43,
+        "TP": 772,
+        "FP": 285,
+        "FN": 165
+      }
+    }
+  },
+  "Fresh Disjoint Test Partition": {
+    "old_regex": {
+      "entities": {
+        "EMAIL": {
+          "precision": 97.19,
+          "recall": 95.4,
+          "f1": 96.28,
+          "TP": 311,
+          "FP": 9,
+          "FN": 15
+        },
+        "PHONE": {
+          "precision": 33.02,
+          "recall": 92.95,
+          "f1": 48.73,
+          "TP": 211,
+          "FP": 428,
+          "FN": 16
+        },
+        "NATIONAL_ID": {
+          "precision": 42.11,
+          "recall": 2.16,
+          "f1": 4.1,
+          "TP": 8,
+          "FP": 11,
+          "FN": 363
+        },
+        "CREDIT_CARD": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "TP": 0,
+          "FP": 5,
+          "FN": 0
+        }
+      },
+      "type_agnostic": {
+        "precision": 88.71,
+        "recall": 94.37,
+        "f1": 91.45,
+        "TP": 872,
+        "FP": 111,
+        "FN": 52
+      }
+    },
+    "new_phonenumbers": {
+      "entities": {
+        "EMAIL": {
+          "precision": 97.19,
+          "recall": 95.4,
+          "f1": 96.28,
+          "TP": 311,
+          "FP": 9,
+          "FN": 15
+        },
+        "PHONE": {
+          "precision": 21.42,
+          "recall": 67.84,
+          "f1": 32.56,
+          "TP": 154,
+          "FP": 565,
+          "FN": 73
+        },
+        "NATIONAL_ID": {
+          "precision": 42.11,
+          "recall": 2.16,
+          "f1": 4.1,
+          "TP": 8,
+          "FP": 11,
+          "FN": 363
+        },
+        "CREDIT_CARD": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "TP": 0,
+          "FP": 5,
+          "FN": 0
+        }
+      },
+      "type_agnostic": {
+        "precision": 74.41,
+        "recall": 85.61,
+        "f1": 79.62,
+        "TP": 791,
+        "FP": 272,
+        "FN": 133
+      }
+    }
+  }
+}
