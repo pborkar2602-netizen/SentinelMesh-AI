@@ -163,3 +163,26 @@ print('ALL 21 FROZEN V2 HASHES VERIFIED INTACT.')
 | `scripts/evaluate_pii_detector.py` | `dcfb452e373e57da45dc18a7c1b3069100b6878300c71bbe061e30de7b72c42e` |
 | `scripts/evaluate_provenance_ablation.py` | `969da8f250d4f6f3f5db950ad6448ae521ebb233a8790dae0989b0b1089b43a8` |
 | `scripts/evaluate_baselines_mcnemar.py` | `96152deab32a6a282c5ab81dee04c6f6ff8f2ee8d5d6f67e16133421f249f9ea` |
+
+---
+
+## D. `v3.1-frozen` Manifest (`v3-science` Branch)
+
+**Freeze Tag**: `v3.1-frozen`  
+**Timestamp**: 2026-11-14T21:25:00Z  
+**Commitment**: Committed before evaluating the InjecAgent Enhanced Hacking Prompt test set and the fresh disjoint ai4privacy test partition.
+
+| File Path | SHA-256 Digest (`v3.1-frozen`) |
+|---|---|
+| `backend/app/privacy/detectors.py` | `3b24e00617363d437c83622b5b0b27250e2039a9d9ca216f7883c3eccd6e8537` |
+| `backend/app/privacy/masker.py` | `fa0b850e4461dadf48498eed9c8267eaae494336b9fb62e3db06f4f3c35cb9e5` |
+| `backend/app/privacy/vault.py` | `9e0fa144d9f3199016f0fbfdb6fe037cdeb0236dcaf8274b4ce7fec54b266391` |
+| `backend/app/core/policy_engine.py` | `43d1e1d215a1ff8d8927482973ce759c3135ff7497174a9d9566306862b2a58f` |
+| `backend/app/core/taint_tracker.py` | `8f58398dfe8a57e46f5686416b609d36737b1418e3a73daf596b10eb07d7badd` |
+| `backend/app/core/gateway.py` | `5447c4bb88d22bc7cde758f3150042a56fe8aec060f79a44e8f5640ededa53b3` |
+| `backend/app/detection/rules.py` | `1076e4b4712b16d5764feea9211e8e6ee04aea5544c85f6b0b8a9b5c7b8ef934` |
+| `benchmark/adapters/injecagent_adapter.py` | `df3de6c53ebeee4156a01438ea4501c4923a66d4b0abaea598799fd635b8cb31` |
+| `benchmark/adapters/agentdojo_adapter.py` | `05d41241d40b6599e0151923c57a40b63291a826d29f0827399198f86c184921` |
+| `scripts/run_injecagent_enhanced.py` | `0b82a8afd10118c4c3eda467edc11e0a63cdd8ce6a5c7777eba091f6b99bff64` |
+| `scripts/split_and_stats_injecagent.py` | `1c0fd5e839eb2570930d87856ebd803264e1190f433d1be2cd27b04784627340` |
+| `scripts/evaluate_pii_side_by_side.py` | `8dcb1cb98b27118fc5a4da5d762c49dd4c7aec489035cf935bed8d5b2b6dd20e` |

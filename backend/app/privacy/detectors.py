@@ -69,43 +69,99 @@ class EmailDetector(IPiiDetector):
             ))
         return findings
 
+try:
+    import phonenumbers
+    HAS_PHONENUMBERS = True
+except ImportError:
+    HAS_PHONENUMBERS = False
+
 class PhoneDetector(IPiiDetector):
     # Matches international and North American formatted phone numbers (e.g. +44 20 7946 0991 or 555-0199)
     REGEX = re.compile(r"(?:\+?\d{1,3}[-.\s]?)?(?:\(?\d{2,4}\)?[-.\s]?)?\d{3,4}[-.\s]?\d{3,4}\b")
+    IPV4_REGEX = re.compile(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b")
 
     def detect(self, text: str) -> List[PiiFinding]:
         findings = []
-        for match in self.REGEX.finditer(text):
-            val = match.group(0)
-            # Filter out IPv4 addresses (e.g. 169.254.169.254 or 192.168.1.1)
-            if re.fullmatch(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}", val.strip()):
-                continue
-            # Filter out non-phone numbers like plain dates or short numbers
-            digits = re.sub(r"\D", "", val)
-            if 10 <= len(digits) <= 15:
-                findings.append(PiiFinding(
-                    pii_type="PHONE",
-                    start=match.start(),
-                    end=match.end(),
-                    value=val,
-                    confidence=0.88
-                ))
+        if HAS_PHONENUMBERS:
+            for match in phonenumbers.PhoneNumberMatcher(text, "US", leniency=phonenumbers.Leniency.POSSIBLE):
+                val = match.raw_string
+                # Filter out IPv4 patterns
+                if self.IPV4_REGEX.search(val):
+                    continue
+                digits = re.sub(r"\D", "", val)
+                if 7 <= len(digits) <= 15:
+                    if phonenumbers.is_possible_number(match.number):
+                        findings.append(PiiFinding(
+                            pii_type="PHONE",
+                            start=match.start,
+                            end=match.end,
+                            value=val,
+                            confidence=0.92
+                        ))
+        else:
+            for match in self.REGEX.finditer(text):
+                val = match.group(0)
+                if self.IPV4_REGEX.search(val):
+                    continue
+                digits = re.sub(r"\D", "", val)
+                if 7 <= len(digits) <= 15:
+                    findings.append(PiiFinding(
+                        pii_type="PHONE",
+                        start=match.start(),
+                        end=match.end(),
+                        value=val,
+                        confidence=0.88
+                    ))
         return findings
 
 class NationalIdDetector(IPiiDetector):
-    # Detects standard US SSN as well as designated fake test patterns (000-XX-XXXX)
-    REGEX = re.compile(r"\b(?:\d{3}|000)-[0-9A-Za-z]{2}-[0-9A-Za-z]{4}\b")
+    # Detects standard US SSN (000-XX-XXXX or XXX-XX-XXXX)
+    US_SSN = re.compile(r"\b(?:\d{3}|000)-[0-9A-Za-z]{2}-[0-9A-Za-z]{4}\b")
+    # Contextual unhyphenated 9-digit SSN
+    CONTEXT_SSN = re.compile(r"(?i)\b(?:ssn|social\s*security(?:\s*number)?|tax\s*id|national\s*id)[\s:#=-]*(\d{9})\b")
+    # UK National Insurance Number (NINO)
+    UK_NINO = re.compile(r"\b[A-CEGHJ-PR-TW-Z]{2}\s*\d{6}\s*[A-D]\b")
+    # Canadian Social Insurance Number (SIN)
+    CA_SIN = re.compile(r"\b\d{3}[ -]\d{3}[ -]\d{3}\b")
 
     def detect(self, text: str) -> List[PiiFinding]:
         findings = []
-        for match in self.REGEX.finditer(text):
-            val = match.group(0)
+        # 1. Hyphenated SSN
+        for match in self.US_SSN.finditer(text):
             findings.append(PiiFinding(
                 pii_type="NATIONAL_ID",
                 start=match.start(),
                 end=match.end(),
-                value=val,
+                value=match.group(0),
                 confidence=0.95
+            ))
+        # 2. Contextual 9-digit SSN
+        for match in self.CONTEXT_SSN.finditer(text):
+            val = match.group(1)
+            findings.append(PiiFinding(
+                pii_type="NATIONAL_ID",
+                start=match.start(1),
+                end=match.end(1),
+                value=val,
+                confidence=0.90
+            ))
+        # 3. UK NINO
+        for match in self.UK_NINO.finditer(text):
+            findings.append(PiiFinding(
+                pii_type="NATIONAL_ID",
+                start=match.start(),
+                end=match.end(),
+                value=match.group(0),
+                confidence=0.92
+            ))
+        # 4. Canadian SIN
+        for match in self.CA_SIN.finditer(text):
+            findings.append(PiiFinding(
+                pii_type="NATIONAL_ID",
+                start=match.start(),
+                end=match.end(),
+                value=match.group(0),
+                confidence=0.92
             ))
         return findings
 
