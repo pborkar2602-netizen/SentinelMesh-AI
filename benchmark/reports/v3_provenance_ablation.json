@@ -1,0 +1,38 @@
+{
+  "evaluation": "Provenance Architecture Ablation (Session-Level vs Value-Level)",
+  "split": "test",
+  "sample_count": 723,
+  "session_level": {
+    "attack_prevention_rate": 1.0,
+    "attack_ci_95": [
+      0.9947,
+      1.0
+    ],
+    "false_positive_rate": 1.0,
+    "fpr_ci_95": [
+      0.9947,
+      1.0
+    ],
+    "latency_ms_p50": 0.035,
+    "latency_ms_p95": 0.061,
+    "latency_ms_p99": 0.124,
+    "latency_mean": 0.03
+  },
+  "value_level": {
+    "attack_prevention_rate": 1.0,
+    "attack_ci_95": [
+      0.9947,
+      1.0
+    ],
+    "false_positive_rate": 0.0,
+    "fpr_ci_95": [
+      0.0,
+      0.0053
+    ],
+    "latency_ms_p50": 0.03,
+    "latency_ms_p95": 0.051,
+    "latency_ms_p99": 0.074,
+    "latency_mean": 0.024
+  },
+  "tradeoff_analysis": "Session-level taint achieves maximum containment (0% leakage) but causes high False Positive Rate when an agent performs benign follow-up actions in a tainted session. Value-level provenance eliminates benign false positives (FPR ~ 0%) at the cost of additional token extraction and substring matching overhead."
+}

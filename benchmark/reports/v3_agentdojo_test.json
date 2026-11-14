@@ -1,0 +1,97 @@
+{
+  "benchmark": "AgentDojo",
+  "split": "test",
+  "sample_count": 39,
+  "systems": {
+    "B0: None (No Defense)": {
+      "attack_evaluated": 1,
+      "attack_prevention_rate": 0.0,
+      "attack_ci_95": [
+        0.0,
+        0.7935
+      ],
+      "benign_evaluated": 38,
+      "benign_pass_rate": 1.0,
+      "benign_ci_95": [
+        0.9082,
+        1.0
+      ],
+      "false_positive_rate": 0.0
+    },
+    "B1: Domain Allowlist Only": {
+      "attack_evaluated": 1,
+      "attack_prevention_rate": 1.0,
+      "attack_ci_95": [
+        0.2065,
+        1.0
+      ],
+      "benign_evaluated": 38,
+      "benign_pass_rate": 1.0,
+      "benign_ci_95": [
+        0.9082,
+        1.0
+      ],
+      "false_positive_rate": 0.0
+    },
+    "B2: Static Regex / Phrase Matching": {
+      "attack_evaluated": 1,
+      "attack_prevention_rate": 0.0,
+      "attack_ci_95": [
+        0.0,
+        0.7935
+      ],
+      "benign_evaluated": 38,
+      "benign_pass_rate": 1.0,
+      "benign_ci_95": [
+        0.9082,
+        1.0
+      ],
+      "false_positive_rate": 0.0
+    },
+    "B3: SentinelMesh (Taint Disabled Ablation)": {
+      "attack_evaluated": 1,
+      "attack_prevention_rate": 0.0,
+      "attack_ci_95": [
+        0.0,
+        0.7935
+      ],
+      "benign_evaluated": 38,
+      "benign_pass_rate": 1.0,
+      "benign_ci_95": [
+        0.9082,
+        1.0
+      ],
+      "false_positive_rate": 0.0
+    },
+    "B4: Full SentinelMesh Gateway": {
+      "attack_evaluated": 1,
+      "attack_prevention_rate": 1.0,
+      "attack_ci_95": [
+        0.2065,
+        1.0
+      ],
+      "benign_evaluated": 38,
+      "benign_pass_rate": 1.0,
+      "benign_ci_95": [
+        0.9082,
+        1.0
+      ],
+      "false_positive_rate": 0.0
+    },
+    "B5: LLM Safety Judge (Offline Heuristic)": {
+      "attack_evaluated": 1,
+      "attack_prevention_rate": 1.0,
+      "attack_ci_95": [
+        0.2065,
+        1.0
+      ],
+      "benign_evaluated": 38,
+      "benign_pass_rate": 1.0,
+      "benign_ci_95": [
+        0.9082,
+        1.0
+      ],
+      "false_positive_rate": 0.0
+    }
+  }
+}

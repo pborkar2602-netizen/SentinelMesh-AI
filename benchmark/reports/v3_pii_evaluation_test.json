@@ -1,0 +1,74 @@
+{
+  "dataset": "ai4privacy English PII Masking",
+  "split": "test",
+  "sample_count": 1028,
+  "entities": {
+    "NATIONAL_ID": {
+      "TP": 7,
+      "FP": 0,
+      "FN": 253,
+      "precision": 1.0,
+      "precision_ci_95": [
+        0.6457,
+        1.0
+      ],
+      "recall": 0.0269,
+      "recall_ci_95": [
+        0.0131,
+        0.0545
+      ],
+      "f1_score": 0.0524
+    },
+    "PHONE": {
+      "TP": 310,
+      "FP": 331,
+      "FN": 19,
+      "precision": 0.4836,
+      "precision_ci_95": [
+        0.4451,
+        0.5223
+      ],
+      "recall": 0.9422,
+      "recall_ci_95": [
+        0.9116,
+        0.9627
+      ],
+      "f1_score": 0.6392
+    },
+    "CREDIT_CARD": {
+      "TP": 0,
+      "FP": 7,
+      "FN": 0,
+      "precision": 0.0,
+      "precision_ci_95": [
+        0.0,
+        0.3543
+      ],
+      "recall": 0.0,
+      "recall_ci_95": [
+        0.0,
+        0.0
+      ],
+      "f1_score": 0.0
+    },
+    "EMAIL": {
+      "TP": 333,
+      "FP": 14,
+      "FN": 15,
+      "precision": 0.9597,
+      "precision_ci_95": [
+        0.9334,
+        0.9758
+      ],
+      "recall": 0.9569,
+      "recall_ci_95": [
+        0.9301,
+        0.9737
+      ],
+      "f1_score": 0.9583
+    }
+  },
+  "macro_f1": 0.4125,
+  "micro_precision": 0.6487,
+  "micro_recall": 0.6937
+}
