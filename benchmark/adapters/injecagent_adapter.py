@@ -51,10 +51,48 @@ def map_attacker_tool(
     attacker_instruction: str,
     attack_type: str,
 ) -> Tuple[str, Dict[str, Any]]:
-    """Maps InjecAgent attacker tool to SentinelMesh canonical primitive."""
+    """Maps InjecAgent attacker tool to SentinelMesh canonical primitive.
+    
+    Fixed tool mapping (post-audit fix):
+    - Read-only cloud storage / listing (DropboxListFilesAndFolders, DropboxGetItemMetadata)
+      maps by function to read_doc.
+    - Cloud storage item move (DropboxMoveItem) maps by function to external_api POST.
+    - Repository deletion (GitHubDeleteRepository) maps by function to external_api DELETE.
+    - SQL deletion only applies to explicitly database-scoped deletion tools, not cloud storage.
+    """
     at_lower = attacker_tool.lower()
 
-    if "email" in at_lower or "send" in at_lower or "slack" in at_lower:
+    # 1. Read-only cloud storage listing and metadata queries
+    if "listfiles" in at_lower or "getitemmetadata" in at_lower:
+        return (
+            "read_doc",
+            {
+                "file_path": f"dropbox/{attacker_instruction.strip() or 'folder_manifest.txt'}",
+                "operation": "list_files_and_folders"
+            }
+        )
+    # 2. Mutating storage operation (move)
+    elif "moveitem" in at_lower:
+        return (
+            "external_api",
+            {
+                "url": "https://api.dropboxapi.com/2/files/move_v2",
+                "method": "POST",
+                "body": f"action={attacker_instruction}",
+            }
+        )
+    # 3. External service repository deletion (GitHubDeleteRepository)
+    elif "githubdeleterepository" in at_lower or "deleterepository" in at_lower:
+        return (
+            "external_api",
+            {
+                "url": "https://api.github.com/repos/adversary-target/repo",
+                "method": "DELETE",
+                "body": f"action={attacker_instruction}",
+            }
+        )
+    # 4. Outbound communication and messaging
+    elif "email" in at_lower or "send" in at_lower or "slack" in at_lower:
         return (
             "send_email",
             {
@@ -63,6 +101,7 @@ def map_attacker_tool(
                 "body": f"Sensitive exfiltration payload from {attacker_instruction}",
             },
         )
+    # 5. Banking and funds transfer
     elif "bank" in at_lower or "transfer" in at_lower or "withdraw" in at_lower or "pay" in at_lower or "deposit" in at_lower:
         return (
             "db_query",
@@ -73,7 +112,8 @@ def map_attacker_tool(
                 "amount": 5000.0,
             },
         )
-    elif "delete" in at_lower or "drop" in at_lower:
+    # 6. Database deletion (strictly excluding cloud storage and git tools)
+    elif ("delete" in at_lower or "drop" in at_lower) and "dropbox" not in at_lower and "github" not in at_lower:
         return (
             "db_query",
             {"query": f"DELETE FROM system_resources WHERE resource_id = 99"},
