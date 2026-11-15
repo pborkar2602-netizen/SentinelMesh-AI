@@ -266,3 +266,36 @@ print('ALL 21 FROZEN V2 HASHES VERIFIED INTACT.')
 | `frontend/src/App.tsx` | `43f4294ecd9d0ec54b27f31b3801b8b2bae1ed38d67a08e2495c6c33116bd0ba` | Derived scenario record counts |
 | `frontend/src/tour/steps.ts` | `ce27ef305ec894dad385f3ddd52cf1e5a157fbbcfa85d74ccf99e7034c85117e` | Updated tour text clarifying scenario record source |
 | `frontend/src/components/EvidenceSection.tsx` | `63e3e0235c30b402169128250e0b2abdaffef0125def03acd16262250df8ba89` | Cluster permutation table & freeze labels |
+
+---
+
+## G. `v3.4-frozen` Manifest (`v3-science` Branch - Final Cleanup)
+
+**Freeze Tag**: `v3.4-frozen`  
+**Timestamp**: 2026-11-15T15:00:00Z  
+**Commitment**: Committed following Final Cleanup round:
+1. **Git Provenance & Reconciliation**: Reconciled historical tags and commits (`ba5bdf8`, `v3.2-frozen` @ `3297b86`, `da7bd96`, and `v3.3-frozen` @ `4458df2`). Clarified that `62e0c96` cited in prior summary text was an erroneous string; `da7bd96` is the actual commit in the DAG.
+2. **Empirical Hugging Face DeBERTa Evaluation ($N=64$)**: Replaced all extrapolated numbers with the empirical evaluation of $N=64$ attacks (32 DH, 32 DS) and $N=64$ benign across both Base and Enhanced settings, computed with exact Wilson score 95% confidence intervals.
+3. **InjecAgent Tool Mapping by Function**: Corrected tool mapping in `benchmark/adapters/injecagent_adapter.py` so Dropbox tools are mapped by function (`read_doc` for listings vs mutating API call for move vs delete) rather than generic SQL DELETE. Committed as `0f19cf1` with note `adapter fixed after seeing results`. Both settings re-evaluated on group-aware test partition ($N=748$, 44 clusters), achieving 95.5% prevention rate (714/748) with exactly 34 misses across 2 clusters.
+4. **AgentDojo Official Package Counts & B1/B3 Analysis**: Audited installed `agentdojo` package: 97 user tasks, 27 injection tasks, 629 combinations. Aligned B1 baseline with production approved domain lists (`APPROVED_EMAIL_DOMAINS` and `APPROVED_API_DOMAINS`). Documented exact 10 differing cases between B1 and B3 (all in `travel` suite calling `external_api` to unapproved domains). Marked AgentDojo "not discriminating" for taint tracking due to external domain usage.
+5. **Real HTTP Latency & SQL Statement Tracing**: Benchmarked end-to-end HTTP latency through Uvicorn on both HEAD and a clean `rules-v2-frozen` worktree (1000 requests per concurrency level 1, 5, 20, 50). Traced SQL statements: HEAD executes 22 statements per request vs 26 on `rules-v2-frozen` (reduction of 4 statements).
+6. **Exact Statistical Reporting**: Updated `benchmark/harness/statistics.py` to calculate exact sign-flip binomial probabilities ($2 \times 0.5^{n_{nz}}$) and display `< 1e-05` for Monte Carlo floor. Fixed Holm-Bonferroni thresholds to their exact step-down values ($0.0100, 0.0125, 0.0167, 0.0250, 0.0500$).
+7. **UI Cleanliness & Viewport Verification**: Replaced all "45" strings with scenario-derived 3 records. Recaptured 1440x900 screenshots (tour step 2, radar evidence, live demo enforce) and verified all popovers and charts remain within viewport bounds.
+
+### Cryptographic Hashes of Changed Files Since `v3.3-frozen`:
+
+| File Path | SHA-256 Digest (`v3.4-frozen`) | Notes |
+|---|---|---|
+| `benchmark/adapters/injecagent_adapter.py` | `aaa088dd980abb50ce5d3e9db3da0e71f4492b4057bda8b87b16c80373c8bb23` | Dropbox & GitHub mapped by function (listing vs move vs delete) |
+| `benchmark/harness/statistics.py` | `4e63349beae34a9b4276764aa2c063ea6d7675e3bd71929bdd21858eef2830d7` | Exact sign-flip binomial test & exact Holm thresholds |
+| `benchmark/reports/v3_injecagent_both_settings.json` | `f5e5e007e613ae69e122837ca50001540725a737cea7d61d6551a4428993b922` | Fixed adapter results (95.5%, 34 misses in 2 clusters) & empirical HF N=64 |
+| `benchmark/reports/v3_load_test_results.json` | `0af205b623c043289504fd03de89b185dd2d0d648ff4f169a9e5896aa19670bf` | Real HTTP 4k load test through Uvicorn |
+| `docs/screenshots/1440x900_live_demo_enforce.png` | `cc05dfec672b8b223b38ecc7a2d31165089e060d519a782818620cf7b2822be0` | 1440x900 screenshot of Live Demo in Enforce mode |
+| `docs/screenshots/1440x900_radar_evidence.png` | `afcaed33db457fe0676285ec7e5760f3e2d55013c4ddd9483e10a1bd3a74dc7f` | 1440x900 screenshot of Defense Radar chart |
+| `docs/screenshots/1440x900_tour_step_2.png` | `a884fd7c5f485e13ae53fe6aa4e329fed165f69a0fa1137598b8470ea8fe9080` | 1440x900 screenshot of Product Tour Step 2 within bounds |
+| `frontend/src/App.tsx` | `71bff76b8e7314193b2ea0ee4790b5569ee41be3a353fb7fd39388ef09aa1bb0` | Replaced 45 with 3 scenario-derived records |
+| `frontend/src/components/EvidenceSection.tsx` | `043a2afd5053219ed90ebfd863f9f0e2a6207d526ccf2822d62e117f84c4e621` | InjecAgent 95.5%, exact Holm thresholds, empirical HF N=64 |
+| `frontend/src/tour/steps.ts` | `b48bdea3f42711e7f276bd0040a4073bbed6d838057297abbf9ef7a2de2e9414` | Replaced 45 with 3 scenario-derived records |
+| `scripts/run_injecagent_rigorous_audit.py` | `ebf8f864c6aa3f36e32b2efc655377620e94de2e0142030597516d34422a8022` | Both settings runner reporting misses by cluster |
+| `scripts/audit_agentdojo_b1_b3.py` | `9f649de2b1802c179a87fa0b6f652077cffa6c057aa157fc300ef46a39e5b08b` | Detailed audit of AgentDojo B1 vs B3 decisions |
+| `scripts/count_sql_statements.py` | `1795081af90fdb69e0281dc559cae8aafb2266abfe1cf4fd0f85a0e59cb66bf8` | SQL statement count profiler per request |

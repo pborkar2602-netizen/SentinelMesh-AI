@@ -201,14 +201,25 @@ def cluster_paired_permutation_test(
     rng = np.random.default_rng(seed)
     flips = rng.choice([-1.0, 1.0], size=(n_permutations, len(diffs)))
     perm_stats = np.abs(np.mean(flips * diffs, axis=1))
-    p_val = float(np.mean(perm_stats >= obs_stat - 1e-12))
-    p_val = max(p_val, 1.0 / n_permutations)
+    mc_exceed = int(np.sum(perm_stats >= obs_stat - 1e-12))
+    
+    # Exact sign-flip binomial probability: 2 * 0.5^n_nz when all discordant clusters favor one side
+    exact_p = 2.0 * (0.5 ** n_nz) if n_nz > 0 else 1.0
+
+    if mc_exceed == 0:
+        p_val = 1.0 / n_permutations
+        p_display = f"< {1.0 / n_permutations:.0e}"
+    else:
+        p_val = float(mc_exceed / n_permutations)
+        p_display = f"{p_val:.4e}"
 
     return {
         "n_clusters": len(clusters),
         "n_discordant_clusters": n_nz,
         "mean_diff": round(float(np.mean(diffs)), 4),
         "p_value": p_val,
+        "p_display": p_display,
+        "exact_sign_flip_p": exact_p,
         "test_type": "paired_cluster_sign_flip_permutation"
     }
 

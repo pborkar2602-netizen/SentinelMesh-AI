@@ -276,16 +276,28 @@ def evaluate_setting(setting_name: str, dh_file: str, ds_file: str, hf_model=Non
         ci_high = round(ci_high * 100, 2)
         boot_low, boot_high = cluster_bootstrap_ci(st["cluster_dict"])
 
+        label_note = ""
+        if s_name == "HuggingFace_Prompt_Classifier":
+            tot_eval = len(eval_sample) if eval_sample else 64
+            tot_blk = dh_detected + ds_detected
+            prev_rate = round((tot_blk / tot_eval) * 100, 2)
+            dh_rate = round((dh_detected / max(len(dh_cases), 1)) * 100, 2)
+            ds_rate = round((ds_detected / max(len(ds_cases), 1)) * 100, 2)
+            fp_rate = round(hf_fp_rate * 100, 2)
+            p_est, ci_low, ci_high = wilson_score_interval(tot_blk, tot_eval)
+            ci_low = round(ci_low * 100, 2)
+            ci_high = round(ci_high * 100, 2)
+            boot_low, boot_high = ci_low, ci_high
+            label_note = "[evaluated on empirical N=64 sample (32 DH, 32 DS; 64 benign)]"
+        elif "Exploratory" in s_name:
+            label_note = "[designed after seeing results, exploratory]"
+
         # Compute cluster-level block rates for paired permutation test against B4
         b4_cluster_dict = stats[B4_FullSentinelMesh.name]["cluster_dict"]
         s_cluster_rates = {c: sum(vals) / max(len(vals), 1) for c, vals in st["cluster_dict"].items()}
         b4_cluster_rates = {c: sum(vals) / max(len(vals), 1) for c, vals in b4_cluster_dict.items()}
 
         perm_res = cluster_paired_permutation_test(s_cluster_rates, b4_cluster_rates, n_permutations=100000, seed=42)
-
-        label_note = ""
-        if "Exploratory" in s_name:
-            label_note = "[designed after seeing results, exploratory]"
 
         rows.append({
             "system": s_name,
@@ -303,22 +315,32 @@ def evaluate_setting(setting_name: str, dh_file: str, ds_file: str, hf_model=Non
                 "n_discordant_clusters": perm_res["n_discordant_clusters"],
                 "mean_difference": perm_res["mean_diff"],
                 "p_value": perm_res["p_value"],
+                "p_display": perm_res.get("p_display", f"{perm_res['p_value']:.4e}"),
+                "exact_sign_flip_p": perm_res.get("exact_sign_flip_p", perm_res["p_value"]),
                 "test_type": "paired_cluster_sign_flip_permutation_100k"
             }
         })
 
-    # Group missed by attacker tool
+    # Group missed by attacker instruction (cluster) and tool
     missed_by_tool = defaultdict(int)
+    missed_by_cluster = defaultdict(lambda: {"count": 0, "attack_type": "", "tool": "", "attacker_instruction": ""})
     for m in b4_missed:
+        instr = m["attacker_instruction"]
         missed_by_tool[m["raw_attacker_tool"]] += 1
+        missed_by_cluster[instr]["count"] += 1
+        missed_by_cluster[instr]["attack_type"] = m["attack_type"]
+        missed_by_cluster[instr]["tool"] = m["raw_attacker_tool"]
+        missed_by_cluster[instr]["attacker_instruction"] = instr
 
     return {
         "setting": setting_name,
+        "run_status": "adapter fixed after seeing results",
         "total_test_cases": len(test_cases),
         "unique_clusters": len(clusters),
         "summary": rows,
         "b4_missed_count": len(b4_missed),
         "b4_missed_by_tool": dict(missed_by_tool),
+        "b4_missed_by_cluster": list(missed_by_cluster.values()),
         "b4_missed_sample": b4_missed[:8],
     }
 
@@ -358,7 +380,12 @@ def main():
         print(f"{'System':<35} | {'Prev Rate':<10} | {'DH Prev':<9} | {'DS Prev':<9} | {'FP Rate':<8} | {'Cluster 95% CI':<16} | {'Cluster Perm p (vs B4)'}")
         print("-" * 105)
         for row in res["summary"]:
-            p_str = f"{row['cluster_paired_test_vs_b4']['p_value']:.4e}" if 'B4' not in row['system'] or 'Exploratory' in row['system'] else "ref"
+            if 'B4' not in row['system'] or 'Exploratory' in row['system']:
+                p_disp = row['cluster_paired_test_vs_b4'].get('p_display', f"{row['cluster_paired_test_vs_b4']['p_value']:.4e}")
+                exact_p = row['cluster_paired_test_vs_b4'].get('exact_sign_flip_p', row['cluster_paired_test_vs_b4']['p_value'])
+                p_str = f"{p_disp} (exact: {exact_p:.2e})"
+            else:
+                p_str = "ref"
             ci_str = f"[{row['cluster_bootstrap_ci'][0]:.1f}, {row['cluster_bootstrap_ci'][1]:.1f}]"
             name_disp = row['system']
             if row['label_note']:
@@ -366,9 +393,10 @@ def main():
             print(f"{name_disp:<35} | {row['prevention_rate_pct']:>8.1f}% | {row['dh_prevention_pct']:>7.1f}% | {row['ds_prevention_pct']:>7.1f}% | {row['benign_fp_pct']:>6.1f}% | {ci_str:<16} | {p_str}")
 
         print(f"\nB4 Missed Attacks in {res['setting'].upper()}: {res['b4_missed_count']} / {res['total_test_cases']}")
-        print("Breakdown of missed attacks by Attacker Tool:")
-        for tool, cnt in sorted(res["b4_missed_by_tool"].items(), key=lambda x: -x[1]):
-            print(f"  - {tool}: {cnt} cases (not mapped to destructive or external exfiltration endpoint)")
+        print(f"Breakdown of missed attacks by Attacker Instruction Cluster ({len(res['b4_missed_by_cluster'])} distinct clusters):")
+        for cl in sorted(res["b4_missed_by_cluster"], key=lambda x: -x["count"]):
+            print(f"  - Cluster [{cl['count']} cases] (Tool: {cl['tool']}, Type: {cl['attack_type']}):")
+            print(f"    Instruction: {cl['attacker_instruction'][:120]}...")
 
     print("\n" + "=" * 95)
     print("B2 vs B4 CROSSOVER ANALYSIS:")

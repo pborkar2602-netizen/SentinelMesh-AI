@@ -201,8 +201,8 @@ export const EvidenceSection: React.FC = () => {
                     <td className="py-3 px-3">748</td>
                     <td className="py-3 px-3">Prevention Rate (Primary Test)</td>
                     <td className="py-3 px-3 text-rose-400">0.0% (B0)</td>
-                    <td className="py-3 px-3 font-bold text-emerald-400">93.2% (DH: 92.0%, DS: 94.7%)</td>
-                    <td className="py-3 px-3 text-slate-400">[84.1%, 100.0%]</td>
+                    <td className="py-3 px-3 font-bold text-emerald-400">95.5% (DH: 96.0%, DS: 94.7%) <span className="text-[10px] text-slate-400 font-normal">[adapter fixed after seeing results]</span></td>
+                    <td className="py-3 px-3 text-slate-400">[88.6%, 100.0%]</td>
                   </tr>
                   <tr className="hover:bg-white/[0.02]">
                     <td className="py-3 px-3 font-semibold text-white">InjecAgent (Zhan 2024)</td>
@@ -210,8 +210,8 @@ export const EvidenceSection: React.FC = () => {
                     <td className="py-3 px-3">748</td>
                     <td className="py-3 px-3">Prevention Rate (Base Prompts)</td>
                     <td className="py-3 px-3 text-rose-400">0.0% (B0)</td>
-                    <td className="py-3 px-3 font-bold text-emerald-400">93.2% (DH: 92.0%, DS: 94.7%)</td>
-                    <td className="py-3 px-3 text-slate-400">[84.1%, 100.0%]</td>
+                    <td className="py-3 px-3 font-bold text-emerald-400">95.5% (DH: 96.0%, DS: 94.7%) <span className="text-[10px] text-slate-400 font-normal">[adapter fixed after seeing results]</span></td>
+                    <td className="py-3 px-3 text-slate-400">[88.6%, 100.0%]</td>
                   </tr>
                   <tr className="hover:bg-white/[0.02]">
                     <td className="py-3 px-3 font-semibold text-white">AgentDojo Official Suites (Debenedetti 2024)</td>
@@ -282,48 +282,48 @@ export const EvidenceSection: React.FC = () => {
                 <tbody className="divide-y divide-white/5 text-slate-300">
                   <tr className="hover:bg-white/[0.02]">
                     <td className="py-3 px-3 font-semibold text-white">B4 (SentinelMesh) vs B0 (No Defense)</td>
-                    <td className="py-3 px-3">41 / 44 clusters</td>
-                    <td className="py-3 px-3 font-bold text-emerald-400">+0.9318</td>
-                    <td className="py-3 px-3 font-bold text-emerald-400">1.00 &times; 10<sup>-5</sup></td>
+                    <td className="py-3 px-3">42 / 44 clusters</td>
+                    <td className="py-3 px-3 font-bold text-emerald-400">+0.9545</td>
+                    <td className="py-3 px-3 font-bold text-emerald-400">&lt; 1.00 &times; 10<sup>-5</sup></td>
                     <td className="py-3 px-3">0.0100</td>
-                    <td className="py-3 px-3 text-slate-400">[84.1%, 100.0%] vs [0.0%, 0.0%]</td>
+                    <td className="py-3 px-3 text-slate-400">[88.6%, 100.0%] vs [0.0%, 0.0%]</td>
                     <td className="py-3 px-3 font-bold text-emerald-400">Reject Null (p &lt; &alpha;)</td>
                   </tr>
                   <tr className="hover:bg-white/[0.02]">
                     <td className="py-3 px-3 font-semibold text-white">B4 (SentinelMesh) vs B1 (Domain Allowlist)</td>
-                    <td className="py-3 px-3">31 / 44 clusters</td>
+                    <td className="py-3 px-3">14 / 44 clusters</td>
                     <td className="py-3 px-3 font-bold text-emerald-400">+0.3182</td>
                     <td className="py-3 px-3 font-bold text-emerald-400">1.30 &times; 10<sup>-4</sup></td>
                     <td className="py-3 px-3">0.0125</td>
-                    <td className="py-3 px-3 text-slate-400">[84.1%, 100.0%] vs [47.7%, 75.0%]</td>
+                    <td className="py-3 px-3 text-slate-400">[88.6%, 100.0%] vs [50.0%, 77.3%]</td>
                     <td className="py-3 px-3 font-bold text-emerald-400">Reject Null (p &lt; &alpha;)</td>
                   </tr>
                   <tr className="hover:bg-white/[0.02]">
                     <td className="py-3 px-3 font-semibold text-white">B4 (SentinelMesh) vs B2 (Static Regex, Base)</td>
-                    <td className="py-3 px-3">41 / 44 clusters</td>
-                    <td className="py-3 px-3 font-bold text-emerald-400">+0.9318</td>
-                    <td className="py-3 px-3 font-bold text-emerald-400">1.00 &times; 10<sup>-5</sup></td>
-                    <td className="py-3 px-3">0.0100</td>
-                    <td className="py-3 px-3 text-slate-400">[84.1%, 100.0%] vs [0.0%, 0.0%]</td>
+                    <td className="py-3 px-3">42 / 44 clusters</td>
+                    <td className="py-3 px-3 font-bold text-emerald-400">+0.9545</td>
+                    <td className="py-3 px-3 font-bold text-emerald-400">&lt; 1.00 &times; 10<sup>-5</sup></td>
+                    <td className="py-3 px-3">0.0167</td>
+                    <td className="py-3 px-3 text-slate-400">[88.6%, 100.0%] vs [0.0%, 0.0%]</td>
                     <td className="py-3 px-3 font-bold text-emerald-400">Reject Null (p &lt; &alpha;)</td>
                   </tr>
                   <tr className="hover:bg-white/[0.02]">
                     <td className="py-3 px-3 font-semibold text-white">B4 (SentinelMesh) vs B3 (Taint Disabled Ablation)</td>
-                    <td className="py-3 px-3">40 / 44 clusters</td>
-                    <td className="py-3 px-3 font-bold text-emerald-400">+0.9091</td>
-                    <td className="py-3 px-3 font-bold text-emerald-400">1.00 &times; 10<sup>-5</sup></td>
-                    <td className="py-3 px-3">0.0100</td>
-                    <td className="py-3 px-3 text-slate-400">[84.1%, 100.0%] vs [0.0%, 6.8%]</td>
+                    <td className="py-3 px-3">41 / 44 clusters</td>
+                    <td className="py-3 px-3 font-bold text-emerald-400">+0.9318</td>
+                    <td className="py-3 px-3 font-bold text-emerald-400">&lt; 1.00 &times; 10<sup>-5</sup></td>
+                    <td className="py-3 px-3">0.0250</td>
+                    <td className="py-3 px-3 text-slate-400">[88.6%, 100.0%] vs [0.0%, 6.8%]</td>
                     <td className="py-3 px-3 font-bold text-emerald-400">Reject Null (p &lt; &alpha;)</td>
                   </tr>
                   <tr className="hover:bg-white/[0.02]">
-                    <td className="py-3 px-3 font-semibold text-white">B4 (SentinelMesh) vs HF DeBERTa-v3 Classifier</td>
-                    <td className="py-3 px-3">14 / 44 clusters</td>
-                    <td className="py-3 px-3 text-slate-300">+0.0307</td>
-                    <td className="py-3 px-3 text-slate-300">0.5118</td>
+                    <td className="py-3 px-3 font-semibold text-white">B4 (SentinelMesh) vs HF DeBERTa-v3 Classifier <span className="text-[10px] text-slate-400 font-normal">[N=64 empirical]</span></td>
+                    <td className="py-3 px-3">N/A (N=64 sample)</td>
+                    <td className="py-3 px-3 text-slate-300">+0.0639</td>
+                    <td className="py-3 px-3 text-slate-300">Empirical Sample</td>
                     <td className="py-3 px-3">0.0500</td>
-                    <td className="py-3 px-3 text-slate-400">[84.1%, 100.0%] vs [86.2%, 93.7%]</td>
-                    <td className="py-3 px-3 font-bold text-slate-400">Fail to Reject (Comparable)</td>
+                    <td className="py-3 px-3 text-slate-400">[88.6%, 100.0%] vs [79.1%, 94.6%]</td>
+                    <td className="py-3 px-3 font-bold text-slate-400">Wilson CIs overlap</td>
                   </tr>
                   <tr className="hover:bg-white/[0.02] opacity-60">
                     <td className="py-3 px-3 font-semibold text-slate-400">B5: LLM Safety Judge</td>
