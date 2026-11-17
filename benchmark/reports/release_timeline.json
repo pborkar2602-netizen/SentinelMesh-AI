@@ -1,0 +1,65 @@
+[
+  {
+    "tag": "milestone-6",
+    "commit": "f079d53",
+    "date": "2026-11-09 02:51:41 +0530",
+    "description": "Milestone 6 core MVP release with 6-layer defense architecture.",
+    "label": "frozen release"
+  },
+  {
+    "tag": "rules-frozen",
+    "commit": "d05932e",
+    "date": "2026-11-12 01:07:04 +0530",
+    "description": "First frozen rules baseline committed on master.",
+    "label": "frozen release"
+  },
+  {
+    "tag": "rules-frozen-candidate",
+    "commit": "dd3aa9f",
+    "date": "2026-11-09 04:07:11 +0530",
+    "description": "Initial candidate freeze for baseline inspection rules.",
+    "label": "frozen release"
+  },
+  {
+    "tag": "rules-v2-frozen",
+    "commit": "8c2fd08",
+    "date": "2026-11-12 03:22:01 +0530",
+    "description": "Milestone 6 v2 frozen rules with held-out verification scenarios.",
+    "label": "frozen release"
+  },
+  {
+    "tag": "v3-frozen",
+    "commit": "f72f046",
+    "date": "2026-11-14 14:38:42 +0530",
+    "description": "v3-science preregistration & external benchmark adapter freeze.",
+    "label": "frozen release"
+  },
+  {
+    "tag": "v3.1-frozen",
+    "commit": "f01a475",
+    "date": "2026-11-14 21:26:15 +0530",
+    "description": "Frozen adapters and PII detectors with SHA-256 manifest.",
+    "label": "frozen release"
+  },
+  {
+    "tag": "v3.2-frozen",
+    "commit": "9e51817",
+    "date": "2026-11-15 00:16:02 +0530",
+    "description": "Dual-setting InjecAgent and official MCP integration freeze.",
+    "label": "frozen release"
+  },
+  {
+    "tag": "v3.3-frozen",
+    "commit": "a6004a3",
+    "date": "2026-11-15 02:47:54 +0530",
+    "description": "Cluster sign-flip permutation tests and fail-closed gateway freeze.",
+    "label": "frozen release"
+  },
+  {
+    "tag": "v3.4-frozen",
+    "commit": "4c2a119",
+    "date": "2026-11-15 20:26:46 +0530",
+    "description": "Final cleanup, adapter function mapping fix, empirical HF N=64 sample.",
+    "label": "frozen release"
+  }
+]

@@ -1,0 +1,31 @@
+{
+  "status": "exploratory (designed after seeing results, run on adapter-dev and dev scenarios only)",
+  "test_partition_rerun": false,
+  "proposed_rule": "tainted session + destructive/mutating call to external service -> require_approval",
+  "adapter_dev_evaluation": {
+    "dataset": "InjecAgent adapter-dev (cluster split)",
+    "total_cases": 306,
+    "b4_prevented": 289,
+    "b4_prevention_rate": 0.9444444444444444,
+    "v33_prevented": 306,
+    "v33_prevention_rate": 1.0,
+    "absolute_improvement": 0.05555555555555555
+  },
+  "scenario_evaluations": {
+    "dev": {
+      "total": 36,
+      "b4_accuracy": 1.0,
+      "v33_accuracy": 1.0
+    },
+    "dev_v1_heldout": {
+      "total": 12,
+      "b4_accuracy": 1.0,
+      "v33_accuracy": 1.0
+    },
+    "held_out_v2": {
+      "total": 12,
+      "b4_accuracy": 1.0,
+      "v33_accuracy": 1.0
+    }
+  }
+}

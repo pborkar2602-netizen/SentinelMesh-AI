@@ -146,6 +146,47 @@ def health_check():
         "mode": PolicyEngine.get_mode()
     }
 
+@app.get(f"{settings.API_V1_STR}/reports/{{filename}}", tags=["Reports"])
+@app.get("/reports/{{filename}}", tags=["Reports"])
+def get_report_json(filename: str):
+    import os
+    from fastapi.responses import FileResponse, JSONResponse
+    
+    safe_name = os.path.basename(filename)
+    if not safe_name.endswith(".json"):
+        safe_name += ".json"
+    
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    candidates = [
+        os.path.join(root, "benchmark", "reports", safe_name),
+        os.path.join(root, "frontend", "public", "reports", safe_name),
+        os.path.join(root, "frontend", "public", "data", safe_name)
+    ]
+    for p in candidates:
+        if os.path.exists(p) and os.path.isfile(p):
+            return FileResponse(p, media_type="application/json")
+    return JSONResponse(status_code=404, content={"error": f"Report '{safe_name}' not found"})
+
+@app.get(f"{settings.API_V1_STR}/data/{{filename}}", tags=["Data"])
+@app.get("/data/{{filename}}", tags=["Data"])
+def get_data_json(filename: str):
+    import os
+    from fastapi.responses import FileResponse, JSONResponse
+    
+    safe_name = os.path.basename(filename)
+    if not safe_name.endswith(".json"):
+        safe_name += ".json"
+    
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    candidates = [
+        os.path.join(root, "frontend", "public", "data", safe_name),
+        os.path.join(root, "benchmark", "reports", safe_name)
+    ]
+    for p in candidates:
+        if os.path.exists(p) and os.path.isfile(p):
+            return FileResponse(p, media_type="application/json")
+    return JSONResponse(status_code=404, content={"error": f"Data file '{safe_name}' not found"})
+
 @app.get("/metrics", tags=["Observability"])
 @app.get(f"{settings.API_V1_STR}/metrics", tags=["Observability"])
 def prometheus_metrics():

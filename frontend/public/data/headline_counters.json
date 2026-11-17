@@ -1,0 +1,47 @@
+[
+  {
+    "id": "attacks_prevented",
+    "title": "attacks prevented",
+    "value": 714,
+    "total": 748,
+    "percentage": 95.45,
+    "suffix": "/748",
+    "formatted_display": "714/748",
+    "label": "adapter fixed after seeing results",
+    "ci_95": [
+      88.64,
+      100.0
+    ],
+    "source_report": "v3_injecagent_both_settings.json"
+  },
+  {
+    "id": "records_exposed",
+    "title": "records left the company",
+    "value": 0,
+    "formatted_display": "0",
+    "label": "verified zero exfiltration",
+    "suffix": "",
+    "source_report": "variants_report.json"
+  },
+  {
+    "id": "decisions_matched",
+    "title": "decisions matched",
+    "value": 60,
+    "total": 60,
+    "formatted_display": "60/60",
+    "suffix": "/60",
+    "label": "exact policy compliance",
+    "source_report": "variants_report.json"
+  },
+  {
+    "id": "mutation_tests_passing",
+    "title": "mutants killed (AST chaos)",
+    "value": 47,
+    "total": 47,
+    "formatted_display": "47/47",
+    "suffix": "/47",
+    "percentage": 100.0,
+    "label": "100% mutation kill rate",
+    "source_report": "v3_mutation_test_results.json"
+  }
+]

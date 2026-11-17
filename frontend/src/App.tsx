@@ -3,6 +3,7 @@ import { AgentMesh } from './components/AgentMesh';
 import { AuditEvent, DashboardStats } from './types';
 import { TourOverlay } from './tour/TourOverlay';
 import { EvidenceSection } from './components/EvidenceSection';
+import { ProofBar } from './components/ProofBar';
 
 // Section definitions for Navigation & Scroll-spy
 const SECTIONS: [string, string][] = [
@@ -12,7 +13,7 @@ const SECTIONS: [string, string][] = [
   ['lab', 'Policy Lab'],
   ['audit', 'Audit'],
   ['how', 'Defenses'],
-  ['results', 'Results'],
+  ['results', 'Evidence'],
 ];
 
 // 12 Threat names for the marquee
@@ -965,6 +966,9 @@ export function App() {
         </div>
       </div>
 
+      {/* Proof Bar Under Hero */}
+      <ProofBar onJumpToEvidence={() => jumpTo('results')} />
+
       {/* 2. Live Simulation Section */}
       <section id="demo">
         <div className="w">
@@ -1572,13 +1576,14 @@ export function App() {
         </div>
       </section>
 
-      {/* 7. Results Section */}
+      {/* 7. Results & Evidence Section */}
       <section id="results" className="xs">
+        <div id="evidence" style={{ position: 'relative', top: '-80px' }} />
         <div className="w">
-          <div className="eb rv">Evidence</div>
-          <h2 className="rv">Empirical Benchmark Evidence & Defense Radar</h2>
+          <div className="eb rv">Evidence & Rigor Showcase</div>
+          <h2 className="rv">Measured on Scenarios Written After Rules Were Frozen</h2>
           <p className="sub rv" style={{ marginBottom: '24px' }}>
-            Rigorous evaluation on holdout test partitions across InjecAgent, AgentDojo, and ai4privacy with exact McNemar paired significance tests.
+            Empirical evaluation on preregistered holdout test partitions across InjecAgent, AgentDojo, and ai4privacy with exact cluster sign-flip permutation tests and honest failure accounting.
           </p>
 
           <EvidenceSection />
