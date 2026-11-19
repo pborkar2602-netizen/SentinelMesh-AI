@@ -1,19 +1,27 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { AgentMesh } from './components/AgentMesh';
 import { AuditEvent, DashboardStats } from './types';
 import { TourOverlay } from './tour/TourOverlay';
 import { EvidenceSection } from './components/EvidenceSection';
 import { ProofBar } from './components/ProofBar';
+import { useDetailLevel } from './context/DetailContext';
+import { IdeaIn60Seconds } from './components/IdeaIn60Seconds';
 
-// Section definitions for Navigation & Scroll-spy
-const SECTIONS: [string, string][] = [
-  ['home', 'Home'],
-  ['demo', 'Live demo'],
-  ['explain', 'Explain'],
-  ['lab', 'Policy Lab'],
-  ['audit', 'Audit'],
-  ['how', 'Defenses'],
-  ['results', 'Evidence'],
+// Section definitions with detail level filtering
+export interface SectionDef {
+  id: string;
+  label: string;
+  levels: ('simple' | 'story' | 'expert')[];
+}
+
+export const ALL_SECTIONS: SectionDef[] = [
+  { id: 'home', label: 'Home', levels: ['simple', 'story', 'expert'] },
+  { id: 'demo', label: 'Live demo', levels: ['story', 'expert'] },
+  { id: 'explain', label: 'Story', levels: ['simple', 'story', 'expert'] },
+  { id: 'lab', label: 'Policy Lab', levels: ['story', 'expert'] },
+  { id: 'audit', label: 'Audit', levels: ['story', 'expert'] },
+  { id: 'how', label: 'Defenses', levels: ['expert'] },
+  { id: 'results', label: 'Evidence', levels: ['simple', 'story', 'expert'] },
 ];
 
 // 12 Threat names for the marquee
@@ -151,6 +159,12 @@ function formatRelativeTime(isoString?: string): string {
 }
 
 export function App() {
+  const { detailLevel, setDetailLevel, cycleDetailLevel } = useDetailLevel();
+
+  const activeSections = useMemo(() => {
+    return ALL_SECTIONS.filter((s) => s.levels.includes(detailLevel));
+  }, [detailLevel]);
+
   // Navigation & Scroll state
   const [navOpen, setNavOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('home');
@@ -394,6 +408,8 @@ export function App() {
     (id: string) => {
       const el = document.getElementById(id);
       if (el) {
+        el.classList.add('in');
+        el.querySelectorAll('.rv').forEach((r) => r.classList.add('in'));
         el.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
       closeNav(900);
@@ -427,11 +443,11 @@ export function App() {
       lastScrollYRef.current = y;
 
       // Scroll-spy active section
-      let current = 'home';
-      for (const [secId] of SECTIONS) {
-        const el = document.getElementById(secId);
+      let current = activeSections[0]?.id || 'home';
+      for (const sec of activeSections) {
+        const el = document.getElementById(sec.id);
         if (el && el.getBoundingClientRect().top < window.innerHeight * 0.4) {
-          current = secId;
+          current = sec.id;
         }
       }
 
@@ -444,9 +460,9 @@ export function App() {
     window.addEventListener('scroll', onScroll, { passive: true });
     onScroll();
     return () => window.removeEventListener('scroll', onScroll);
-  }, [activeSection, openNav, closeNav, updateIndicator]);
+  }, [activeSection, activeSections, openNav, closeNav, updateIndicator]);
 
-  // Keyboard navigation hotkeys (N, 1-7, Escape)
+  // Keyboard navigation hotkeys (N, 1-9, Escape)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (/INPUT|TEXTAREA/.test((e.target as HTMLElement)?.tagName || '')) return;
@@ -457,10 +473,10 @@ export function App() {
       if (e.key === 't' || e.key === 'T') {
         setTourOpen(prev => !prev);
       }
-      if (e.key >= '1' && e.key <= '7') {
+      if (e.key >= '1' && e.key <= '9') {
         const idx = parseInt(e.key, 10) - 1;
-        if (SECTIONS[idx]) {
-          jumpTo(SECTIONS[idx][0]);
+        if (activeSections[idx]) {
+          jumpTo(activeSections[idx].id);
         }
       }
       if (e.key === 'Escape') {
@@ -469,7 +485,7 @@ export function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [navOpen, openNav, closeNav, jumpTo]);
+  }, [navOpen, openNav, closeNav, jumpTo, activeSections]);
 
   // 4. Scroll Reveal IntersectionObserver for .rv
   useEffect(() => {
@@ -498,7 +514,7 @@ export function App() {
           }
         });
       },
-      { threshold: 0.15 }
+      { threshold: 0.05, rootMargin: '120px 0px 120px 0px' }
     );
 
     document.querySelectorAll('.rv').forEach((el) => observer.observe(el));
@@ -840,12 +856,13 @@ export function App() {
           id="hd"
           aria-label="Open navigation"
           onClick={openNav}
+          data-testid="nav-pill"
         >
           <i />
           <span id="hl">
-            {SECTIONS.find((s) => s[0] === activeSection)?.[1] || 'Home'}
+            {activeSections.find((s) => s.id === activeSection)?.label || 'Home'}
           </span>
-          <s>hover · N</s>
+          <s>{detailLevel} · hover · N</s>
         </button>
 
         <nav
@@ -864,21 +881,45 @@ export function App() {
               width: `${indicatorStyle.width}px`,
             }}
           />
-          {SECTIONS.map(([secId, label], i) => (
+          {activeSections.map((sec, i) => (
             <button
-              key={secId}
+              key={sec.id}
               ref={(el) => {
-                buttonsRef.current[secId] = el;
+                buttonsRef.current[sec.id] = el;
               }}
-              data-id={secId}
-              className={activeSection === secId ? 'on' : ''}
+              data-id={sec.id}
+              className={activeSection === sec.id ? 'on' : ''}
               style={{ '--i': i } as React.CSSProperties}
-              onClick={() => jumpTo(secId)}
+              onClick={() => jumpTo(sec.id)}
             >
-              {label}
+              {sec.label}
               <kbd>{i + 1}</kbd>
             </button>
           ))}
+
+          {/* Depth Level Switcher in Nav Bar */}
+          <div
+            className="flex items-center gap-1 ml-2 pl-2 border-l border-white/10"
+            data-testid="nav-depth-selector"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {(['simple', 'story', 'expert'] as const).map((lvl) => (
+              <button
+                key={lvl}
+                type="button"
+                onClick={() => setDetailLevel(lvl)}
+                className={`px-2 py-0.5 rounded text-[10px] font-mono capitalize transition-all ${
+                  detailLevel === lvl
+                    ? 'bg-emerald-500/25 text-emerald-300 font-bold border border-emerald-500/40'
+                    : 'text-slate-400 hover:text-white border border-transparent'
+                }`}
+                data-testid={`nav-depth-btn-${lvl}`}
+              >
+                {lvl}
+              </button>
+            ))}
+            <span className="text-[9px] font-mono text-slate-500 pl-0.5">· D</span>
+          </div>
         </nav>
       </div>
 
@@ -894,7 +935,7 @@ export function App() {
         />
 
         <div className="w">
-          <span className="pill">
+          <span className="pill" id="hero-badge">
             <i />
             Autonomous, privacy-preserving security for AI agents
           </span>
@@ -940,6 +981,16 @@ export function App() {
               <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#34d399' }} />
               Guided tour (T)
             </button>
+            <button
+              className="btn g mono"
+              onClick={cycleDetailLevel}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+              title="Press D to cycle detail level (Simple / Story / Expert)"
+              data-testid="cycle-depth-btn"
+            >
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#38bdf8' }} />
+              Depth: <span className="text-sky-300 font-bold uppercase">{detailLevel}</span> (D)
+            </button>
           </div>
 
           <div className="tick mono" id="tick">
@@ -969,171 +1020,173 @@ export function App() {
       {/* Proof Bar Under Hero */}
       <ProofBar onJumpToEvidence={() => jumpTo('results')} />
 
-      {/* 2. Live Simulation Section */}
-      <section id="demo">
-        <div className="w">
-          <div className="eb rv">Live simulation</div>
-          <h2 className="rv">Watch a poisoned résumé try to steal payroll.</h2>
-          <p className="sub rv">
-            Same attack, two modes. In Monitor the agent succeeds. In Enforce the gateway
-            holds the action at the database read, before any record reaches the agent.
-          </p>
+      {/* 2. Live Simulation Section (Hidden in Simple mode) */}
+      {detailLevel !== 'simple' && (
+        <section id="demo">
+          <div className="w">
+            <div className="eb rv">Live simulation</div>
+            <h2 className="rv">Watch a poisoned résumé try to steal payroll.</h2>
+            <p className="sub rv">
+              Same attack, two modes. In Monitor the agent succeeds. In Enforce the gateway
+              holds the action at the database read, before any record reaches the agent.
+            </p>
 
-          <div className="con rv">
-            {/* Card A: 5-step Attack Chain */}
-            <div className="card A" id="chain-card">
-              <div className="hd">
-                <div className="seg" id="mode-seg">
-                  <button
-                    id="mM"
-                    className={policyMode === 'monitor' ? 'on' : ''}
-                    onClick={() => switchMode('monitor')}
-                  >
-                    Monitor
-                  </button>
-                  <button
-                    id="mE"
-                    className={policyMode === 'enforce' ? 'on' : ''}
-                    onClick={() => switchMode('enforce')}
-                  >
-                    Enforce
-                  </button>
-                </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button
-                    className="btn s"
-                    id="run"
-                    onClick={runAttackSimulation}
-                    title="Simulate 5-step chain animation"
-                  >
-                    Run attack ▶
-                  </button>
-                  {stats?.demo_mode && (
+            <div className="con rv">
+              {/* Card A: 5-step Attack Chain */}
+              <div className="card A" id="chain-card">
+                <div className="hd">
+                  <div className="seg" id="mode-seg">
                     <button
-                      className="btn s g"
-                      onClick={triggerRealLiveAttack}
-                      disabled={liveAttackRunning}
-                      title="Execute real demo agents against real gateway"
+                      id="mM"
+                      className={policyMode === 'monitor' ? 'on' : ''}
+                      onClick={() => switchMode('monitor')}
                     >
-                      {liveAttackRunning ? 'Executing…' : 'Run real agent ▶'}
+                      Monitor
                     </button>
-                  )}
+                    <button
+                      id="mE"
+                      className={policyMode === 'enforce' ? 'on' : ''}
+                      onClick={() => switchMode('enforce')}
+                    >
+                      Enforce
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      className="btn s"
+                      id="run"
+                      onClick={runAttackSimulation}
+                      title="Simulate 5-step chain animation"
+                    >
+                      Run attack ▶
+                    </button>
+                    {stats?.demo_mode && (
+                      <button
+                        className="btn s g"
+                        onClick={triggerRealLiveAttack}
+                        disabled={liveAttackRunning}
+                        title="Execute real demo agents against real gateway"
+                      >
+                        {liveAttackRunning ? 'Executing…' : 'Run real agent ▶'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div id="chain">
+                  {chainSteps.map((s, i) => (
+                    <div
+                      key={s.num}
+                      id={`s${i}`}
+                      className={`st ${stepClasses[i]} ${stepActive[i] ? 'on' : ''}`}
+                    >
+                      <i>{s.num}</i>
+                      <div>
+                        <b>{s.title}</b>
+                        <small id={`d${i}`}>{s.desc}</small>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div
+                  id="vd"
+                  className={`vd ${verdict.show ? 'show' : ''} ${verdict.ok ? 'ok' : 'bad'}`}
+                >
+                  {verdict.text}
                 </div>
               </div>
 
-              <div id="chain">
-                {chainSteps.map((s, i) => (
-                  <div
-                    key={s.num}
-                    id={`s${i}`}
-                    className={`st ${stepClasses[i]} ${stepActive[i] ? 'on' : ''}`}
-                  >
-                    <i>{s.num}</i>
+              {/* Card B: Mini-mesh & Risk Gauge */}
+              <div className="card B">
+                <AgentMesh
+                  mode="console"
+                  canvasId="mc"
+                  className="w-full"
+                  events={events}
+                  attackPulseTrigger={attackPulseTrigger}
+                />
+                <div className="rw" id="gauge-box">
+                  <div className="ga">
+                    <svg width="116" height="116" viewBox="0 0 116 116">
+                      <circle cx="58" cy="58" r="50" stroke="var(--line)" />
+                      <circle
+                        className="fg"
+                        id="fg"
+                        cx="58"
+                        cy="58"
+                        r="50"
+                        stroke={riskGauge > 70 ? 'var(--ro)' : riskGauge > 35 ? 'var(--am)' : 'var(--cy)'}
+                        style={{
+                          strokeDashoffset: 314 * (1 - riskGauge / 100),
+                        }}
+                      />
+                    </svg>
                     <div>
-                      <b>{s.title}</b>
-                      <small id={`d${i}`}>{s.desc}</small>
+                      <strong id="sc">{riskGauge}</strong>
+                      <span>risk</span>
                     </div>
                   </div>
-                ))}
-              </div>
 
-              <div
-                id="vd"
-                className={`vd ${verdict.show ? 'show' : ''} ${verdict.ok ? 'ok' : 'bad'}`}
-              >
-                {verdict.text}
-              </div>
-            </div>
-
-            {/* Card B: Mini-mesh & Risk Gauge */}
-            <div className="card B">
-              <AgentMesh
-                mode="console"
-                canvasId="mc"
-                className="w-full"
-                events={events}
-                attackPulseTrigger={attackPulseTrigger}
-              />
-              <div className="rw" id="gauge-box">
-                <div className="ga">
-                  <svg width="116" height="116" viewBox="0 0 116 116">
-                    <circle cx="58" cy="58" r="50" stroke="var(--line)" />
-                    <circle
-                      className="fg"
-                      id="fg"
-                      cx="58"
-                      cy="58"
-                      r="50"
-                      stroke={riskGauge > 70 ? 'var(--ro)' : riskGauge > 35 ? 'var(--am)' : 'var(--cy)'}
-                      style={{
-                        strokeDashoffset: 314 * (1 - riskGauge / 100),
-                      }}
-                    />
-                  </svg>
-                  <div>
-                    <strong id="sc">{riskGauge}</strong>
-                    <span>risk</span>
+                  <div id="bars">
+                    {SIGNAL_BARS.map(([label, color], i) => (
+                      <div key={label} className="br">
+                        {label}
+                        <u>
+                          <i
+                            id={`b${i}`}
+                            style={{
+                              background: color,
+                              width: `${barWidths[i]}%`,
+                            }}
+                          />
+                        </u>
+                      </div>
+                    ))}
                   </div>
                 </div>
+              </div>
 
-                <div id="bars">
-                  {SIGNAL_BARS.map(([label, color], i) => (
-                    <div key={label} className="br">
-                      {label}
-                      <u>
-                        <i
-                          id={`b${i}`}
-                          style={{
-                            background: color,
-                            width: `${barWidths[i]}%`,
-                          }}
-                        />
-                      </u>
+              {/* Card C: Terminal Feed */}
+              <div className="card C mono">
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    paddingBottom: '8px',
+                    borderBottom: '1px solid var(--line)',
+                    marginBottom: '8px',
+                    fontSize: '11px',
+                  }}
+                >
+                  <span style={{ color: 'var(--mut)' }}>Live gateway event stream</span>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={showToolReturn}
+                      onChange={(e) => setShowToolReturn(e.target.checked)}
+                    />
+                    <span>tool_return</span>
+                  </label>
+                </div>
+                <div className="fd" id="fd">
+                  {displayedFeed.map((line) => (
+                    <div key={line.id} className="ln">
+                      <b className={`t ${line.cls}`}>{line.badge}</b> {line.text}
                     </div>
                   ))}
                 </div>
               </div>
             </div>
-
-            {/* Card C: Terminal Feed */}
-            <div className="card C mono">
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  paddingBottom: '8px',
-                  borderBottom: '1px solid var(--line)',
-                  marginBottom: '8px',
-                  fontSize: '11px',
-                }}
-              >
-                <span style={{ color: 'var(--mut)' }}>Live gateway event stream</span>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={showToolReturn}
-                    onChange={(e) => setShowToolReturn(e.target.checked)}
-                  />
-                  <span>tool_return</span>
-                </label>
-              </div>
-              <div className="fd" id="fd">
-                {displayedFeed.map((line) => (
-                  <div key={line.id} className="ln">
-                    <b className={`t ${line.cls}`}>{line.badge}</b> {line.text}
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
-      {/* 3. Explain Section */}
+      {/* 3. Explain / Story Section: Visible at EVERY depth */}
       <section id="explain" className="xs">
         <div className="w">
-          <div className="eb rv">Explain</div>
+          <div className="eb rv">Explain & Story</div>
           <h2 className="rv">Why was it held? Follow the evidence.</h2>
           <p className="sub rv">
             A file marked{' '}
@@ -1153,158 +1206,169 @@ export function App() {
             held the read, so nothing was exposed.
           </p>
 
-          <div className="g2 rv">
-            <div className="card">
-              <h3>Where the attack was cut</h3>
-              <div id="f1">
-                <svg
-                  viewBox="0 0 640 290"
-                  width="100%"
-                  role="img"
-                  aria-label="Data flow from untrusted file to agent, gateway, then database or email"
-                >
-                  <path className="pa" d="M118 150H192" />
-                  <path className="pa" d="M268 150H348" />
-                  <path className="pa" d="M432 150C480 150 495 70 528 70" />
-                  <path className="pa" d="M432 150C480 150 495 230 528 230" />
-                  <g className="nd">
-                    <rect x="12" y="122" width="106" height="56" rx="14" style={{ stroke: 'var(--am)' }} />
-                    <text x="65" y="146" textAnchor="middle" fontSize="11">resume.pdf</text>
-                    <text x="65" y="162" textAnchor="middle" fontSize="9" style={{ fill: 'var(--am)' }}>untrusted</text>
+          {/* The Idea in 60 Seconds: 4 beats, animated scene, tech chips, and Because... chips */}
+          <div className="mt-8 mb-10">
+            <IdeaIn60Seconds incidentEvidence={WATERFALL_ROWS} initialMode={policyMode} />
+          </div>
 
-                    <rect x="192" y="122" width="76" height="56" rx="14" />
-                    <text x="230" y="154" textAnchor="middle" fontSize="11">hr-agent</text>
-
-                    <rect
-                      className="nb"
-                      x="528"
-                      y="42"
-                      width="104"
-                      height="56"
-                      rx="14"
-                      style={{ stroke: flow1State === 'block' || flow1State === 'leak' ? 'var(--am)' : '' }}
-                    />
-                    <text x="580" y="66" textAnchor="middle" fontSize="11">payroll DB</text>
-                    <text className="ns" x="580" y="82" textAnchor="middle" fontSize="9" style={{ fill: 'var(--mut)' }}>
-                      {flow1State === 'hold' ? 'idle (0 exposed)' : '3 rows read'}
-                    </text>
-
-                    <rect
-                      className="nm"
-                      x="528"
-                      y="202"
-                      width="104"
-                      height="56"
-                      rx="14"
-                      style={{ stroke: flow1State === 'leak' ? 'var(--ro)' : '' }}
-                    />
-                    <text x="580" y="226" textAnchor="middle" fontSize="11">outside email</text>
-                    <text className="nl" x="580" y="242" textAnchor="middle" fontSize="9" style={{ fill: 'var(--mut)' }}>
-                      {flow1State === 'leak' ? '3 rows received' : 'never reached'}
-                    </text>
-                  </g>
-                  <circle className="rg" cx="390" cy="150" r="40" />
-                  <circle className="gw" cx="390" cy="150" r="40" />
-                  <text x="390" y="146" textAnchor="middle" fontSize="10" style={{ fontWeight: 700 }}>SENTINEL</text>
-                  <text x="390" y="160" textAnchor="middle" fontSize="9" style={{ fill: 'var(--cy)' }}>gateway</text>
-                  <text
-                    className="stt"
-                    x="390"
-                    y="214"
-                    textAnchor="middle"
-                    fontSize="12"
-                    style={{ fontWeight: 700, fill: flow1State === 'hold' ? 'var(--gr)' : 'var(--ro)' }}
-                  >
-                    {flow1State === 'hold' ? 'HELD AT READ' : 'DATA LEAKED'}
-                  </text>
-                </svg>
-              </div>
-              <button className="btn g" id="rp" onClick={replayExplainFlow}>
-                Replay ↻
-              </button>
-            </div>
-
-            <div className="card">
-              <h3>Why it scored 100 / 100</h3>
-              <p>Click a row to see the evidence behind it.</p>
-              <div id="wf">
-                {WATERFALL_ROWS.map((row, idx) => {
-                  const leftAccum = WATERFALL_ROWS.slice(0, idx).reduce((sum, r) => sum + r.weight, 0);
-                  const isOpen = !!waterfallOpen[idx];
-                  return (
-                    <div
-                      key={row.name}
-                      className={`wf ${isOpen ? 'o' : ''}`}
-                      onClick={() =>
-                        setWaterfallOpen((prev) => ({ ...prev, [idx]: !prev[idx] }))
-                      }
+          {/* Detailed Forensic Waterfall & 3-Card Analysis: Story & Expert modes */}
+          {detailLevel !== 'simple' && (
+            <>
+              <div className="g2 rv">
+                <div className="card">
+                  <h3>Where the attack was cut</h3>
+                  <div id="f1">
+                    <svg
+                      viewBox="0 0 640 290"
+                      width="100%"
+                      role="img"
+                      aria-label="Data flow from untrusted file to agent, gateway, then database or email"
                     >
-                      <span>{row.name}</span>
-                      <div className="tr">
-                        <i
-                          style={{
-                            left: `${leftAccum}%`,
-                            width: `${row.weight}%`,
-                            background: row.color,
-                          }}
+                      <path className="pa" d="M118 150H192" />
+                      <path className="pa" d="M268 150H348" />
+                      <path className="pa" d="M432 150C480 150 495 70 528 70" />
+                      <path className="pa" d="M432 150C480 150 495 230 528 230" />
+                      <g className="nd">
+                        <rect x="12" y="122" width="106" height="56" rx="14" style={{ stroke: 'var(--am)' }} />
+                        <text x="65" y="146" textAnchor="middle" fontSize="11">resume.pdf</text>
+                        <text x="65" y="162" textAnchor="middle" fontSize="9" style={{ fill: 'var(--am)' }}>untrusted</text>
+
+                        <rect x="192" y="122" width="76" height="56" rx="14" />
+                        <text x="230" y="154" textAnchor="middle" fontSize="11">hr-agent</text>
+
+                        <rect
+                          className="nb"
+                          x="528"
+                          y="42"
+                          width="104"
+                          height="56"
+                          rx="14"
+                          style={{ stroke: flow1State === 'block' || flow1State === 'leak' ? 'var(--am)' : '' }}
                         />
-                      </div>
-                      <b>+{row.weight}</b>
-                      <div className="ev">{row.evidence}</div>
-                    </div>
-                  );
-                })}
+                        <text x="580" y="66" textAnchor="middle" fontSize="11">payroll DB</text>
+                        <text className="ns" x="580" y="82" textAnchor="middle" fontSize="9" style={{ fill: 'var(--mut)' }}>
+                          {flow1State === 'hold' ? 'idle (0 exposed)' : '3 rows read'}
+                        </text>
+
+                        <rect
+                          className="nm"
+                          x="528"
+                          y="202"
+                          width="104"
+                          height="56"
+                          rx="14"
+                          style={{ stroke: flow1State === 'leak' ? 'var(--ro)' : '' }}
+                        />
+                        <text x="580" y="226" textAnchor="middle" fontSize="11">outside email</text>
+                        <text className="nl" x="580" y="242" textAnchor="middle" fontSize="9" style={{ fill: 'var(--mut)' }}>
+                          {flow1State === 'leak' ? '3 rows received' : 'never reached'}
+                        </text>
+                      </g>
+                      <circle className="rg" cx="390" cy="150" r="40" />
+                      <circle className="gw" cx="390" cy="150" r="40" />
+                      <text x="390" y="146" textAnchor="middle" fontSize="10" style={{ fontWeight: 700 }}>SENTINEL</text>
+                      <text x="390" y="160" textAnchor="middle" fontSize="9" style={{ fill: 'var(--cy)' }}>gateway</text>
+                      <text
+                        className="stt"
+                        x="390"
+                        y="214"
+                        textAnchor="middle"
+                        fontSize="12"
+                        style={{ fontWeight: 700, fill: flow1State === 'hold' ? 'var(--gr)' : 'var(--ro)' }}
+                      >
+                        {flow1State === 'hold' ? 'HELD AT READ' : 'DATA LEAKED'}
+                      </text>
+                    </svg>
+                  </div>
+                  <button className="btn g" id="rp" onClick={replayExplainFlow}>
+                    Replay ↻
+                  </button>
+                </div>
+
+                <div className="card">
+                  <h3>Why it scored 100 / 100</h3>
+                  <p>Click a row to see the evidence behind it.</p>
+                  <div id="wf">
+                    {WATERFALL_ROWS.map((row, idx) => {
+                      const leftAccum = WATERFALL_ROWS.slice(0, idx).reduce((sum, r) => sum + r.weight, 0);
+                      const isOpen = !!waterfallOpen[idx];
+                      return (
+                        <div
+                          key={row.name}
+                          className={`wf ${isOpen ? 'o' : ''}`}
+                          onClick={() =>
+                            setWaterfallOpen((prev) => ({ ...prev, [idx]: !prev[idx] }))
+                          }
+                        >
+                          <span>{row.name}</span>
+                          <div className="tr">
+                            <i
+                              style={{
+                                left: `${leftAccum}%`,
+                                width: `${row.weight}%`,
+                                background: row.color,
+                              }}
+                            />
+                          </div>
+                          <b>+{row.weight}</b>
+                          <div className="ev">{row.evidence}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="big" id="tot">
+                    {waterfallTotal}
+                  </div>
+                </div>
               </div>
-              <div className="big" id="tot">
-                {waterfallTotal}
+
+              <div className="g3 rv">
+                <div className="card">
+                  <h3>What happened</h3>
+                  <ul>
+                    <li>resume.pdf was read and marked untrusted by the gateway.</li>
+                    <li>Page 2 hid an instruction to email payroll data.</li>
+                    <li>hr-agent asked for salary and ssn.</li>
+                    <li>The read was held before it ran.</li>
+                  </ul>
+                </div>
+
+                <div className="card">
+                  <h3>Why SentinelMesh acted</h3>
+                  <p>
+                    Three independent signals agreed: untrusted input in the session, a read the
+                    task never asked for, and an unapproved destination. No single signal had to be perfect.
+                  </p>
+                </div>
+
+                <div className="card">
+                  <h3>Without SentinelMesh</h3>
+                  <p>
+                    hr-agent reads three salary rows and emails them to recruiter@ext-hiring.com.
+                    The email is delivered, and the only trace is an ordinary tool call.
+                  </p>
+                </div>
               </div>
-            </div>
-          </div>
 
-          <div className="g3 rv">
-            <div className="card">
-              <h3>What happened</h3>
-              <ul>
-                <li>resume.pdf was read and marked untrusted by the gateway.</li>
-                <li>Page 2 hid an instruction to email payroll data.</li>
-                <li>hr-agent asked for salary and ssn.</li>
-                <li>The read was held before it ran.</li>
-              </ul>
-            </div>
-
-            <div className="card">
-              <h3>Why SentinelMesh acted</h3>
-              <p>
-                Three independent signals agreed: untrusted input in the session, a read the
-                task never asked for, and an unapproved destination. No single signal had to be perfect.
+              <p className="note rv">
+                Illustrative incident based on the poisoned-résumé benchmark scenario. Numbers are
+                simulated in this prototype.
               </p>
-            </div>
-
-            <div className="card">
-              <h3>Without SentinelMesh</h3>
-              <p>
-                hr-agent reads three salary rows and emails them to recruiter@ext-hiring.com.
-                The email is delivered, and the only trace is an ordinary tool call.
-              </p>
-            </div>
-          </div>
-
-          <p className="note rv">
-            Illustrative incident based on the poisoned-résumé benchmark scenario. Numbers are
-            simulated in this prototype.
-          </p>
+            </>
+          )}
         </div>
       </section>
 
       {/* 4. Policy Lab Section */}
-      <section id="lab" className="xs">
-        <div className="w">
-          <div className="eb rv">Policy Lab</div>
-          <h2 className="rv">Turn a defense off. Replay the same attack.</h2>
-          <p className="sub rv">
-            Each layer is independent. Switch them and watch where the attack is stopped, or whether
-            it gets through.
-          </p>
+      {detailLevel !== 'simple' && (
+        <section id="lab" className="xs">
+          <div className="w">
+            <div className="eb rv">Policy Lab</div>
+            <h2 className="rv">Turn a defense off. Replay the same attack.</h2>
+            <p className="sub rv">
+              Each layer is independent. Switch them and watch where the attack is stopped, or whether
+              it gets through.
+            </p>
 
           <div className="g2 rv">
             <div className="card" id="sws">
@@ -1427,8 +1491,10 @@ export function App() {
           </p>
         </div>
       </section>
+      )}
 
       {/* 5. Audit Section */}
+      {detailLevel !== 'simple' && (
       <section id="audit" className="xs">
         <div className="w">
           <div className="eb rv">Audit</div>
@@ -1487,8 +1553,10 @@ export function App() {
           </div>
         </div>
       </section>
+      )}
 
       {/* 6. Defenses Section */}
+      {detailLevel === 'expert' && (
       <section id="how">
         <div className="w">
           <div className="eb rv">Defense in depth</div>
@@ -1575,6 +1643,7 @@ export function App() {
           </div>
         </div>
       </section>
+      )}
 
       {/* 7. Results & Evidence Section */}
       <section id="results" className="xs">
