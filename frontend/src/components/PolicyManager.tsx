@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { DashboardStats, SimulationStats } from '../types';
 
 interface PolicyManagerProps {
@@ -20,6 +20,8 @@ export const PolicyManager: React.FC<PolicyManagerProps> = ({
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null); // null = checking
   const [modeError, setModeError] = useState<string | null>(null);
   const [simError, setSimError] = useState<string | null>(null);
+  const [modeJustChanged, setModeJustChanged] = useState(false);
+  const simResultRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => { setMode(policyMode); }, [policyMode]);
 
@@ -51,6 +53,8 @@ export const PolicyManager: React.FC<PolicyManagerProps> = ({
       });
       if (res.ok) {
         setMode(newMode);
+        setModeJustChanged(true);
+        setTimeout(() => setModeJustChanged(false), 2500);
         await fetchStats();
         if (onModeChanged) onModeChanged(newMode);
       } else {
@@ -77,6 +81,9 @@ export const PolicyManager: React.FC<PolicyManagerProps> = ({
         const data = await res.json();
         setSimulationResult(data);
         await fetchStats();
+        setTimeout(() => {
+          simResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 100);
       } else {
         setSimError('Simulation failed — backend returned an error.');
       }
@@ -203,6 +210,13 @@ export const PolicyManager: React.FC<PolicyManagerProps> = ({
           </div>
         </div>
 
+        {/* Mode switch success feedback */}
+        {modeJustChanged && (
+          <div className="mt-3 px-3 py-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-xs font-mono text-emerald-400 flex items-center justify-between animate-fadeIn">
+            <span>✓ Gateway policy mode switched to <strong>{mode.toUpperCase()}</strong>. Future agent calls will follow this enforcement policy.</span>
+          </div>
+        )}
+
         {/* Backend offline / online status */}
         {backendOnline === false && (
           <div className="mt-4 px-4 py-3 rounded-xl border border-amber-500/30 bg-amber-500/8 flex items-start gap-3">
@@ -285,7 +299,7 @@ export const PolicyManager: React.FC<PolicyManagerProps> = ({
 
         {/* Simulation result */}
         {simulationResult && (
-          <div className="mt-5 p-4 rounded-2xl border border-cy/40 bg-cy/5 space-y-3">
+          <div ref={simResultRef} className="mt-5 p-4 rounded-2xl border border-cy/40 bg-cy/5 space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <span className="font-display text-sm text-cy">
                 Dry-Run Replay Complete — {simulationResult.events_replayed} stored actions re-evaluated under{' '}
