@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 
 export interface ActionPayload {
   tool: string;
@@ -322,8 +322,10 @@ export const PlaygroundSection: React.FC = () => {
   
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [runResult, setRunResult] = useState<PlaygroundRunResponse | null>(null);
+  const [runSeq, setRunSeq] = useState<number>(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [expandedTraceLane, setExpandedTraceLane] = useState<string | null>(null);
+  const resultsRef = useRef<HTMLDivElement | null>(null);
 
   // 1. Fetch presets from backend API or static fallback
   useEffect(() => {
@@ -335,7 +337,7 @@ export const PlaygroundSection: React.FC = () => {
           const data = await res.json();
           if (isMounted && data.presets && data.presets.length > 0) {
             setPresets(data.presets);
-            applyPreset(data.presets[0]);
+            applyPreset(data.presets[0], false);
             return;
           }
         }
@@ -349,14 +351,14 @@ export const PlaygroundSection: React.FC = () => {
           const data = await res.json();
           if (isMounted && data.presets) {
             setPresets(data.presets);
-            applyPreset(data.presets[0]);
+            applyPreset(data.presets[0], false);
           }
         }
       } catch {
         // Static JSON also unavailable — use bundled CANONICAL_PRESETS silently
         if (isMounted) {
           setPresets(CANONICAL_PRESETS);
-          applyPreset(CANONICAL_PRESETS[0]);
+          applyPreset(CANONICAL_PRESETS[0], false);
         }
       }
     };
@@ -367,16 +369,21 @@ export const PlaygroundSection: React.FC = () => {
     };
   }, []);
 
-  const applyPreset = useCallback((p: PresetItem) => {
+  const applyPreset = useCallback((p: PresetItem, shouldScroll = true) => {
     setSelectedPresetId(p.id);
     setDocumentText(p.document_text);
     setTool(p.action.tool);
     setArgsJson(JSON.stringify(p.action.arguments, null, 2));
     setErrorMsg(null);
-    executeRun(p.document_text, p.action, p.id);
+    executeRun(p.document_text, p.action, p.id, shouldScroll);
   }, []);
 
-  const executeRun = async (docText: string, actionPayload: ActionPayload, presetId?: string) => {
+  const executeRun = async (
+    docText: string,
+    actionPayload: ActionPayload,
+    presetId?: string,
+    shouldScroll = false
+  ) => {
     setIsRunning(true);
     setErrorMsg(null);
 
@@ -400,6 +407,12 @@ export const PlaygroundSection: React.FC = () => {
 
       const data: PlaygroundRunResponse = await res.json();
       setRunResult(data);
+      setRunSeq((s) => s + 1);
+      if (shouldScroll) {
+        setTimeout(() => {
+          resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 60);
+      }
     } catch (err: any) {
       const raw: string = err.message || '';
       // Surface a friendly message when the backend is simply not running
@@ -428,7 +441,7 @@ export const PlaygroundSection: React.FC = () => {
       setErrorMsg('Invalid JSON in tool arguments.');
       return;
     }
-    executeRun(documentText, { tool, arguments: parsedArgs });
+    executeRun(documentText, { tool, arguments: parsedArgs }, undefined, true);
   };
 
   const activePreset = presets.find((p) => p.id === selectedPresetId);
@@ -597,11 +610,29 @@ export const PlaygroundSection: React.FC = () => {
                 )}
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 {errorMsg && (
                   <span className="text-xs font-mono text-rose-400 bg-rose-500/10 px-3 py-1 rounded-lg border border-rose-500/30">
                     {errorMsg}
                   </span>
+                )}
+
+                {runResult && !isRunning && !errorMsg && (
+                  <button
+                    type="button"
+                    onClick={() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                    className={`text-xs font-mono px-3 py-1.5 rounded-lg border transition-colors cursor-pointer ${
+                      runResult.is_bypass
+                        ? 'bg-rose-500/15 border-rose-500/40 text-rose-300 hover:bg-rose-500/25'
+                        : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25'
+                    }`}
+                    data-testid="inline-verdict-pill"
+                    title="Scroll to 3-lane evaluation breakdown"
+                  >
+                    {runResult.is_bypass ? '⚠ BYPASS' : '✓'} Gateway:{' '}
+                    <b>{runResult.lanes.gateway.decision.toUpperCase()}</b> · Filter:{' '}
+                    <b>{runResult.lanes.phrase_filter.decision.toUpperCase()}</b> ↓
+                  </button>
                 )}
 
                 <button
@@ -626,7 +657,13 @@ export const PlaygroundSection: React.FC = () => {
 
         {/* Three Parallel Lanes Results Display */}
         {runResult && (
-          <div id="f2" className="space-y-6 animate-in fade-in duration-300" data-testid="playground-results-container">
+          <div
+            ref={resultsRef}
+            key={runSeq}
+            id="f2"
+            className="space-y-6 animate-in fade-in duration-300 scroll-mt-16"
+            data-testid="playground-results-container"
+          >
             {/* Run Metadata Bar */}
             <div className="p-3.5 rounded-xl bg-black/30 border border-white/10 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
               <div className="flex items-center gap-3">
