@@ -19,16 +19,19 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({
   const overlayRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const [measuredCardHeight, setMeasuredCardHeight] = useState(280);
+  const prevOpenRef = useRef(false);
+
+  // Context-aware start: when tour opens, jump to the first step matching currentRoute
+  useEffect(() => {
+    if (isOpen && !prevOpenRef.current) {
+      const routeIdx = TOUR_STEPS.findIndex((s) => s.route === currentRoute);
+      setCurrentStepIndex(routeIdx >= 0 ? routeIdx : 0);
+    }
+    prevOpenRef.current = isOpen;
+  }, [isOpen, currentRoute]);
 
   const safeIndex = Math.min(currentStepIndex, Math.max(0, TOUR_STEPS.length - 1));
   const step: TourStep = TOUR_STEPS[safeIndex] || TOUR_STEPS[0];
-
-  // Reset to step 0 when reopened cleanly
-  useEffect(() => {
-    if (!isOpen) {
-      setCurrentStepIndex(0);
-    }
-  }, [isOpen]);
 
   // Body tour class cleanup
   useEffect(() => {
@@ -142,7 +145,7 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({
   if (!isOpen) return null;
 
   const PADDING = 16;
-  const CARD_WIDTH = Math.min(420, window.innerWidth - PADDING * 2);
+  const CARD_WIDTH = Math.min(430, window.innerWidth - PADDING * 2);
   const cardH = Math.max(200, Math.min(window.innerHeight - PADDING * 2, measuredCardHeight));
   const winH = window.innerHeight;
   const winW = window.innerWidth;
@@ -198,44 +201,104 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-[99990] pointer-events-auto"
+      className="fixed inset-0 z-[99990] pointer-events-none"
       data-testid="guided-tour-overlay"
     >
-      <div className="absolute inset-0 cursor-default" onClick={onClose} />
-
+      {/* 4-quadrant interactive cutout: clicks outside close the tour, while spotlighted area remains interactive */}
       {targetRect ? (
-        <div
-          className="fixed pointer-events-none rounded-2xl transition-all duration-300 ring-2 ring-emerald-400/80 shadow-[0_0_0_9999px_rgba(8,12,24,0.65),0_0_30px_rgba(52,211,153,0.35)] z-[99992]"
-          style={{
-            top: `${Math.max(4, targetRect.top - 6)}px`,
-            left: `${Math.max(4, targetRect.left - 6)}px`,
-            width: `${Math.min(window.innerWidth - 8, Math.max(30, targetRect.width + 12))}px`,
-            height: `${Math.max(20, targetRect.height + 12)}px`,
-          }}
-        />
+        <>
+          {/* Top backdrop */}
+          <div
+            className="fixed left-0 right-0 top-0 bg-[#080C18]/65 backdrop-blur-[1px] pointer-events-auto cursor-default z-[99991]"
+            style={{ height: `${Math.max(0, targetRect.top - 6)}px` }}
+            onClick={onClose}
+          />
+          {/* Bottom backdrop */}
+          <div
+            className="fixed left-0 right-0 bottom-0 bg-[#080C18]/65 backdrop-blur-[1px] pointer-events-auto cursor-default z-[99991]"
+            style={{ top: `${Math.min(winH, targetRect.bottom + 6)}px` }}
+            onClick={onClose}
+          />
+          {/* Left backdrop */}
+          <div
+            className="fixed left-0 bg-[#080C18]/65 backdrop-blur-[1px] pointer-events-auto cursor-default z-[99991]"
+            style={{
+              top: `${Math.max(0, targetRect.top - 6)}px`,
+              height: `${Math.max(0, targetRect.height + 12)}px`,
+              width: `${Math.max(0, targetRect.left - 6)}px`,
+            }}
+            onClick={onClose}
+          />
+          {/* Right backdrop */}
+          <div
+            className="fixed right-0 bg-[#080C18]/65 backdrop-blur-[1px] pointer-events-auto cursor-default z-[99991]"
+            style={{
+              top: `${Math.max(0, targetRect.top - 6)}px`,
+              height: `${Math.max(0, targetRect.height + 12)}px`,
+              left: `${Math.min(winW, targetRect.right + 6)}px`,
+            }}
+            onClick={onClose}
+          />
+
+          {/* Glowing target ring */}
+          <div
+            className="fixed pointer-events-none rounded-2xl transition-all duration-300 ring-2 ring-emerald-400/90 shadow-[0_0_35px_rgba(52,211,153,0.35)] z-[99992]"
+            style={{
+              top: `${Math.max(4, targetRect.top - 6)}px`,
+              left: `${Math.max(4, targetRect.left - 6)}px`,
+              width: `${Math.min(window.innerWidth - 8, Math.max(30, targetRect.width + 12))}px`,
+              height: `${Math.max(20, targetRect.height + 12)}px`,
+            }}
+          />
+        </>
       ) : (
-        <div className="fixed inset-0 bg-[#080C18]/65 backdrop-blur-[2px] z-[99991]" />
+        <div
+          className="fixed inset-0 bg-[#080C18]/65 backdrop-blur-[2px] pointer-events-auto cursor-default z-[99991]"
+          onClick={onClose}
+        />
       )}
 
+      {/* Floating Tour Card */}
       <div
         ref={cardRef}
         data-testid="tour-card"
         style={cardStyle}
-        className="bg-[#0B101D]/95 border border-white/20 rounded-2xl p-5 shadow-2xl backdrop-blur-xl"
+        className="bg-[#0B101D]/95 border border-white/20 rounded-2xl p-5 shadow-2xl backdrop-blur-xl pointer-events-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between gap-2 mb-3">
+        <div className="flex items-center justify-between gap-2 mb-2">
           <span className="text-[11px] font-mono tracking-wider uppercase px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-semibold">
             {step.badge || `Step ${safeIndex + 1}`}
           </span>
           <span className="text-xs text-slate-400 font-mono">
-            {safeIndex + 1} / {TOUR_STEPS.length}
+            {step.chapter} · {safeIndex + 1} / {TOUR_STEPS.length}
           </span>
         </div>
 
-        <h3 className="text-base font-semibold text-white tracking-tight mb-2">{step.title}</h3>
+        {/* Mini-step progress dots */}
+        <div className="flex items-center gap-1.5 mb-3" aria-label="Tour step navigation">
+          {TOUR_STEPS.map((s, idx) => (
+            <button
+              key={idx}
+              type="button"
+              onClick={() => setCurrentStepIndex(idx)}
+              className={`h-1.5 rounded-full transition-all duration-200 cursor-pointer ${
+                idx === safeIndex
+                  ? 'w-6 bg-emerald-400'
+                  : 'w-1.5 bg-white/20 hover:bg-white/40'
+              }`}
+              title={`${s.badge}: ${s.title}`}
+            />
+          ))}
+        </div>
 
-        <p className="text-sm text-slate-300 leading-relaxed mb-5">{step.description}</p>
+        <h3 className="text-base font-semibold text-white tracking-tight mb-2 leading-snug">
+          {step.title}
+        </h3>
+
+        <p className="text-sm text-slate-300 leading-relaxed mb-5 font-sans">
+          {step.description}
+        </p>
 
         <div className="flex items-center justify-between pt-3 border-t border-white/10">
           <button

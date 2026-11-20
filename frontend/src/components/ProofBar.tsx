@@ -43,6 +43,7 @@ export const ProofBar: React.FC<{ onJumpToEvidence?: () => void }> = ({ onJumpTo
 
   return (
     <div
+      id="proof-bar"
       className="w-full border-y border-white/10 bg-[#070b14]/90 backdrop-blur-md py-4 px-4 shadow-lg relative z-20"
       data-testid="proof-bar"
     >

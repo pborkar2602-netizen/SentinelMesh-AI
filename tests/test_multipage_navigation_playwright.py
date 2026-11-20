@@ -185,6 +185,13 @@ def test_multipage_routes_no_gaps_and_nav_integrity():
                     page.wait_for_selector("[data-testid='tour-card']", state="visible", timeout=5000)
                     assert "OVERVIEW" in page.locator("[data-testid='tour-card']").inner_text().upper()
 
+                    # Step 1 -> Step 2 (Proof Bar on /)
+                    page.locator("[data-testid='tour-next-btn']").click()
+                    page.wait_for_timeout(300)
+                    assert page.evaluate("() => window.location.pathname") == "/"
+                    assert "PROOF BAR" in page.locator("[data-testid='tour-card']").inner_text().upper()
+
+                    # Step 2 -> Step 3 (Auto-navigates to /console)
                     page.locator("[data-testid='tour-next-btn']").click()
                     page.wait_for_timeout(450)
                     assert page.evaluate("() => window.location.pathname") == "/console"

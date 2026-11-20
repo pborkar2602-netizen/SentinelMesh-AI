@@ -355,6 +355,7 @@ export const PlaygroundSection: React.FC = () => {
                       ? 'bg-emerald-500/15 border-emerald-500/50 text-white shadow-lg shadow-emerald-500/10'
                       : 'bg-white/[0.03] border-white/10 text-slate-300 hover:bg-white/[0.07] hover:border-white/20'
                   }`}
+                  id={`preset-btn-${p.id}`}
                   data-testid={`preset-btn-${p.id}`}
                 >
                   <div className="flex items-center justify-between gap-1 mb-1">

@@ -20,7 +20,7 @@ export const EvidenceSection: React.FC = () => {
   const [activeTab, setActiveTab] = useState<EvidenceTab>('mistakes');
 
   return (
-    <div className="space-y-10" data-testid="evidence-section">
+    <div id="evidence-section" className="space-y-10" data-testid="evidence-section">
       {/* 1. EVIDENCE SUMMARY */}
       <div className="space-y-6" data-testid="evidence-summary">
         <div>

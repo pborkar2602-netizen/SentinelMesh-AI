@@ -159,6 +159,7 @@ export const AuditPrivacyPage: React.FC<AuditPrivacyPageProps> = ({
               type="button"
               className={subTab === 'vault' ? 'on' : ''}
               onClick={() => setSubTab('vault')}
+              id="audit-tab-vault"
               data-testid="audit-tab-vault"
             >
               Privacy Vault

@@ -65,6 +65,7 @@ export const KnownIssuesList: React.FC = () => {
 
   return (
     <div
+      id="known-issues-list"
       className="bg-[#0b0f19]/90 border border-white/10 rounded-2xl p-6 shadow-xl backdrop-blur-md space-y-6"
       data-testid="known-issues-list"
     >

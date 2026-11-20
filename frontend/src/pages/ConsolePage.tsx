@@ -138,7 +138,7 @@ export const ConsolePage: React.FC<ConsolePageProps> = ({
         </div>
 
         {/* Authoritative DB KPI Strip */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" data-testid="console-kpi-strip">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" id="console-kpi-strip" data-testid="console-kpi-strip">
           <div className="p-4 rounded-2xl bg-[#0b0f19]/90 border border-white/10">
             <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 block">
               Total Actions
@@ -201,23 +201,15 @@ export const ConsolePage: React.FC<ConsolePageProps> = ({
                 </div>
                 <div className="flex gap-2 flex-wrap">
                   <button
-                    className="btn s"
+                    className="btn s g"
                     id="run"
-                    onClick={onRunSimulation}
-                    title="Simulate 5-step chain animation"
+                    data-testid="run-attack-btn"
+                    onClick={onTriggerRealAttack}
+                    disabled={liveAttackRunning}
+                    title="Trigger live attack scenario (ATK-001) against the real SentinelMesh gateway"
                   >
-                    Run attack ▶
+                    {liveAttackRunning ? 'Executing Scenario…' : 'Run Attack Scenario ▶'}
                   </button>
-                  {stats?.demo_mode && (
-                    <button
-                      className="btn s g"
-                      onClick={onTriggerRealAttack}
-                      disabled={liveAttackRunning}
-                      title="Execute real demo agents against real gateway"
-                    >
-                      {liveAttackRunning ? 'Executing…' : 'Run real agent ▶'}
-                    </button>
-                  )}
                 </div>
               </div>
 
