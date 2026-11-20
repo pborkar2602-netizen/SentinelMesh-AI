@@ -24,6 +24,7 @@ export interface TickerLine {
   badge: string;
   cls: string;
   text: string;
+  rawEvent?: AuditEvent;
 }
 
 interface OverviewPageProps {

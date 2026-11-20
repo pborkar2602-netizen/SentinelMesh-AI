@@ -177,6 +177,7 @@ export function App() {
             badge: b,
             cls,
             text: `${callText} (${formatRelativeTime(ev.timestamp)}${ev.latency_ms ? ` · ${ev.latency_ms.toFixed(1)}ms` : ''})`,
+            rawEvent: ev,
           };
         });
         setFeedLines(lines);
@@ -235,6 +236,7 @@ export function App() {
                 badge: b,
                 cls,
                 text: `${callText} (${formatRelativeTime(ev.timestamp)}${ev.latency_ms ? ` · ${ev.latency_ms.toFixed(1)}ms` : ''})`,
+                rawEvent: ev,
               };
 
               setFeedLines((prev) => [newLine, ...prev.slice(0, 11)]);

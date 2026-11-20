@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { PayloadPreview } from '../components/PayloadPreview';
 import { PolicyManager } from '../components/PolicyManager';
+import { EventForensicDrawer } from '../components/EventForensicDrawer';
 import { AuditEvent, AuditVerification, DashboardStats } from '../types';
 
 const Z0 = '0000000000000000000000000000000000000000000000000000000000000000';
@@ -57,6 +58,34 @@ export const AuditPrivacyPage: React.FC<AuditPrivacyPageProps> = ({
   const [chainBlocks, setChainBlocks] = useState<ChainBlock[]>([]);
   const [tamperedIdx, setTamperedIdx] = useState<number>(-1);
   const [policyConfig, setPolicyConfig] = useState<any | null>(null);
+  const [inspectedEvent, setInspectedEvent] = useState<AuditEvent | null>(null);
+
+  const handleInspectBlock = (b: ChainBlock, idx: number) => {
+    const matched = events.find((e) => e.event_hash === b.hash || `${e.agent_id}·${e.tool_name}` === b.tool);
+    if (matched) {
+      setInspectedEvent(matched);
+      return;
+    }
+    const [agentId, toolName] = b.tool.includes('·') ? b.tool.split('·') : ['hr-agent', b.tool];
+    const fallback: AuditEvent = {
+      id: idx + 1,
+      trace_id: `trace-hash-block-0${idx + 1}`,
+      agent_id: agentId,
+      session_id: 'sess-ledger-block',
+      tool_name: toolName.split('(')[0],
+      arguments: { block_entry: b.tool },
+      context_sources: [{ source_id: 'genesis-chain', source_type: 'ledger', is_untrusted: false }],
+      decision: b.decision,
+      reason: `Cryptographic append-only block #${idx + 1} with SHA-256 hash ${b.hash.slice(0, 10)}…`,
+      risk_score: b.decision === 'block' ? 88 : b.decision === 'require_approval' ? 65 : 15,
+      risk_breakdown: { untrusted_taint: 0, sensitive_data: 0, external_destination: 0, rule_findings: 10 },
+      latency_ms: 3.2,
+      timestamp: new Date().toISOString(),
+      event_hash: b.hash,
+      prev_hash: b.prevHash,
+    };
+    setInspectedEvent(fallback);
+  };
 
   const loadChainFromBackend = useCallback(async () => {
     setTamperedIdx(-1);
@@ -236,7 +265,16 @@ export const AuditPrivacyPage: React.FC<AuditPrivacyPageProps> = ({
 
                   return (
                     <React.Fragment key={`block-${i}`}>
-                      <div className={`blk ${isBad ? 'bad' : isOk ? 'ok' : ''}`}>
+                      <div 
+                        className={`blk ${isBad ? 'bad' : isOk ? 'ok' : ''} cursor-pointer hover:border-cyan-400 hover:scale-[1.02] transition-all`}
+                        onClick={() => handleInspectBlock(b, i)}
+                        title="Click to inspect block forensics & SHA-256 proof"
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') handleInspectBlock(b, i);
+                        }}
+                      >
                         <b>
                           #{i + 1} {b.tool}
                         </b>
@@ -360,6 +398,12 @@ export const AuditPrivacyPage: React.FC<AuditPrivacyPageProps> = ({
           </div>
         )}
       </div>
+
+      {/* Forensic Inspection Drawer */}
+      <EventForensicDrawer
+        event={inspectedEvent}
+        onClose={() => setInspectedEvent(null)}
+      />
     </div>
   );
 };
