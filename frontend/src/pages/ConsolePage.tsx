@@ -183,21 +183,30 @@ export const ConsolePage: React.FC<ConsolePageProps> = ({
             {/* Card A: 5-step Attack Chain */}
             <div className="card A" id="chain-card">
               <div className="hd">
-                <div className="seg" id="mode-seg">
-                  <button
-                    id="mM"
-                    className={policyMode === 'monitor' ? 'on' : ''}
-                    onClick={() => onSwitchMode('monitor')}
-                  >
-                    Monitor
-                  </button>
-                  <button
-                    id="mE"
-                    className={policyMode === 'enforce' ? 'on' : ''}
-                    onClick={() => onSwitchMode('enforce')}
-                  >
-                    Enforce
-                  </button>
+                <div className="flex flex-col gap-1.5">
+                  <div className="seg" id="mode-seg">
+                    <button
+                      id="mM"
+                      className={policyMode === 'monitor' ? 'on' : ''}
+                      onClick={() => onSwitchMode('monitor')}
+                      title="Monitor: actions proceed but risky ones are logged as would_block — data can still leak"
+                    >
+                      Monitor
+                    </button>
+                    <button
+                      id="mE"
+                      className={policyMode === 'enforce' ? 'on' : ''}
+                      onClick={() => onSwitchMode('enforce')}
+                      title="Enforce: dangerous actions are stopped or held for approval before they execute"
+                    >
+                      Enforce
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-500 font-sans">
+                    {policyMode === 'enforce'
+                      ? '🛑 Enforce — dangerous actions blocked inline, 0 records leak'
+                      : '👁 Monitor — actions proceed, risky ones logged as would_block'}
+                  </p>
                 </div>
                 <div className="flex gap-2 flex-wrap">
                   <button
@@ -206,7 +215,7 @@ export const ConsolePage: React.FC<ConsolePageProps> = ({
                     data-testid="run-attack-btn"
                     onClick={onTriggerRealAttack}
                     disabled={liveAttackRunning}
-                    title="Trigger live attack scenario (ATK-001) against the real SentinelMesh gateway"
+                    title="Runs ATK-001 (poisoned résumé) through the real gateway — requires backend server"
                   >
                     {liveAttackRunning ? 'Executing Scenario…' : 'Run Attack Scenario ▶'}
                   </button>
@@ -234,6 +243,15 @@ export const ConsolePage: React.FC<ConsolePageProps> = ({
                 className={`vd ${verdict.show ? 'show' : ''} ${verdict.ok ? 'ok' : 'bad'}`}
               >
                 {verdict.text}
+              </div>
+
+              {/* Explain animation vs live */}
+              <div className="px-1 pt-2">
+                <p className="text-[11px] text-slate-500 font-sans leading-relaxed">
+                  <span className="text-slate-400 font-semibold">Animation:</span> always plays client-side. &nbsp;
+                  <span className="text-slate-400 font-semibold">Real events</span> (live feed strip, KPI counters) require the backend server.
+                  Switch mode then re-run to compare Enforce vs Monitor outcomes.
+                </p>
               </div>
             </div>
 
