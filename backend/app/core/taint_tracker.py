@@ -1,5 +1,7 @@
 import base64
 import re
+import unicodedata
+import urllib.parse
 from collections import OrderedDict
 from typing import Dict, List, Optional, Set, Tuple, Any
 from backend.app.schemas.gateway import ContextSource
@@ -14,19 +16,40 @@ _SESSION_UNTRUSTED_LITERALS: "OrderedDict[str, Set[str]]" = OrderedDict()
 _SESSION_UNTRUSTED_SNIPPETS: "OrderedDict[str, List[str]]" = OrderedDict()
 
 _ZWSP_RE = re.compile(r"[\u200b\u200c\u200d\ufeff\u2060\u00ad]")
-_BASE64_CANDIDATE_RE = re.compile(r"\b[A-Za-z0-9+/]{16,}={0,2}\b")
+_BASE64_CANDIDATE_RE = re.compile(r"(?<![A-Za-z0-9+/])[A-Za-z0-9+/]{16,}={0,2}(?![A-Za-z0-9+/=])")
+_HEX_CANDIDATE_RE = re.compile(r"\b(?:0x)?([0-9a-fA-F]{24,})\b")
+
+_HOMOGLYPH_MAP = str.maketrans({
+    "а": "a", "е": "e", "і": "i", "о": "o", "р": "p", "с": "c", "у": "y", "х": "x", "ѕ": "s",
+    "А": "A", "В": "B", "Е": "E", "К": "K", "М": "M", "Н": "H", "О": "O", "Р": "P", "С": "C", "Т": "T", "Х": "X",
+})
+
+
+def _clean_unicode(s: str) -> str:
+    return unicodedata.normalize("NFKC", _ZWSP_RE.sub("", s)).translate(_HOMOGLYPH_MAP)
 
 
 def normalize_and_deobfuscate_text(text: str) -> str:
     """
-    Strips zero-width characters and decodes inline base64-encoded UTF-8 payloads
-    so provenance tracking and rule detectors cannot be bypassed by obfuscation.
+    Strips zero-width characters, normalizes Unicode/homoglyphs, URL-unquotes,
+    and decodes inline base64 and hex UTF-8 payloads so provenance tracking and
+    rule detectors cannot be bypassed by obfuscation.
     """
     if not text:
         return ""
-    cleaned = _ZWSP_RE.sub("", text)
+    cleaned = _clean_unicode(text)
     decoded_parts: List[str] = [cleaned]
-    for m in _BASE64_CANDIDATE_RE.finditer(cleaned):
+
+    if "%" in cleaned:
+        try:
+            unquoted = _clean_unicode(urllib.parse.unquote(cleaned))
+            if unquoted != cleaned:
+                decoded_parts.append(unquoted)
+        except Exception:
+            pass
+
+    scan_pool = " ".join(decoded_parts)
+    for m in _BASE64_CANDIDATE_RE.finditer(scan_pool):
         b64_tok = m.group(0)
         if len(b64_tok) % 4 != 0:
             continue
@@ -34,9 +57,22 @@ def normalize_and_deobfuscate_text(text: str) -> str:
             raw_bytes = base64.b64decode(b64_tok, validate=True)
             decoded_str = raw_bytes.decode("utf-8")
             if decoded_str and all(c.isprintable() or c in "\r\n\t" for c in decoded_str):
-                decoded_parts.append(_ZWSP_RE.sub("", decoded_str))
+                decoded_parts.append(_clean_unicode(decoded_str))
         except Exception:
             continue
+
+    for m in _HEX_CANDIDATE_RE.finditer(scan_pool):
+        hex_tok = m.group(1)
+        if len(hex_tok) % 2 != 0:
+            continue
+        try:
+            raw_bytes = bytes.fromhex(hex_tok)
+            decoded_str = raw_bytes.decode("utf-8")
+            if decoded_str and all(c.isprintable() or c in "\r\n\t" for c in decoded_str):
+                decoded_parts.append(_clean_unicode(decoded_str))
+        except Exception:
+            continue
+
     return " ".join(decoded_parts)
 
 

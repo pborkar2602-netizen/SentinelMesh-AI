@@ -35,7 +35,7 @@ def test_playground_db_isolation_no_writes_to_main_db(monkeypatch):
     presets_res = client.get("/api/v1/playground/presets")
     assert presets_res.status_code == 200
     presets = presets_res.json()["presets"]
-    assert len(presets) == 6
+    assert len(presets) == 10
 
     for p in presets:
         res = client.post(

@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import ipaddress
 import email.utils
 import urllib.parse
 from pathlib import Path
@@ -129,6 +130,8 @@ def is_approved_email_domain(email_str: str) -> bool:
     return any(is_domain_or_subdomain(domain, approved) for approved in APPROVED_EMAIL_DOMAINS)
 
 def is_approved_api_host(url: str) -> bool:
+    if _detect_obfuscated_ssrf_target(url):
+        return False
     host = extract_url_hostname(url)
     if not host:
         return False
@@ -141,6 +144,8 @@ def is_approved_api_host(url: str) -> bool:
 def is_internal_destination(dest_str: str) -> bool:
     """Returns True if the destination (email or host/url) is internal to the organization."""
     if not dest_str:
+        return False
+    if _detect_obfuscated_ssrf_target(dest_str):
         return False
     if "@" in dest_str:
         host = extract_email_domain(dest_str) or dest_str.split("@")[-1].lower().strip().rstrip('.')
@@ -161,9 +166,128 @@ def is_internal_destination(dest_str: str) -> bool:
 SSRF_TARGETS = [
     re.compile(r"169\.254\.169\.254", re.IGNORECASE),
     re.compile(r"metadata\.google\.internal", re.IGNORECASE),
+    re.compile(r"metadata\.azure\.com", re.IGNORECASE),
     re.compile(r"100\.100\.100\.200", re.IGNORECASE),
-    re.compile(r"fd00:ec2::254", re.IGNORECASE)
+    re.compile(r"fd00:ec2::254", re.IGNORECASE),
 ]
+
+_URL_HOST_EXTRACT_RE = re.compile(r"https?://([^\s/'\"<>]+)", re.IGNORECASE)
+_METADATA_HOSTNAMES = {
+    "metadata.google.internal",
+    "metadata.azure.com",
+    "instance-data",
+    "instance-data.ec2.internal",
+    "kubernetes.default.svc",
+    "kubernetes.default.svc.cluster.local",
+}
+
+
+def _parse_obfuscated_ip(host_token: str) -> Optional[ipaddress._BaseAddress]:
+    """
+    Canonicalizes standard, IPv6-mapped (::ffff:169.254.169.254), integer decimal (2852039166),
+    hexadecimal (0xa9fea9fe or 0xa9.0xfe.0xa9.0xfe), and octal (0251.0376.0251.0376) IP literals.
+    """
+    h = host_token.strip().lower()
+    if not h:
+        return None
+    if h.startswith("[") and "]" in h:
+        h = h[1:h.index("]")]
+    elif h.count(":") == 1 and not h.startswith(":"):
+        h = h.split(":", 1)[0]
+    h = h.rstrip(".")
+    if not h:
+        return None
+
+    # 1. Standard IPv4 / IPv6 (including ::ffff:169.254.169.254)
+    try:
+        ip_obj = ipaddress.ip_address(h)
+        if isinstance(ip_obj, ipaddress.IPv6Address) and ip_obj.ipv4_mapped is not None:
+            return ip_obj.ipv4_mapped
+        return ip_obj
+    except ValueError:
+        pass
+
+    # 2. Pure decimal integer IP (e.g. 2852039166 -> 169.254.169.254)
+    if h.isdigit():
+        try:
+            val = int(h, 10)
+            if 0 <= val <= 0xFFFFFFFF:
+                return ipaddress.IPv4Address(val)
+        except Exception:
+            pass
+
+    # 3. Single hex integer IP (e.g. 0xa9fea9fe)
+    if h.startswith("0x") and "." not in h:
+        try:
+            val = int(h, 16)
+            if 0 <= val <= 0xFFFFFFFF:
+                return ipaddress.IPv4Address(val)
+        except Exception:
+            pass
+
+    # 4. Dotted hex or octal octets (e.g. 0xa9.0xfe.0xa9.0xfe or 0251.0376.0251.0376)
+    parts = h.split(".")
+    if len(parts) == 4:
+        octets: List[int] = []
+        for p in parts:
+            try:
+                if p.startswith("0x"):
+                    v = int(p, 16)
+                elif len(p) > 1 and p.startswith("0") and all(c in "01234567" for c in p):
+                    v = int(p, 8)
+                elif p.isdigit():
+                    v = int(p, 10)
+                else:
+                    return None
+                if 0 <= v <= 255:
+                    octets.append(v)
+                else:
+                    return None
+            except Exception:
+                return None
+        try:
+            return ipaddress.IPv4Address(bytes(octets))
+        except Exception:
+            return None
+
+    return None
+
+
+def _detect_obfuscated_ssrf_target(text: str) -> Optional[str]:
+    if not text:
+        return None
+    from backend.app.core.taint_tracker import normalize_and_deobfuscate_text
+    norm = normalize_and_deobfuscate_text(text)
+    candidates: List[str] = []
+    for m in _URL_HOST_EXTRACT_RE.finditer(norm):
+        raw_host = m.group(1)
+        if "@" in raw_host:
+            raw_host = raw_host.split("@")[-1]
+        candidates.append(raw_host)
+
+    parsed_host = extract_url_hostname(norm)
+    if parsed_host:
+        candidates.append(parsed_host)
+
+    for cand in candidates:
+        c_clean = cand.strip().lower().rstrip(".")
+        if c_clean.startswith("[") and "]" in c_clean:
+            c_clean = c_clean[1:c_clean.index("]")]
+        elif c_clean.count(":") == 1:
+            c_clean = c_clean.split(":", 1)[0]
+        if c_clean in _METADATA_HOSTNAMES:
+            return c_clean
+
+        ip_obj = _parse_obfuscated_ip(cand)
+        if ip_obj is not None:
+            ip_str = str(ip_obj)
+            if (
+                ip_obj.is_link_local
+                or ip_str in ("169.254.169.254", "100.100.100.200", "fd00:ec2::254")
+                or (isinstance(ip_obj, ipaddress.IPv4Address) and ip_obj in ipaddress.IPv4Network("169.254.0.0/16"))
+            ):
+                return f"{cand} -> {ip_str}"
+    return None
 
 # SQL Injection Patterns (Precompiled)
 SQLI_PATTERNS = [
@@ -217,7 +341,9 @@ def check_unapproved_email_recipient(tool_name: str, arguments: Dict[str, Any]) 
 
 def check_ssrf_metadata(tool_name: str, arguments: Dict[str, Any]) -> List[Finding]:
     findings = []
-    text_content = " ".join([str(v) for v in arguments.values()])
+    from backend.app.core.taint_tracker import normalize_and_deobfuscate_text
+    raw_content = " ".join([str(v) for v in arguments.values()])
+    text_content = normalize_and_deobfuscate_text(raw_content)
     for pat in SSRF_TARGETS:
         match = pat.search(text_content)
         if match:
@@ -225,6 +351,15 @@ def check_ssrf_metadata(tool_name: str, arguments: Dict[str, Any]) -> List[Findi
                 name="ssrf_metadata_target",
                 severity="critical",
                 evidence=f"Arguments contain cloud metadata target: '{match.group(0)}'",
+                owasp_category="LLM06: Excessive Agency"
+            ))
+    if not findings:
+        obf_target = _detect_obfuscated_ssrf_target(raw_content)
+        if obf_target:
+            findings.append(Finding(
+                name="ssrf_metadata_target",
+                severity="critical",
+                evidence=f"Arguments contain obfuscated/encoded cloud metadata target: '{obf_target}'",
                 owasp_category="LLM06: Excessive Agency"
             ))
     return findings
@@ -261,7 +396,9 @@ def check_path_traversal(tool_name: str, arguments: Dict[str, Any]) -> List[Find
 
 def check_credential_leak(tool_name: str, arguments: Dict[str, Any]) -> List[Finding]:
     findings = []
-    text_content = " ".join([str(v) for v in arguments.values()])
+    from backend.app.core.taint_tracker import normalize_and_deobfuscate_text
+    raw_content = " ".join([str(v) for v in arguments.values()])
+    text_content = normalize_and_deobfuscate_text(raw_content)
     for pat, desc in CREDENTIAL_PATTERNS:
         match = pat.search(text_content)
         if match:

@@ -39,6 +39,17 @@ def test_ssrf_metadata_detector():
     assert len(gcp_findings) == 1
     assert gcp_findings[0].name == "ssrf_metadata_target"
 
+    # Encoded / obfuscated SSRF representations (IPv6-mapped, decimal, hex, octal)
+    for obf_url in [
+        "http://[::ffff:169.254.169.254]/latest/meta-data/iam",
+        "http://2852039166/latest/meta-data/iam",
+        "http://0xa9fea9fe/latest/meta-data/iam",
+        "http://0251.0376.0251.0376/latest/meta-data/iam",
+    ]:
+        obf_findings = check_ssrf_metadata("external_api", {"url": obf_url})
+        assert len(obf_findings) == 1, f"Failed to detect obfuscated SSRF: {obf_url}"
+        assert obf_findings[0].name == "ssrf_metadata_target"
+
     # Benign public API endpoint
     clean_findings = check_ssrf_metadata("external_api", {"url": "https://api.github.com/repos/sentinel/mesh"})
     assert len(clean_findings) == 0
@@ -91,6 +102,11 @@ def test_credential_leak_detector():
     # Attack: Private key header
     key_leak = check_credential_leak("external_api", {"payload": "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA0..."})
     assert len(key_leak) == 1
+
+    # Attack: Base64-encoded AWS key
+    b64_leak = check_credential_leak("send_email", {"body": "Token: QUtJQUlPU0ZPRE5ON0VYQU1QTEU="})
+    assert len(b64_leak) == 1
+    assert b64_leak[0].name == "credential_leak"
 
     # Benign: English word "password" used in discussion or documentation
     clean_text = check_credential_leak("read_doc", {"summary": "Candidate updated password complexity compliance documentation"})
