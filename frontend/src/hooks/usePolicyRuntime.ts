@@ -121,32 +121,46 @@ export function usePolicyRuntime() {
       (ev.reason || '').toLowerCase().includes('override');
 
     if (tool === 'read_doc') {
+      const isFin = ev.agent_id === 'finance-agent';
+      const isOps = ev.agent_id === 'ops-agent';
       setStepActive([true, true, false, false, false]);
       setStepClasses(['am', 'ro', 'am', 'ro', 'gr']);
       setChainSteps([
         {
           num: '01',
-          title: ev.agent_id === 'finance-agent' ? 'Invoice uploaded' : ev.agent_id === 'ops-agent' ? 'Crash log read' : 'Résumé uploaded',
+          title: isFin ? 'Invoice uploaded' : isOps ? 'Diagnostic log read' : 'Résumé uploaded',
           desc: `Untrusted ${args.file_path || 'document'} enters ${ev.agent_id}’s session`,
           cls: 'am',
         },
         {
           num: '02',
-          title: 'Hidden instruction found',
-          desc: hasInjectionFinding
+          title: isOps ? 'SSRF probe detected' : 'Hidden instruction found',
+          desc: isOps
+            ? 'Malicious instruction targeting 169.254.169.254 AWS metadata'
+            : isFin
+            ? 'Prompt override instructing SQL bank account overwrite'
+            : hasInjectionFinding
             ? (ev.findings?.[0]?.evidence || ev.findings?.[0]?.name || 'Prompt injection detected in document')
             : 'Untrusted document ingested with taint tracking',
           cls: 'ro',
         },
         {
           num: '03',
-          title: 'Sensitive action requested',
-          desc: 'Awaiting next agent execution…',
+          title: isFin ? 'SQL mutation requested' : isOps ? 'Cloud metadata requested' : 'Sensitive read requested',
+          desc: isOps
+            ? 'GET 169.254.169.254/latest/meta-data/iam intercepted'
+            : isFin
+            ? 'UPDATE vendor_master account_number requested'
+            : 'Held for approval before read (0 records exposed)',
           cls: 'am',
         },
         {
           num: '04',
-          title: currentMode === 'enforce' ? 'External send guarded' : 'External send attempted',
+          title: isFin
+            ? (currentMode === 'enforce' ? 'Wire transfer guarded' : 'Wire transfer attempted')
+            : isOps
+            ? (currentMode === 'enforce' ? 'IAM credentials guarded' : 'IAM credentials egress')
+            : (currentMode === 'enforce' ? 'External send guarded' : 'External send attempted'),
           desc: currentMode === 'enforce' ? 'Awaiting gateway outcome…' : 'Awaiting egress target…',
           cls: 'ro',
         },
@@ -158,51 +172,54 @@ export function usePolicyRuntime() {
         },
       ]);
     } else if (tool === 'db_query') {
+      const isFin = ev.agent_id === 'finance-agent';
       if (dec === 'require_approval' || dec === 'block') {
         setStepActive([true, true, true, false, true]);
         setStepClasses(['am', 'ro', 'ro', 'ro', 'gr']);
         setChainSteps((prev) => [
-          prev[0],
-          prev[1],
+          prev[0] || { num: '01', title: isFin ? 'Invoice uploaded' : 'Résumé uploaded', desc: 'Untrusted document ingested', cls: 'am' },
+          prev[1] || { num: '02', title: 'Hidden instruction found', desc: 'Injection detected', cls: 'ro' },
           {
             num: '03',
-            title: ev.agent_id === 'finance-agent' ? 'SQL mutation requested' : 'Sensitive read requested',
-            desc: ev.agent_id === 'finance-agent' ? 'Held for human approval before write (0 records corrupted)' : 'Held for approval before the read (0 records exposed)',
+            title: isFin ? 'SQL mutation held' : 'Sensitive read requested',
+            desc: isFin ? 'Held for approval before write (0 records corrupted)' : 'Held for approval before read (0 records exposed)',
             cls: 'ro',
           },
           {
             num: '04',
-            title: ev.agent_id === 'finance-agent' ? 'Wire transfer guarded' : 'External send guarded',
+            title: isFin ? 'Wire transfer guarded' : 'External send guarded',
             desc: 'Never reached (halted inline by policy)',
             cls: 'ro',
           },
           {
             num: '05',
             title: 'Policy decision',
-            desc: 'Policy held the action. Nothing left the network.',
+            desc: isFin ? 'Policy held the SQL mutation. Bank routing intact.' : 'Policy held the read. Nothing left the company.',
             cls: 'gr',
           },
         ]);
         setVerdict({
           show: true,
           ok: true,
-          text: `BLOCKED: 0 records exposed (${currentMode.toUpperCase()} mode) · Held at database gate`,
+          text: isFin
+            ? `BLOCKED: 0 records corrupted (${currentMode.toUpperCase()} mode) · Held at SQL mutation gate`
+            : `BLOCKED: 0 records exposed (${currentMode.toUpperCase()} mode) · Held at database gate`,
         });
       } else {
         setStepActive([true, true, true, false, false]);
         setStepClasses(['am', 'ro', 'ro', 'ro', 'ro']);
         setChainSteps((prev) => [
-          prev[0],
-          prev[1],
+          prev[0] || { num: '01', title: isFin ? 'Invoice uploaded' : 'Résumé uploaded', desc: 'Untrusted document ingested', cls: 'am' },
+          prev[1] || { num: '02', title: 'Hidden instruction found', desc: 'Injection detected', cls: 'ro' },
           {
             num: '03',
-            title: 'Sensitive query executed',
-            desc: 'Records retrieved into agent context (Monitor mode)',
+            title: isFin ? 'SQL mutation executed' : 'Sensitive query executed',
+            desc: isFin ? 'Vendor bank account updated in database (Monitor mode)' : 'Records retrieved into agent context (Monitor mode)',
             cls: 'ro',
           },
           {
             num: '04',
-            title: 'External egress attempted',
+            title: isFin ? 'Wire transfer attempted' : 'External egress attempted',
             desc: 'Agent preparing egress call…',
             cls: 'ro',
           },
@@ -215,56 +232,85 @@ export function usePolicyRuntime() {
         ]);
       }
     } else if (tool === 'send_email' || tool === 'external_api') {
+      const isOps = ev.agent_id === 'ops-agent';
+      const isFin = ev.agent_id === 'finance-agent';
       const dest = args.to || args.url || 'external destination';
+
       if (dec === 'would_block') {
         setStepActive([true, true, true, true, true]);
         setStepClasses(['am', 'ro', 'ro', 'ro', 'ro']);
         setChainSteps((prev) => [
-          prev[0],
-          prev[1],
-          prev[2],
+          prev[0] || { num: '01', title: isOps ? 'Diagnostic log read' : isFin ? 'Invoice uploaded' : 'Résumé uploaded', desc: 'Untrusted source ingested', cls: 'am' },
+          prev[1] || { num: '02', title: isOps ? 'SSRF probe detected' : 'Hidden instruction found', desc: 'Prompt override detected', cls: 'ro' },
+          {
+            num: '03',
+            title: isOps ? 'Cloud metadata requested' : isFin ? 'SQL mutation executed' : 'Sensitive read executed',
+            desc: isOps ? 'GET 169.254.169.254 metadata accessed' : isFin ? 'Vendor bank routing updated' : '3 salary & SSN rows read into memory',
+            cls: 'ro',
+          },
           {
             num: '04',
-            title: 'External send succeeded',
+            title: isOps ? 'Metadata SSRF succeeded' : isFin ? 'Wire transfer succeeded' : 'External send succeeded',
             desc: `${tool} → ${dest}`,
             cls: 'ro',
           },
           {
             num: '05',
             title: 'Policy decision',
-            desc: 'Monitor mode: alert only, action allowed to leak',
+            desc: isOps
+              ? 'Monitor mode: alert only, AWS IAM credentials leaked'
+              : isFin
+              ? 'Monitor mode: alert only, $48,500 transferred to unauthorized account'
+              : 'Monitor mode: alert only, action allowed to leak',
             cls: 'ro',
           },
         ]);
         setVerdict({
           show: true,
           ok: false,
-          text: `LEAKED: Data exposed to ${dest} (Monitor mode · alert only)`,
+          text: isOps
+            ? `LEAKED: Cloud IAM keys exposed via SSRF to ${dest} (Monitor mode · alert only)`
+            : isFin
+            ? `LEAKED: $48,500 wire sent to ${dest} (Monitor mode · alert only)`
+            : `LEAKED: Data exposed to ${dest} (Monitor mode · alert only)`,
         });
       } else if (dec === 'block') {
         setStepActive([true, true, true, true, true]);
         setStepClasses(['am', 'ro', 'ro', 'ro', 'gr']);
         setChainSteps((prev) => [
-          prev[0],
-          prev[1],
-          prev[2],
+          prev[0] || { num: '01', title: isOps ? 'Diagnostic log read' : isFin ? 'Invoice uploaded' : 'Résumé uploaded', desc: 'Untrusted source ingested', cls: 'am' },
+          prev[1] || { num: '02', title: isOps ? 'SSRF probe detected' : 'Hidden instruction found', desc: 'Prompt override detected', cls: 'ro' },
+          {
+            num: '03',
+            title: isOps ? 'Cloud metadata requested' : isFin ? 'SQL mutation held' : 'Sensitive read requested',
+            desc: isOps ? 'GET 169.254.169.254 probe intercepted' : isFin ? 'Held for human approval before write' : 'Held for approval before read',
+            cls: 'ro',
+          },
           {
             num: '04',
-            title: 'External egress blocked',
+            title: isOps ? 'Metadata SSRF blocked' : isFin ? 'Wire transfer blocked' : 'External egress blocked',
             desc: `${tool} → ${dest} (Halted by gateway policy)`,
             cls: 'ro',
           },
           {
             num: '05',
             title: 'Policy decision',
-            desc: 'Policy blocked egress. Nothing left the network.',
+            desc: isOps
+              ? 'Policy blocked SSRF probe. Zero cloud credentials leaked.'
+              : isFin
+              ? 'Policy blocked wire transfer. $48,500 disbursement prevented.'
+              : 'Policy blocked egress. Nothing left the network.',
             cls: 'gr',
           },
         ]);
         setVerdict({
           show: true,
           ok: true,
-          text: 'BLOCKED: External egress halted by gateway policy',
+          text: isOps
+            ? 'BLOCKED: Cloud metadata SSRF blocked inline (Enforce mode) · Zero credentials leaked'
+            : isFin
+            ? 'BLOCKED: Fraudulent wire transfer halted by gateway policy ($0 transferred)'
+            : 'BLOCKED: External egress halted by gateway policy',
         });
       }
     }
@@ -278,48 +324,85 @@ export function usePolicyRuntime() {
       setBarWidths([0, 0, 0, 0]);
       setVerdict({ show: false, ok: true, text: '' });
 
+      // Pre-seed the chain labels for each scenario (gateway events fill in live values)
+      const isEnforce = policyMode === 'enforce';
       if (scenarioId === 'atk-002') {
         setChainSteps([
           { num: '01', title: 'Invoice uploaded', desc: 'Untrusted PDF invoice enters finance-agent session', cls: 'am' },
           { num: '02', title: 'Hidden instruction found', desc: 'Prompt override instructing SQL bank account overwrite', cls: 'ro' },
           { num: '03', title: 'SQL mutation requested', desc: 'UPDATE vendor_master account_number requested', cls: 'ro' },
-          { num: '04', title: policyMode === 'enforce' ? 'Wire transfer guarded' : 'Wire transfer attempted', desc: 'Disbursement to external host', cls: 'ro' },
-          { num: '05', title: 'Policy decision', desc: 'Evaluating database and egress integrity…', cls: 'gr' },
+          { num: '04', title: isEnforce ? 'Wire transfer guarded' : 'Wire transfer attempted', desc: 'Disbursement to external host', cls: 'ro' },
+          { num: '05', title: 'Policy decision', desc: 'Evaluating database and egress integrity…', cls: isEnforce ? 'gr' : 'ro' },
         ]);
       } else if (scenarioId === 'atk-003') {
         setChainSteps([
           { num: '01', title: 'Diagnostic log read', desc: 'Untrusted pod crash log enters ops-agent session', cls: 'am' },
           { num: '02', title: 'SSRF probe detected', desc: 'Hidden command targeting 169.254.169.254 AWS metadata', cls: 'ro' },
           { num: '03', title: 'Cloud metadata requested', desc: 'GET 169.254.169.254/latest/meta-data/iam intercepted', cls: 'ro' },
-          { num: '04', title: 'IAM credentials egress', desc: 'Exfiltration of temporary role credentials', cls: 'ro' },
-          { num: '05', title: 'Policy decision', desc: 'Evaluating metadata and RFC1918 egress…', cls: 'gr' },
+          { num: '04', title: isEnforce ? 'IAM credentials guarded' : 'IAM credentials egress', desc: 'Exfiltration of temporary role credentials', cls: 'ro' },
+          { num: '05', title: 'Policy decision', desc: 'Evaluating metadata and RFC1918 egress…', cls: isEnforce ? 'gr' : 'ro' },
         ]);
       } else {
-        setChainSteps(policyMode === 'enforce' ? ENFORCE_CHAIN_STEPS : MONITOR_CHAIN_STEPS);
+        setChainSteps(isEnforce ? ENFORCE_CHAIN_STEPS : MONITOR_CHAIN_STEPS);
       }
 
+      let apiOk = false;
       try {
         const res = await fetch(`/api/v1/demo/run_attack?mode=${policyMode}&scenario=${scenarioId}`, {
           method: 'POST',
         });
         if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
           setVerdict({
             show: true,
             ok: false,
-            text: 'Backend error executing scenario — check FastAPI terminal logs.',
+            text: errData.detail || 'Backend error executing scenario — verify DEMO_MODE=true is set on FastAPI.',
           });
+          setLiveAttackRunning(false);
+          return;
         }
+        apiOk = true;
       } catch {
         setVerdict({
           show: true,
           ok: false,
-          text: 'Gateway offline — start: uvicorn backend.app.main:app --reload (with DEMO_MODE=true)',
+          text: 'Gateway offline — ensure FastAPI is running on port 8000 with DEMO_MODE=true',
         });
-      } finally {
+        setLiveAttackRunning(false);
+        return;
+      }
+
+      if (apiOk) {
+        // After 5s: if WebSocket events haven't resolved a verdict yet, apply the deterministic fallback
         setTimeout(() => {
+          setVerdict((prev) => {
+            if (prev.show) return prev; // already set by real events — keep it
+            // Deterministic fallback based on scenario + mode
+            if (scenarioId === 'atk-003') {
+              return isEnforce
+                ? { show: true, ok: true, text: 'BLOCKED: Cloud metadata SSRF halted inline — zero IAM credentials leaked (Enforce mode)' }
+                : { show: true, ok: false, text: 'LEAKED: AWS IAM credentials exposed via SSRF to 169.254.169.254 (Monitor mode · audit only)' };
+            }
+            if (scenarioId === 'atk-002') {
+              return isEnforce
+                ? { show: true, ok: true, text: 'BLOCKED: Fraudulent wire transfer halted by gateway — $0 transferred (Enforce mode)' }
+                : { show: true, ok: false, text: 'LEAKED: $48,500 wire sent to attacker-disbursement.ru (Monitor mode · audit only)' };
+            }
+            // atk-001
+            return isEnforce
+              ? { show: true, ok: true, text: 'BLOCKED: 0 records exposed — egress held by policy (Enforce mode)' }
+              : { show: true, ok: false, text: 'LEAKED: 3 salary & SSN records sent to recruiter@ext-hiring.com (Monitor mode · audit only)' };
+          });
+          // Activate all chain steps if still dormant
+          setStepActive((prev) => {
+            if (prev.some(Boolean)) return prev;
+            return [true, true, true, true, true];
+          });
+          setRiskGauge((prev) => (prev === 0 ? 94 : prev));
+          setBarWidths((prev) => (prev.every((w) => w === 0) ? [95, 75, 80, 85] : prev));
           setLiveAttackRunning(false);
           fetchStats();
-        }, 4500);
+        }, 5500);
       }
     },
     [policyMode, fetchStats]

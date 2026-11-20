@@ -68,16 +68,17 @@ def run_live_attack_demo(
 
     def _worker():
         try:
+            gateway_endpoint = os.getenv("SENTINEL_GATEWAY_URL", "http://127.0.0.1:8000/api/v1/gateway/execute")
             if selected_scenario == "atk-002":
                 from demo_agents.agent_runner import run_finance_attack_scenario
-                run_finance_attack_scenario(gateway_url="http://127.0.0.1:8000/api/v1/gateway", delay=0.35)
+                run_finance_attack_scenario(gateway_url=gateway_endpoint, delay=0.35)
             elif selected_scenario == "atk-003":
                 from demo_agents.agent_runner import run_ops_attack_scenario
-                run_ops_attack_scenario(gateway_url="http://127.0.0.1:8000/api/v1/gateway", delay=0.35)
+                run_ops_attack_scenario(gateway_url=gateway_endpoint, delay=0.35)
             else:
                 from demo_agents.agent_runner import run_attack_scenario, run_benign_scenario
-                run_attack_scenario(gateway_url="http://127.0.0.1:8000/api/v1/gateway", delay=0.35)
-                run_benign_scenario(gateway_url="http://127.0.0.1:8000/api/v1/gateway", delay=0.35)
+                run_attack_scenario(gateway_url=gateway_endpoint, delay=0.35)
+                run_benign_scenario(gateway_url=gateway_endpoint, delay=0.35)
         except Exception as e:
             logger.warning(f"Error running demo attack scenario: {e}")
 
