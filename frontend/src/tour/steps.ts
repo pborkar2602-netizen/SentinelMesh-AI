@@ -130,7 +130,7 @@ export const TOUR_STEPS: TourStep[] = [
   // CHAPTER 5: BENCHMARKS (Route: /benchmarks)
   {
     route: '/benchmarks',
-    targetId: 'known-issues-list',
+    targetId: 'known-issues-header',
     chapter: 'Benchmarks',
     stepNumber: 1,
     totalStepsInChapter: 1,
@@ -138,6 +138,6 @@ export const TOUR_STEPS: TourStep[] = [
     title: 'Honest mistakes and where it fails',
     description:
       'Real security tools are transparent about their limits. We publish every methodology correction, adapter fix, and known blind spot so you know exactly what is protected and what is not.',
-    position: 'top',
+    position: 'bottom',
   },
 ];

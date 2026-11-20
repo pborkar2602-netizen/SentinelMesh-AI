@@ -14,7 +14,10 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({
   onNavigate,
   onClose,
 }) => {
-  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [currentStepIndex, setCurrentStepIndex] = useState(() => {
+    const routeIdx = TOUR_STEPS.findIndex((s) => s.route === currentRoute);
+    return routeIdx >= 0 ? routeIdx : 0;
+  });
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -25,7 +28,9 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({
   useEffect(() => {
     if (isOpen && !prevOpenRef.current) {
       const routeIdx = TOUR_STEPS.findIndex((s) => s.route === currentRoute);
-      setCurrentStepIndex(routeIdx >= 0 ? routeIdx : 0);
+      if (routeIdx >= 0) {
+        setCurrentStepIndex(routeIdx);
+      }
     }
     prevOpenRef.current = isOpen;
   }, [isOpen, currentRoute]);
@@ -71,40 +76,72 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({
   useEffect(() => {
     if (!isOpen) return;
 
+    let cancelled = false;
+
+    const findTargetElement = (): HTMLElement | null => {
+      let el = document.getElementById(step.targetId);
+      if (!el && step.targetId === 'known-issues-header') {
+        el = document.getElementById('known-issues-list');
+      }
+      return el;
+    };
+
     const updateBoundingBox = () => {
-      const element =
-        document.getElementById(step.targetId) ||
-        document.getElementById('hero-badge') ||
-        document.getElementById('home');
+      if (cancelled) return;
+      const element = findTargetElement();
       if (element) {
         const rect = element.getBoundingClientRect();
         if (rect.width > 0 && rect.height > 0) {
           setTargetRect(rect);
-          return;
+          return rect;
         }
       }
       setTargetRect(null);
+      return null;
     };
 
-    const scrollAndMeasure = () => {
-      const el = document.getElementById(step.targetId);
+    const scrollTargetIntoView = () => {
+      if (cancelled) return;
+      const el = findTargetElement();
       if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+        el.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
+        const rect = el.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          setTargetRect(rect);
+        }
       }
-      updateBoundingBox();
     };
 
-    const t0 = setTimeout(scrollAndMeasure, 80);
-    const t1 = setTimeout(updateBoundingBox, 260);
-    const t2 = setTimeout(updateBoundingBox, 520);
+    scrollTargetIntoView();
+    const timers = [
+      setTimeout(scrollTargetIntoView, 60),
+      setTimeout(scrollTargetIntoView, 200),
+      setTimeout(scrollTargetIntoView, 450),
+      setTimeout(updateBoundingBox, 750),
+      setTimeout(updateBoundingBox, 1200),
+    ];
+
+    let ro: ResizeObserver | null = null;
+    const el = findTargetElement();
+    if (el && typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => {
+        if (!cancelled) {
+          updateBoundingBox();
+        }
+      });
+      ro.observe(el);
+      if (el.parentElement) {
+        ro.observe(el.parentElement);
+      }
+    }
 
     window.addEventListener('resize', updateBoundingBox);
     window.addEventListener('scroll', updateBoundingBox, { passive: true });
 
     return () => {
-      clearTimeout(t0);
-      clearTimeout(t1);
-      clearTimeout(t2);
+      cancelled = true;
+      timers.forEach(clearTimeout);
+      if (ro) ro.disconnect();
       window.removeEventListener('resize', updateBoundingBox);
       window.removeEventListener('scroll', updateBoundingBox);
     };

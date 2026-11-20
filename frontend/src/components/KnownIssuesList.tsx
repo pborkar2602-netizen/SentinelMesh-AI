@@ -69,7 +69,11 @@ export const KnownIssuesList: React.FC = () => {
       className="bg-[#0b0f19]/90 border border-white/10 rounded-2xl p-6 shadow-xl backdrop-blur-md space-y-6"
       data-testid="known-issues-list"
     >
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
+      <div
+        id="known-issues-header"
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4"
+        data-testid="known-issues-header"
+      >
         <div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-mono uppercase tracking-wider text-amber-400 font-semibold">
