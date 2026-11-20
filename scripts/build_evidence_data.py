@@ -19,6 +19,8 @@ import shutil
 import subprocess
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
 FRONTEND_PUBLIC = os.path.join(ROOT_DIR, "frontend", "public")
 DATA_DIR = os.path.join(FRONTEND_PUBLIC, "data")
 REPORTS_DIR = os.path.join(FRONTEND_PUBLIC, "reports")
@@ -233,5 +235,27 @@ with open(os.path.join(DATA_DIR, "headline_counters.json"), "w", encoding="utf-8
 with open(os.path.join(BENCHMARK_REPORTS, "headline_counters.json"), "w", encoding="utf-8") as f:
     json.dump(headline_counters, f, indent=2)
 print("Saved headline_counters.json successfully.")
+
+# Save playground presets & findings
+try:
+    from backend.app.api.playground import PLAYGROUND_PRESETS
+    with open(os.path.join(DATA_DIR, "playground_presets.json"), "w", encoding="utf-8") as f:
+        json.dump({"presets": PLAYGROUND_PRESETS}, f, indent=2)
+    with open(os.path.join(REPORTS_DIR, "playground_presets.json"), "w", encoding="utf-8") as f:
+        json.dump({"presets": PLAYGROUND_PRESETS}, f, indent=2)
+    print("Saved playground_presets.json successfully.")
+except Exception as e:
+    print(f"Warning: could not export playground_presets.json: {e}")
+
+findings_stub = {
+    "total_attempts": 0,
+    "total_bypasses": 0,
+    "findings": []
+}
+with open(os.path.join(DATA_DIR, "playground_findings.json"), "w", encoding="utf-8") as f:
+    json.dump(findings_stub, f, indent=2)
+with open(os.path.join(REPORTS_DIR, "playground_findings.json"), "w", encoding="utf-8") as f:
+    json.dump(findings_stub, f, indent=2)
+print("Saved playground_findings.json successfully.")
 
 print("\n--- Evidence data build complete ---")

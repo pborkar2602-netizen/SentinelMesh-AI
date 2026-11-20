@@ -6,6 +6,7 @@ import { EvidenceSection } from './components/EvidenceSection';
 import { ProofBar } from './components/ProofBar';
 import { useDetailLevel } from './context/DetailContext';
 import { IdeaIn60Seconds } from './components/IdeaIn60Seconds';
+import { PlaygroundSection } from './components/PlaygroundSection';
 
 // Section definitions with detail level filtering
 export interface SectionDef {
@@ -18,7 +19,7 @@ export const ALL_SECTIONS: SectionDef[] = [
   { id: 'home', label: 'Home', levels: ['simple', 'story', 'expert'] },
   { id: 'demo', label: 'Live demo', levels: ['story', 'expert'] },
   { id: 'explain', label: 'Story', levels: ['simple', 'story', 'expert'] },
-  { id: 'lab', label: 'Policy Lab', levels: ['story', 'expert'] },
+  { id: 'lab', label: 'Playground', levels: ['story', 'expert'] },
   { id: 'audit', label: 'Audit', levels: ['story', 'expert'] },
   { id: 'how', label: 'Defenses', levels: ['expert'] },
   { id: 'results', label: 'Evidence', levels: ['simple', 'story', 'expert'] },
@@ -106,20 +107,6 @@ const WATERFALL_ROWS: WaterfallRow[] = [
   },
 ];
 
-// Policy Lab defense layers
-interface DefenseLayer {
-  id: 'taint' | 'pre' | 'rules' | 'base';
-  title: string;
-  desc: string;
-}
-
-const DEFENSE_LAYERS: DefenseLayer[] = [
-  { id: 'taint', title: 'Taint tracking', desc: 'Marks the session untrusted once outside content is read.' },
-  { id: 'pre', title: 'Pre-read protection', desc: 'Holds reads of sensitive data the task never asked for. Needs taint tracking.' },
-  { id: 'rules', title: 'Domain and content rules', desc: 'Blocks unapproved recipients and known attack patterns.' },
-  { id: 'base', title: 'Learned baseline', desc: 'Flags behavior outside this agent’s normal.' },
-];
-
 // Initial Audit Chain demo events
 interface AuditChainBlock {
   tool: string;
@@ -196,14 +183,6 @@ export function App() {
   const [waterfallOpen, setWaterfallOpen] = useState<Record<number, boolean>>({});
   const [waterfallTotal, setWaterfallTotal] = useState(0);
   const [flow1State, setFlow1State] = useState<'idle' | 'running' | 'hold' | 'block' | 'leak'>('hold');
-
-  // Policy Lab state
-  const [layerSwitches, setLayerSwitches] = useState<{ taint: boolean; pre: boolean; rules: boolean; base: boolean }>({
-    taint: true,
-    pre: true,
-    rules: true,
-    base: true,
-  });
 
   // Guided tour state
   const [tourOpen, setTourOpen] = useState(false);
@@ -721,74 +700,6 @@ export function App() {
     setTimeout(() => setFlow1State('hold'), 100);
   }, []);
 
-  // 7. Policy Lab logic
-  const getLabOutcome = () => {
-    const { taint, pre, rules, base } = layerSwitches;
-    if (pre && taint) {
-      return {
-        type: 'hold' as const,
-        recordsRead: 0,
-        recordsLeft: 0,
-        stoppedAt: 'read',
-        title: 'Held at the database read',
-        desc: 'The session was tainted and the task never mentioned salary or SSN, so the read never ran.',
-        msgCls: 'ok',
-      };
-    }
-    if (taint) {
-      return {
-        type: 'block' as const,
-        recordsRead: 3,
-        recordsLeft: 0,
-        stoppedAt: 'send',
-        title: 'Email blocked',
-        desc: 'Three rows were read, then a tainted session was stopped from sending them to an unapproved address.',
-        msgCls: 'ok',
-      };
-    }
-    if (rules) {
-      return {
-        type: 'block' as const,
-        recordsRead: 3,
-        recordsLeft: 0,
-        stoppedAt: 'send',
-        title: 'Email blocked',
-        desc: 'The domain rule blocked ext-hiring.com. A lookalike of an approved domain would have slipped past this layer alone.',
-        msgCls: 'ok',
-      };
-    }
-    if (base) {
-      return {
-        type: 'block' as const,
-        recordsRead: 3,
-        recordsLeft: 0,
-        stoppedAt: 'send',
-        title: 'Email flagged',
-        desc: 'The destination was never seen for this agent, so the send was held for review.',
-        msgCls: 'ok',
-      };
-    }
-    return {
-      type: 'leak' as const,
-      recordsRead: 3,
-      recordsLeft: 3,
-      stoppedAt: 'never',
-      title: 'Nothing stopped it',
-      desc: 'No layer objected. Payroll rows left the company.',
-      msgCls: 'bad',
-    };
-  };
-
-  const toggleLayer = (layerId: 'taint' | 'pre' | 'rules' | 'base') => {
-    setLayerSwitches((prev) => {
-      const next = { ...prev, [layerId]: !prev[layerId] };
-      if (!next.taint) {
-        next.pre = false;
-      }
-      return next;
-    });
-  };
-
   // 8. Audit Chain Tamper Demo
   const initAuditChain = useCallback(async () => {
     let p = Z0;
@@ -826,9 +737,6 @@ export function App() {
   useEffect(() => {
     initAuditChain();
   }, [initAuditChain]);
-
-  // Compute live lab outcome
-  const labOutcome = getLabOutcome();
 
   // Filtered feed events
   const displayedFeed = showToolReturn
@@ -1359,138 +1267,9 @@ export function App() {
         </div>
       </section>
 
-      {/* 4. Policy Lab Section */}
+      {/* 4. Policy Lab / Playground Section */}
       {detailLevel !== 'simple' && (
-        <section id="lab" className="xs">
-          <div className="w">
-            <div className="eb rv">Policy Lab</div>
-            <h2 className="rv">Turn a defense off. Replay the same attack.</h2>
-            <p className="sub rv">
-              Each layer is independent. Switch them and watch where the attack is stopped, or whether
-              it gets through.
-            </p>
-
-          <div className="g2 rv">
-            <div className="card" id="sws">
-              <h3>Defense layers</h3>
-              {DEFENSE_LAYERS.map((l) => {
-                const isOn = layerSwitches[l.id];
-                const isDis = l.id === 'pre' && !layerSwitches.taint;
-                return (
-                  <div
-                    key={l.id}
-                    className={`sw ${isOn ? 'on' : ''} ${isDis ? 'dis' : ''}`}
-                    onClick={() => !isDis && toggleLayer(l.id)}
-                  >
-                    <div className="tg" />
-                    <div>
-                      <b>{l.title}</b>
-                      <p>{l.desc}</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="card">
-              <h3>Same attack, your configuration</h3>
-              <div id="f2">
-                <svg
-                  viewBox="0 0 640 290"
-                  width="100%"
-                  role="img"
-                  aria-label="Interactive policy replay flow diagram"
-                >
-                  <path className="pa" d="M118 150H192" />
-                  <path className="pa" d="M268 150H348" />
-                  <path className="pa" d="M432 150C480 150 495 70 528 70" />
-                  <path className="pa" d="M432 150C480 150 495 230 528 230" />
-                  <g className="nd">
-                    <rect x="12" y="122" width="106" height="56" rx="14" style={{ stroke: 'var(--am)' }} />
-                    <text x="65" y="146" textAnchor="middle" fontSize="11">resume.pdf</text>
-                    <text x="65" y="162" textAnchor="middle" fontSize="9" style={{ fill: 'var(--am)' }}>untrusted</text>
-
-                    <rect x="192" y="122" width="76" height="56" rx="14" />
-                    <text x="230" y="154" textAnchor="middle" fontSize="11">hr-agent</text>
-
-                    <rect
-                      className="nb"
-                      x="528"
-                      y="42"
-                      width="104"
-                      height="56"
-                      rx="14"
-                      style={{ stroke: labOutcome.recordsRead > 0 ? 'var(--am)' : '' }}
-                    />
-                    <text x="580" y="66" textAnchor="middle" fontSize="11">payroll DB</text>
-                    <text className="ns" x="580" y="82" textAnchor="middle" fontSize="9" style={{ fill: 'var(--mut)' }}>
-                      {labOutcome.recordsRead > 0 ? `${labOutcome.recordsRead} rows read` : 'idle'}
-                    </text>
-
-                    <rect
-                      className="nm"
-                      x="528"
-                      y="202"
-                      width="104"
-                      height="56"
-                      rx="14"
-                      style={{ stroke: labOutcome.recordsLeft > 0 ? 'var(--ro)' : '' }}
-                    />
-                    <text x="580" y="226" textAnchor="middle" fontSize="11">outside email</text>
-                    <text className="nl" x="580" y="242" textAnchor="middle" fontSize="9" style={{ fill: 'var(--mut)' }}>
-                      {labOutcome.recordsLeft > 0 ? `${labOutcome.recordsLeft} rows sent` : 'idle'}
-                    </text>
-                  </g>
-                  <circle className="rg" cx="390" cy="150" r="40" />
-                  <circle className="gw" cx="390" cy="150" r="40" />
-                  <text x="390" y="146" textAnchor="middle" fontSize="10" style={{ fontWeight: 700 }}>SENTINEL</text>
-                  <text x="390" y="160" textAnchor="middle" fontSize="9" style={{ fill: 'var(--cy)' }}>gateway</text>
-                  <text
-                    className="stt"
-                    x="390"
-                    y="214"
-                    textAnchor="middle"
-                    fontSize="12"
-                    style={{
-                      fontWeight: 700,
-                      fill: labOutcome.msgCls === 'ok' ? 'var(--gr)' : 'var(--ro)',
-                    }}
-                  >
-                    {labOutcome.title.toUpperCase()}
-                  </text>
-                </svg>
-              </div>
-
-              <div className="stat">
-                <div>
-                  <b id="x1">{labOutcome.recordsRead}</b>
-                  <span>records the agent read</span>
-                </div>
-                <div>
-                  <b id="x2">{labOutcome.recordsLeft}</b>
-                  <span>records that left</span>
-                </div>
-                <div>
-                  <b id="x3">{labOutcome.stoppedAt}</b>
-                  <span>stopped at</span>
-                </div>
-              </div>
-
-              <div className={`msg ${labOutcome.msgCls}`} id="mg">
-                {labOutcome.title}
-              </div>
-              <p id="tx" style={{ marginTop: '12px' }}>
-                {labOutcome.desc}
-              </p>
-            </div>
-          </div>
-
-          <p className="note rv">
-            Simplified model of the measured ablation on the project’s benchmark. Real results
-            depend on the scenario.
-          </p>
-        </div>
-      </section>
+        <PlaygroundSection />
       )}
 
       {/* 5. Audit Section */}

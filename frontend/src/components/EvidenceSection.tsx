@@ -6,11 +6,12 @@ import { ReleaseTimeline } from './ReleaseTimeline';
 import { KnownIssuesList } from './KnownIssuesList';
 import { DatasetsTable } from './DatasetsTable';
 import { LimitationsCards } from './LimitationsCards';
+import { BypassReports } from './BypassReports';
 import { useDetailLevel } from '../context/DetailContext';
 
 export const EvidenceSection: React.FC = () => {
   const { detailLevel, cycleDetailLevel } = useDetailLevel();
-  const [activeTab, setActiveTab] = useState<'mistakes' | 'timeline' | 'datasets' | 'limitations' | 'cluster_stats' | 'provenance'>('mistakes');
+  const [activeTab, setActiveTab] = useState<'mistakes' | 'timeline' | 'datasets' | 'limitations' | 'bypasses' | 'cluster_stats' | 'provenance'>('mistakes');
 
   const isSimple = detailLevel === 'simple';
   const isExpert = detailLevel === 'expert';
@@ -125,6 +126,17 @@ export const EvidenceSection: React.FC = () => {
               >
                 4. Where It Fails (Limitations)
               </button>
+              <button
+                onClick={() => setActiveTab('bypasses')}
+                className={`text-xs font-mono px-3.5 py-2 rounded-xl transition-all duration-150 ${
+                  activeTab === 'bypasses'
+                    ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-semibold shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
+                }`}
+                data-testid="tab-bypasses"
+              >
+                5. Bypass Reports
+              </button>
 
               {/* Expert-only tabs */}
               {isExpert && (
@@ -180,6 +192,13 @@ export const EvidenceSection: React.FC = () => {
             {activeTab === 'limitations' && (
               <div className="animate-in fade-in duration-200">
                 <LimitationsCards />
+              </div>
+            )}
+
+            {/* Tab 5: Bypass Reports */}
+            {activeTab === 'bypasses' && (
+              <div className="animate-in fade-in duration-200">
+                <BypassReports />
               </div>
             )}
 
