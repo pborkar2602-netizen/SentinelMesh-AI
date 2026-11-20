@@ -47,11 +47,13 @@ def reset_demo_database() -> Dict[str, Any]:
 
 
 @router.post("/demo/run_attack", response_model=Dict[str, Any])
-def run_live_attack_demo(mode: Optional[str] = Query(None, description="Policy mode: enforce or monitor")) -> Dict[str, Any]:
+def run_live_attack_demo(
+    mode: Optional[str] = Query(None, description="Policy mode: enforce or monitor"),
+    scenario: Optional[str] = Query("atk-001", description="Scenario: atk-001 (HR Poisoned Resume), atk-002 (Finance Wire Fraud), atk-003 (Ops Cloud SSRF)")
+) -> Dict[str, Any]:
     """
-    Runs the live demo agent scenario (ATK-001: Poisoned Résumé followed by BEN-001)
-    against the real gateway inline. Events are logged to the database and broadcasted
-    live via WebSocket to the dashboard.
+    Runs the live demo agent scenario against the real gateway inline.
+    Events are logged to the database and broadcasted live via WebSocket to the dashboard.
     """
     if not is_demo_mode():
         raise HTTPException(
@@ -62,13 +64,20 @@ def run_live_attack_demo(mode: Optional[str] = Query(None, description="Policy m
         PolicyEngine.set_mode(mode)
 
     active_mode = PolicyEngine.get_mode()
+    selected_scenario = (scenario or "atk-001").lower()
 
     def _worker():
         try:
-            from demo_agents.agent_runner import run_attack_scenario, run_benign_scenario
-            # Run against the local gateway
-            run_attack_scenario(gateway_url="http://127.0.0.1:8000/api/v1/gateway", delay=0.35)
-            run_benign_scenario(gateway_url="http://127.0.0.1:8000/api/v1/gateway", delay=0.35)
+            if selected_scenario == "atk-002":
+                from demo_agents.agent_runner import run_finance_attack_scenario
+                run_finance_attack_scenario(gateway_url="http://127.0.0.1:8000/api/v1/gateway", delay=0.35)
+            elif selected_scenario == "atk-003":
+                from demo_agents.agent_runner import run_ops_attack_scenario
+                run_ops_attack_scenario(gateway_url="http://127.0.0.1:8000/api/v1/gateway", delay=0.35)
+            else:
+                from demo_agents.agent_runner import run_attack_scenario, run_benign_scenario
+                run_attack_scenario(gateway_url="http://127.0.0.1:8000/api/v1/gateway", delay=0.35)
+                run_benign_scenario(gateway_url="http://127.0.0.1:8000/api/v1/gateway", delay=0.35)
         except Exception as e:
             logger.warning(f"Error running demo attack scenario: {e}")
 
@@ -78,6 +87,7 @@ def run_live_attack_demo(mode: Optional[str] = Query(None, description="Policy m
     return {
         "status": "started",
         "policy_mode": active_mode,
-        "message": f"Live attack demo triggered in {active_mode} mode"
+        "scenario": selected_scenario,
+        "message": f"Live scenario {selected_scenario.upper()} triggered in {active_mode} mode"
     }
 

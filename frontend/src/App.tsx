@@ -514,37 +514,61 @@ export function App() {
   }, [navOpen, openNav, closeNav, navigate]);
 
   // Trigger real live attack execution through the gateway inline
-  const triggerRealLiveAttack = useCallback(async () => {
-    setLiveAttackRunning(true);
-    // Reset chain state to idle baseline before scenario starts
-    setStepActive([false, false, false, false, false]);
-    setRiskGauge(0);
-    setBarWidths([0, 0, 0, 0]);
-    setVerdict({ show: false, ok: true, text: '' });
-    setChainSteps(policyMode === 'enforce' ? ENFORCE_CHAIN_STEPS : MONITOR_CHAIN_STEPS);
+  const triggerRealLiveAttack = useCallback(
+    async (scenarioId: string = 'atk-001') => {
+      setLiveAttackRunning(true);
+      // Reset chain state to idle baseline before scenario starts
+      setStepActive([false, false, false, false, false]);
+      setRiskGauge(0);
+      setBarWidths([0, 0, 0, 0]);
+      setVerdict({ show: false, ok: true, text: '' });
 
-    try {
-      const res = await fetch(`/api/v1/demo/run_attack?mode=${policyMode}`, { method: 'POST' });
-      if (!res.ok) {
+      if (scenarioId === 'atk-002') {
+        setChainSteps([
+          { num: '01', title: 'Invoice uploaded', desc: 'Untrusted PDF invoice enters finance-agent session', cls: 'am' },
+          { num: '02', title: 'Hidden instruction found', desc: 'Prompt override instructing SQL bank account overwrite', cls: 'ro' },
+          { num: '03', title: 'SQL mutation requested', desc: 'UPDATE vendor_master account_number requested', cls: 'ro' },
+          { num: '04', title: policyMode === 'enforce' ? 'Wire transfer guarded' : 'Wire transfer attempted', desc: 'Disbursement to external host', cls: 'ro' },
+          { num: '05', title: 'Policy decision', desc: 'Evaluating database and egress integrity…', cls: 'gr' },
+        ]);
+      } else if (scenarioId === 'atk-003') {
+        setChainSteps([
+          { num: '01', title: 'Diagnostic log read', desc: 'Untrusted pod crash log enters ops-agent session', cls: 'am' },
+          { num: '02', title: 'SSRF probe detected', desc: 'Hidden command targeting 169.254.169.254 AWS metadata', cls: 'ro' },
+          { num: '03', title: 'Cloud metadata requested', desc: 'GET 169.254.169.254/latest/meta-data/iam intercepted', cls: 'ro' },
+          { num: '04', title: 'IAM credentials egress', desc: 'Exfiltration of temporary role credentials', cls: 'ro' },
+          { num: '05', title: 'Policy decision', desc: 'Evaluating metadata and RFC1918 egress…', cls: 'gr' },
+        ]);
+      } else {
+        setChainSteps(policyMode === 'enforce' ? ENFORCE_CHAIN_STEPS : MONITOR_CHAIN_STEPS);
+      }
+
+      try {
+        const res = await fetch(`/api/v1/demo/run_attack?mode=${policyMode}&scenario=${scenarioId}`, {
+          method: 'POST',
+        });
+        if (!res.ok) {
+          setVerdict({
+            show: true,
+            ok: false,
+            text: 'Backend error executing scenario — check FastAPI terminal logs.',
+          });
+        }
+      } catch {
         setVerdict({
           show: true,
           ok: false,
-          text: 'Backend error executing scenario — check FastAPI terminal logs.',
+          text: 'Gateway offline — start: uvicorn backend.app.main:app --reload (with DEMO_MODE=true)',
         });
+      } finally {
+        setTimeout(() => {
+          setLiveAttackRunning(false);
+          fetchStats();
+        }, 4500);
       }
-    } catch {
-      setVerdict({
-        show: true,
-        ok: false,
-        text: 'Gateway offline — start: uvicorn backend.app.main:app --reload (with DEMO_MODE=true)',
-      });
-    } finally {
-      setTimeout(() => {
-        setLiveAttackRunning(false);
-        fetchStats();
-      }, 4500);
-    }
-  }, [policyMode, fetchStats]);
+    },
+    [policyMode, fetchStats]
+  );
 
   const switchMode = useCallback((newMode: 'enforce' | 'monitor') => {
     setPolicyMode(newMode);

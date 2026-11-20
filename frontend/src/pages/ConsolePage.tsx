@@ -37,7 +37,7 @@ interface ConsolePageProps {
   verdict: { show: boolean; ok: boolean; text: string };
   onSwitchMode: (m: 'enforce' | 'monitor') => void;
   onRunSimulation: () => void;
-  onTriggerRealAttack: () => void;
+  onTriggerRealAttack: (scenario?: string) => void;
   onRefreshStats: () => void;
 }
 
@@ -66,6 +66,8 @@ export const ConsolePage: React.FC<ConsolePageProps> = ({
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
   const [loadingIncidents, setLoadingIncidents] = useState(false);
   const [inspectedEvent, setInspectedEvent] = useState<AuditEvent | null>(null);
+  const [selectedScenario, setSelectedScenario] = useState<string>('atk-001');
+  const [selectedAgentFilter, setSelectedAgentFilter] = useState<string | null>(null);
 
   const handleInspectStep = (stepIndex: number) => {
     let targetEvent: AuditEvent | undefined;
@@ -193,9 +195,13 @@ export const ConsolePage: React.FC<ConsolePageProps> = ({
     }
   }, [subTab, fetchIncidents]);
 
-  const displayedFeed = showToolReturn
-    ? feedLines
-    : feedLines.filter((l) => !l.text.toLowerCase().includes('tool_return'));
+  const displayedFeed = feedLines
+    .filter((l) => (showToolReturn ? true : !l.text.toLowerCase().includes('tool_return')))
+    .filter((l) =>
+      selectedAgentFilter
+        ? (l.rawEvent?.agent_id === selectedAgentFilter || l.text.toLowerCase().includes(selectedAgentFilter.toLowerCase()))
+        : true
+    );
 
   const selectedIncident = incidents.find((i) => i.id === selectedIncidentId) || null;
 
@@ -312,14 +318,26 @@ export const ConsolePage: React.FC<ConsolePageProps> = ({
                       : '👁 Monitor — actions proceed, risky ones logged as would_block'}
                   </p>
                 </div>
-                <div className="flex gap-2 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <select
+                    value={selectedScenario}
+                    onChange={(e) => setSelectedScenario(e.target.value)}
+                    className="bg-[#0b0f19] border border-white/10 rounded-xl px-2.5 py-1.5 text-xs font-mono text-cyan-300 outline-none focus:border-cyan-400"
+                    title="Select attack scenario to execute"
+                    data-testid="scenario-selector"
+                  >
+                    <option value="atk-001">ATK-001: HR Agent · Résumé Exfiltration</option>
+                    <option value="atk-002">ATK-002: Finance Agent · SQL Wire Tampering</option>
+                    <option value="atk-003">ATK-003: DevOps Agent · Cloud Metadata SSRF</option>
+                  </select>
+
                   <button
                     className="btn s g"
                     id="run"
                     data-testid="run-attack-btn"
-                    onClick={onTriggerRealAttack}
+                    onClick={() => onTriggerRealAttack(selectedScenario)}
                     disabled={liveAttackRunning}
-                    title="Runs ATK-001 (poisoned résumé) through the real gateway — requires backend server"
+                    title="Runs the selected attack scenario through the real gateway — requires backend server"
                   >
                     {liveAttackRunning ? 'Executing Scenario…' : 'Run Attack Scenario ▶'}
                   </button>
@@ -411,19 +429,41 @@ export const ConsolePage: React.FC<ConsolePageProps> = ({
 
             {/* Card C: Terminal Feed */}
             <div className="card C mono">
-              <div className="flex justify-between items-center pb-2 border-b border-white/10 mb-2 text-[11px]">
+              <div className="flex justify-between items-center pb-2 border-b border-white/10 mb-2 text-[11px] flex-wrap gap-2">
                 <div className="flex items-center gap-2">
                   <span className="text-slate-400">Live gateway event stream</span>
                   <span className="text-[10px] text-cyan-400/80 font-mono hidden sm:inline">· Click row for forensics</span>
                 </div>
-                <label className="flex items-center gap-1.5 cursor-pointer text-slate-300">
-                  <input
-                    type="checkbox"
-                    checked={showToolReturn}
-                    onChange={(e) => onToggleToolReturn(e.target.checked)}
-                  />
-                  <span>tool_return</span>
-                </label>
+
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex items-center gap-1 text-[10px]" data-testid="agent-filter-group">
+                    <span className="text-slate-500">Agent:</span>
+                    {['all', 'hr-agent', 'finance-agent', 'ops-agent', 'mcp-agent'].map((ag) => (
+                      <button
+                        key={ag}
+                        type="button"
+                        data-testid={`filter-agent-${ag}`}
+                        onClick={() => setSelectedAgentFilter(ag === 'all' ? null : ag)}
+                        className={`px-1.5 py-0.5 rounded border transition-all ${
+                          (ag === 'all' && selectedAgentFilter === null) || selectedAgentFilter === ag
+                            ? 'bg-cyan-500/20 border-cyan-400/40 text-cyan-300 font-semibold'
+                            : 'border-white/5 text-slate-500 hover:text-slate-300'
+                        }`}
+                      >
+                        {ag}
+                      </button>
+                    ))}
+                  </div>
+
+                  <label className="flex items-center gap-1.5 cursor-pointer text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={showToolReturn}
+                      onChange={(e) => onToggleToolReturn(e.target.checked)}
+                    />
+                    <span>tool_return</span>
+                  </label>
+                </div>
               </div>
               <div className="fd" id="fd">
                 {displayedFeed.map((line) => (
