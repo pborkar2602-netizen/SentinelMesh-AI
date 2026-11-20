@@ -178,7 +178,7 @@ export const AuditPrivacyPage: React.FC<AuditPrivacyPageProps> = ({
         {/* Sub-tab 1: Real Hash Chain + Tamper Test */}
         {subTab === 'chain' && (
           <div className="space-y-6">
-            {auditVerify && (
+            {auditVerify ? (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs font-mono">
                 <div className="p-4 rounded-2xl bg-[#0b0f19]/90 border border-white/10">
                   <span className="text-slate-400 block uppercase text-[10px]">Chain Integrity (/api/v1/audit/verify)</span>
@@ -198,6 +198,20 @@ export const AuditPrivacyPage: React.FC<AuditPrivacyPageProps> = ({
                     {auditVerify.head_hash}
                   </span>
                 </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs font-mono">
+                {[
+                  { label: 'Chain Integrity', value: 'DEMO MODE', cls: 'text-amber-400', sub: 'Start backend to verify live' },
+                  { label: 'Hash Algorithm', value: 'SHA-256', cls: 'text-white', sub: 'Append-only, genesis-linked' },
+                  { label: 'Demo Blocks Shown', value: `${DEFAULT_FALLBACK_BLOCKS.length} events`, cls: 'text-cyan-300', sub: 'Computed client-side from defaults' },
+                ].map(({ label, value, cls, sub }) => (
+                  <div key={label} className="p-4 rounded-2xl bg-[#0b0f19]/90 border border-white/10">
+                    <span className="text-slate-400 block uppercase text-[10px]">{label}</span>
+                    <span className={`text-lg font-bold mt-1 block ${cls}`}>{value}</span>
+                    <span className="text-[10px] text-slate-500 mt-0.5 block font-sans">{sub}</span>
+                  </div>
+                ))}
               </div>
             )}
 
@@ -254,6 +268,40 @@ export const AuditPrivacyPage: React.FC<AuditPrivacyPageProps> = ({
                   ? auditVerify.message
                   : `Chain valid · ${chainBlocks.length} events verified`}
               </div>
+            </div>
+
+            {/* How it works — fills the page and explains the mechanism */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {[
+                {
+                  icon: '🔗',
+                  title: 'Genesis-linked blocks',
+                  body: 'Every event\'s SHA-256 digest includes the previous block\'s hash. Altering any past record breaks every block after it — there\'s no way to silently edit history.',
+                },
+                {
+                  icon: '🛑',
+                  title: 'Tamper = instant red',
+                  body: 'Click "Simulate tamper on event 3" above to see all downstream blocks turn red. In production, the verification endpoint triggers an alert within one polling cycle.',
+                },
+                {
+                  icon: '🔑',
+                  title: 'HMAC approval tokens',
+                  body: 'High-risk actions (db_query on PII, external send) are held until a human approves via a one-time HMAC token. Replaying or forging a token is cryptographically rejected.',
+                },
+                {
+                  icon: '📋',
+                  title: 'Immutable audit export',
+                  body: 'The full event log — including taint labels, session IDs, risk scores and policy decisions — can be exported for SOC 2 or GDPR evidence packages without touching raw PII.',
+                },
+              ].map(({ icon, title, body }) => (
+                <div key={title} className="card flex gap-4 items-start">
+                  <span className="text-2xl mt-0.5 select-none">{icon}</span>
+                  <div>
+                    <h4 className="text-sm font-semibold text-white mb-1">{title}</h4>
+                    <p className="text-xs text-slate-400 leading-relaxed font-sans m-0">{body}</p>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}

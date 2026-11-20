@@ -250,8 +250,12 @@ export const PlaygroundSection: React.FC = () => {
             applyPreset(data.presets[0]);
           }
         }
-      } catch (err) {
-        if (isMounted) setErrorMsg('Failed to load playground presets.');
+      } catch {
+        // Static JSON also unavailable — use bundled CANONICAL_PRESETS silently
+        if (isMounted) {
+          setPresets(CANONICAL_PRESETS);
+          applyPreset(CANONICAL_PRESETS[0]);
+        }
       }
     };
 
@@ -289,13 +293,25 @@ export const PlaygroundSection: React.FC = () => {
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.detail || `Server responded with status ${res.status}`);
+        throw new Error(errData.detail || `api_error_${res.status}`);
       }
 
       const data: PlaygroundRunResponse = await res.json();
       setRunResult(data);
     } catch (err: any) {
-      setErrorMsg(err.message || 'Error executing playground attempt.');
+      const raw: string = err.message || '';
+      // Surface a friendly message when the backend is simply not running
+      const isOffline =
+        raw.includes('Failed to fetch') ||
+        raw.includes('NetworkError') ||
+        raw.includes('api_error_500') ||
+        raw.includes('api_error_502') ||
+        raw.includes('api_error_503');
+      setErrorMsg(
+        isOffline
+          ? 'Backend not reachable — start the FastAPI server with: uvicorn backend.app.main:app --reload'
+          : raw || 'Error executing playground attempt.'
+      );
     } finally {
       setIsRunning(false);
     }

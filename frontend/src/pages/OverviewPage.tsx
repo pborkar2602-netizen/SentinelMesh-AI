@@ -140,13 +140,15 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
             </button>
           </div>
 
-          <div className="tick mono" id="tick">
-            {tickerLines.map((line) => (
-              <div key={line.id} className="ln">
-                <b className={`t ${line.cls}`}>{line.badge}</b> {line.text}
-              </div>
-            ))}
-          </div>
+          {tickerLines.length > 0 && (
+            <div className="tick mono" id="tick">
+              {tickerLines.map((line) => (
+                <div key={line.id} className="ln">
+                  <b className={`t ${line.cls}`}>{line.badge}</b> {line.text}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </header>
 
