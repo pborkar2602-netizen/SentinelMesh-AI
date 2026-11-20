@@ -1,12 +1,17 @@
 import base64
 import re
+from collections import OrderedDict
 from typing import Dict, List, Optional, Set, Tuple, Any
 from backend.app.schemas.gateway import ContextSource
 from backend.app.db.database import get_session, mark_session_tainted
 
-# In-memory session stores for value-provenance tracking of untrusted content
-_SESSION_UNTRUSTED_LITERALS: Dict[str, Set[str]] = {}
-_SESSION_UNTRUSTED_SNIPPETS: Dict[str, List[str]] = {}
+MAX_TRACKED_SESSIONS = 2000
+MAX_LITERALS_PER_SESSION = 500
+MAX_SNIPPETS_PER_SESSION = 50
+
+# Bounded LRU session stores for value-provenance tracking of untrusted content
+_SESSION_UNTRUSTED_LITERALS: "OrderedDict[str, Set[str]]" = OrderedDict()
+_SESSION_UNTRUSTED_SNIPPETS: "OrderedDict[str, List[str]]" = OrderedDict()
 
 _ZWSP_RE = re.compile(r"[\u200b\u200c\u200d\ufeff\u2060\u00ad]")
 _BASE64_CANDIDATE_RE = re.compile(r"\b[A-Za-z0-9+/]{16,}={0,2}\b")
@@ -89,8 +94,23 @@ def record_untrusted_literals(
     """
     if not session_id:
         return set()
-    lit_set = _SESSION_UNTRUSTED_LITERALS.setdefault(session_id, set())
-    snip_list = _SESSION_UNTRUSTED_SNIPPETS.setdefault(session_id, [])
+    if session_id in _SESSION_UNTRUSTED_LITERALS:
+        _SESSION_UNTRUSTED_LITERALS.move_to_end(session_id)
+    else:
+        while len(_SESSION_UNTRUSTED_LITERALS) >= MAX_TRACKED_SESSIONS:
+            evicted_sid, _ = _SESSION_UNTRUSTED_LITERALS.popitem(last=False)
+            _SESSION_UNTRUSTED_SNIPPETS.pop(evicted_sid, None)
+        _SESSION_UNTRUSTED_LITERALS[session_id] = set()
+
+    if session_id in _SESSION_UNTRUSTED_SNIPPETS:
+        _SESSION_UNTRUSTED_SNIPPETS.move_to_end(session_id)
+    else:
+        while len(_SESSION_UNTRUSTED_SNIPPETS) >= MAX_TRACKED_SESSIONS:
+            _SESSION_UNTRUSTED_SNIPPETS.popitem(last=False)
+        _SESSION_UNTRUSTED_SNIPPETS[session_id] = []
+
+    lit_set = _SESSION_UNTRUSTED_LITERALS[session_id]
+    snip_list = _SESSION_UNTRUSTED_SNIPPETS[session_id]
 
     for source in context_sources or []:
         is_untrusted = (
@@ -105,9 +125,12 @@ def record_untrusted_literals(
         )
         if is_untrusted and snippet:
             norm_snip = normalize_and_deobfuscate_text(str(snippet))
-            lit_set.update(extract_literals_from_untrusted_text(norm_snip))
+            for lit in extract_literals_from_untrusted_text(norm_snip):
+                if len(lit_set) >= MAX_LITERALS_PER_SESSION:
+                    break
+                lit_set.add(lit)
             snip_low = norm_snip.lower()
-            if snip_low not in snip_list:
+            if snip_low not in snip_list and len(snip_list) < MAX_SNIPPETS_PER_SESSION:
                 snip_list.append(snip_low)
 
     return set(lit_set)

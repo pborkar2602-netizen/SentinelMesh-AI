@@ -28,6 +28,18 @@ class TokenResponse(BaseModel):
     username: str
     expires_in: int
 
+def get_jwt_secret() -> str:
+    """
+    Returns active JWT signing secret.
+    In production (DEMO_MODE=false), refuses to use the embedded fallback default.
+    """
+    env_secret = os.environ.get("SENTINEL_JWT_SECRET")
+    if env_secret:
+        return env_secret
+    if not is_demo_mode():
+        raise RuntimeError("SENTINEL_JWT_SECRET must be set when DEMO_MODE=false.")
+    return JWT_SECRET
+
 def create_access_token(
     username: str,
     role: str,
@@ -42,12 +54,12 @@ def create_access_token(
         "iat": int(now.timestamp()),
         "exp": int(expire.timestamp())
     }
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return jwt.encode(payload, get_jwt_secret(), algorithm=JWT_ALGORITHM)
 
 def verify_token(token_str: str) -> Dict[str, Any]:
     """Decodes and cryptographically validates JWT signature and expiry."""
     try:
-        payload = jwt.decode(token_str, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(token_str, get_jwt_secret(), algorithms=[JWT_ALGORITHM])
         return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(
@@ -89,6 +101,26 @@ def get_current_user_and_role(
 
 def is_demo_mode() -> bool:
     return os.getenv("DEMO_MODE", "false").lower() in ("true", "1", "yes")
+
+def require_control_plane_auth(
+    authorization: Optional[str] = None,
+    allowed_roles: Tuple[str, ...] = ("analyst", "privacy_officer"),
+) -> Optional[Tuple[str, str]]:
+    """
+    Enforces JWT + RBAC on mutating control-plane endpoints when DEMO_MODE=false
+    or whenever an Authorization header is supplied.
+    Note: handles FastAPI Header(None) sentinel objects cleanly if called directly in tests.
+    """
+    auth_header = authorization if isinstance(authorization, str) else None
+    if not is_demo_mode() or auth_header:
+        user, role = get_current_user_and_role(auth_header)
+        if role not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Forbidden: Role '{role}' cannot access this control-plane endpoint."
+            )
+        return user, role
+    return None
 
 @router.post("/login", response_model=TokenResponse)
 def login(creds: LoginRequest) -> TokenResponse:

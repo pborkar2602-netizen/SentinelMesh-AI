@@ -94,10 +94,14 @@ def get_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
 def acquire_connection(conn: Optional[sqlite3.Connection] = None) -> Tuple[sqlite3.Connection, bool]:
     """
     Returns (connection, should_close).
-    Always reuses the application-lifetime persistent connection, never closing per request.
+    Respects explicit connection first, then per-request contextvar connection,
+    otherwise reuses the persistent connection pool.
     """
     if conn is not None:
         return conn, False
+    req_conn = _request_conn.get()
+    if req_conn is not None:
+        return req_conn, False
     return get_connection(), False
 
 def get_gateway_proxy_return_count(

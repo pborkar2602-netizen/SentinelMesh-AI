@@ -1,0 +1,37 @@
+{
+  "version": "3.4.0",
+  "policy_pack": "sentinelmesh-enterprise-default",
+  "default_mode": "enforce",
+  "high_sensitivity_external_action": "require_approval",
+  "anomaly_threshold": 70,
+  "approved_email_domains": [
+    "company.com",
+    "approved-vendor.com",
+    "verified-client.org",
+    "internal.local",
+    "sentinelmesh.internal",
+    "vendor-corp.com"
+  ],
+  "approved_api_domains": [
+    "localhost",
+    "127.0.0.1",
+    "::1",
+    "internal.local",
+    "company.com",
+    "vendor-corp.com",
+    "approved-vendor.com",
+    "verified-client.org",
+    "api.github.com",
+    "partner.org",
+    "sentinelmesh.internal"
+  ],
+  "active_layers": [
+    "trust_provenance_labeling",
+    "session_value_taint_tracking",
+    "pre_read_sensitive_data_gate",
+    "ast_sql_and_egress_rules",
+    "privacy_vault_aes_gcm",
+    "behavioral_mad_baseline",
+    "hmac_action_bound_approvals"
+  ]
+}

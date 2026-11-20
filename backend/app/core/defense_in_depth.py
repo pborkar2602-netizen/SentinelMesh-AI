@@ -56,6 +56,7 @@ class TokenBucket:
 class RateLimiter:
     _instance = None
     _lock = threading.Lock()
+    MAX_TRACKED_ENTITIES = 5000
 
     def __init__(self):
         self.buckets: Dict[str, TokenBucket] = {}
@@ -72,25 +73,55 @@ class RateLimiter:
             return
         if os.environ.get("SENTINEL_DISABLE_RATE_LIMIT", "").lower() in ("true", "1", "yes"):
             return
-        if identifier not in self.buckets:
-            self.buckets[identifier] = TokenBucket(RATE_LIMIT_BURST, RATE_LIMIT_REFILL_PER_SEC)
-        if not self.buckets[identifier].consume(1.0):
+        with self._lock:
+            if identifier not in self.buckets:
+                if len(self.buckets) >= self.MAX_TRACKED_ENTITIES:
+                    # Evict oldest inactive 1000 buckets to bound memory
+                    oldest = sorted(self.buckets.items(), key=lambda kv: kv[1].last_update)[:1000]
+                    for k, _ in oldest:
+                        self.buckets.pop(k, None)
+                self.buckets[identifier] = TokenBucket(RATE_LIMIT_BURST, RATE_LIMIT_REFILL_PER_SEC)
+            bucket = self.buckets[identifier]
+        if not bucket.consume(1.0):
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=f"Rate limit exceeded for entity: {identifier}. Try again later."
             )
 
 
+def _resolve_agent_key(agent_id: str, demo_mode: bool) -> Optional[str]:
+    env_var = f"KEY_{agent_id.upper().replace('-', '_')}"
+    env_key = os.getenv(env_var)
+    if env_key:
+        return env_key
+    keys_json = os.getenv("SENTINEL_AGENT_KEYS_JSON")
+    if keys_json:
+        try:
+            mapping = json.loads(keys_json)
+            if isinstance(mapping, dict) and agent_id in mapping:
+                return str(mapping[agent_id])
+        except Exception:
+            pass
+    if demo_mode:
+        return REGISTERED_AGENT_KEYS.get(agent_id)
+    return None
+
+
 def verify_agent_perimeter_auth(agent_id: str, provided_key: Optional[str]) -> None:
     """
     Validates per-agent perimeter credentials.
-    Enforced if SENTINEL_GATEWAY_AUTH_REQUIRED=true or if an agent key is presented.
+    Fail-closed by default when DEMO_MODE=false (unless SENTINEL_GATEWAY_AUTH_REQUIRED explicitly false).
     """
     if not isinstance(provided_key, str):
         provided_key = None
 
-    auth_required = os.getenv("SENTINEL_GATEWAY_AUTH_REQUIRED", "false").lower() in ("true", "1", "yes")
-    
+    demo_mode = os.getenv("DEMO_MODE", "false").lower() in ("true", "1", "yes")
+    auth_env = os.getenv("SENTINEL_GATEWAY_AUTH_REQUIRED")
+    if auth_env is None or auth_env.strip() == "":
+        auth_required = not demo_mode
+    else:
+        auth_required = auth_env.lower() in ("true", "1", "yes")
+
     if not auth_required and not provided_key:
         return  # Permitted in standard demo/internal benchmark mode
 
@@ -100,11 +131,11 @@ def verify_agent_perimeter_auth(agent_id: str, provided_key: Optional[str]) -> N
             detail=f"Perimeter authentication required: Missing X-Agent-Key header for agent '{agent_id}'."
         )
 
-    expected_key = REGISTERED_AGENT_KEYS.get(agent_id)
+    expected_key = _resolve_agent_key(agent_id, demo_mode=demo_mode)
     if not expected_key:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Agent '{agent_id}' is not registered with SentinelMesh."
+            detail=f"Agent '{agent_id}' is not registered or missing provisioned perimeter key."
         )
 
     import hmac

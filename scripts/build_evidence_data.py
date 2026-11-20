@@ -92,6 +92,9 @@ if os.path.exists(known_issues_path):
         title = sections[i].strip()
         body = sections[i+1].strip()
         
+        before_m = re.search(r'\-\s+\*\*Before\*\*:\s*`([^`]+)`', body)
+        after_m = re.search(r'\-\s+\*\*After\*\*:\s*`([^`]+)`', body)
+        summary_m = re.search(r'\-\s+\*\*Summary\*\*:\s*(.*?)(?=\n\-|\Z)', body, re.DOTALL)
         finding_m = re.search(r'\-\s+\*\*Audit Finding\*\*:\s*(.*?)(?=\n\-|\Z)', body, re.DOTALL)
         res_m = re.search(r'\-\s+\*\*Resolution\*\*:\s*(.*?)(?=\n\-|\Z)', body, re.DOTALL)
         label_m = re.search(r'\-\s+\*\*Label\*\*:\s*`([^`]+)`', body)
@@ -100,6 +103,9 @@ if os.path.exists(known_issues_path):
         known_issues.append({
             "id": f"issue-{len(known_issues)+1}",
             "title": re.sub(r'^\d+\.\s*', '', title),
+            "before": before_m.group(1).strip() if before_m else "",
+            "after": after_m.group(1).strip() if after_m else "",
+            "summary": summary_m.group(1).replace('\n', ' ').strip() if summary_m else "",
             "finding": finding_m.group(1).replace('\n', ' ').strip() if finding_m else "",
             "resolution": res_m.group(1).replace('\n', ' ').strip() if res_m else "",
             "label": label_m.group(1) if label_m else "audit finding",

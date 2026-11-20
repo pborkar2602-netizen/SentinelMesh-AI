@@ -8,8 +8,10 @@ Specifications:
 - JSON-RPC: 2.0
 """
 
+import os
 import json
 import logging
+import urllib.request
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
 
@@ -34,11 +36,29 @@ class MCPGatewayProxy:
     """
     Standard MCP Protocol Gateway Filter.
     Inspects tool calls before tool execution and returns MCP-compliant results or errors.
+    Supports transparent JSON-RPC 2.0 upstream forwarding when SENTINEL_MCP_UPSTREAM_URL is set.
     """
 
-    def __init__(self, agent_id: str = "mcp-agent", default_session_id: str = "sess-mcp-default"):
+    def __init__(
+        self,
+        agent_id: str = "mcp-agent",
+        default_session_id: str = "sess-mcp-default",
+        upstream_url: Optional[str] = None,
+    ):
         self.agent_id = agent_id
         self.default_session_id = default_session_id
+        raw_upstream = upstream_url if upstream_url is not None else os.getenv("SENTINEL_MCP_UPSTREAM_URL", "")
+        self.upstream_url = raw_upstream.strip()
+
+    def _forward_to_upstream(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        req = urllib.request.Request(
+            self.upstream_url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=5.0) as resp:
+            return json.loads(resp.read().decode("utf-8"))
 
     def handle_mcp_request(self, raw_request: Dict[str, Any], session_id: Optional[str] = None) -> Dict[str, Any]:
         req_id = raw_request.get("id")
@@ -68,6 +88,23 @@ class MCPGatewayProxy:
 
         # 1. tools/list handler
         elif method == "tools/list":
+            if self.upstream_url:
+                try:
+                    return self._forward_to_upstream({
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "method": "tools/list",
+                        "params": params,
+                    })
+                except Exception as exc:
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "error": {
+                            "code": -32000,
+                            "message": f"Upstream MCP tools/list forwarding error: {exc}",
+                        },
+                    }
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,
@@ -157,6 +194,44 @@ class MCPGatewayProxy:
                 }
 
             if decision_resp.decision == "allow":
+                if self.upstream_url:
+                    try:
+                        upstream_resp = self._forward_to_upstream({
+                            "jsonrpc": "2.0",
+                            "id": req_id,
+                            "method": "tools/call",
+                            "params": {"name": tool_name, "arguments": arguments},
+                        })
+                        res_block = upstream_resp.get("result") or {}
+                        res_block["meta"] = {
+                            **(res_block.get("meta") or {}),
+                            "decision": decision_resp.decision,
+                            "trace_id": decision_resp.trace_id,
+                            "latency_ms": decision_resp.latency_ms,
+                            "event_hash": decision_resp.event_hash,
+                            "upstream": "upstream_proxy",
+                        }
+                        return {"jsonrpc": "2.0", "id": req_id, "result": res_block}
+                    except Exception as exc:
+                        return {
+                            "jsonrpc": "2.0",
+                            "id": req_id,
+                            "result": {
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": f"SECURITY BLOCK [FAIL-CLOSED]: Upstream MCP server error ({type(exc).__name__}: {exc}).",
+                                    }
+                                ],
+                                "isError": True,
+                                "meta": {
+                                    "decision": "block",
+                                    "fail_closed": True,
+                                    "upstream": "upstream_proxy",
+                                    "error": str(exc),
+                                },
+                            },
+                        }
                 return {
                     "jsonrpc": "2.0",
                     "id": req_id,
@@ -172,7 +247,8 @@ class MCPGatewayProxy:
                             "decision": decision_resp.decision,
                             "trace_id": decision_resp.trace_id,
                             "latency_ms": decision_resp.latency_ms,
-                            "event_hash": decision_resp.event_hash
+                            "event_hash": decision_resp.event_hash,
+                            "upstream": "local_mock",
                         }
                     }
                 }
@@ -217,6 +293,45 @@ class MCPGatewayProxy:
                 }
             else:
                 # Redact
+                if self.upstream_url:
+                    try:
+                        upstream_resp = self._forward_to_upstream({
+                            "jsonrpc": "2.0",
+                            "id": req_id,
+                            "method": "tools/call",
+                            "params": {
+                                "name": tool_name,
+                                "arguments": decision_resp.redacted_arguments or arguments,
+                            },
+                        })
+                        res_block = upstream_resp.get("result") or {}
+                        res_block["meta"] = {
+                            **(res_block.get("meta") or {}),
+                            "decision": "redact",
+                            "redacted_arguments": decision_resp.redacted_arguments,
+                            "upstream": "upstream_proxy",
+                        }
+                        return {"jsonrpc": "2.0", "id": req_id, "result": res_block}
+                    except Exception as exc:
+                        return {
+                            "jsonrpc": "2.0",
+                            "id": req_id,
+                            "result": {
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": f"SECURITY BLOCK [FAIL-CLOSED]: Upstream MCP server error ({type(exc).__name__}: {exc}).",
+                                    }
+                                ],
+                                "isError": True,
+                                "meta": {
+                                    "decision": "block",
+                                    "fail_closed": True,
+                                    "upstream": "upstream_proxy",
+                                    "error": str(exc),
+                                },
+                            },
+                        }
                 return {
                     "jsonrpc": "2.0",
                     "id": req_id,
@@ -230,7 +345,8 @@ class MCPGatewayProxy:
                         "isError": False,
                         "meta": {
                             "decision": "redact",
-                            "redacted_arguments": decision_resp.redacted_arguments
+                            "redacted_arguments": decision_resp.redacted_arguments,
+                            "upstream": "local_mock",
                         }
                     }
                 }
@@ -248,6 +364,18 @@ class MCPGatewayProxy:
 from fastapi import APIRouter, Request
 
 router = APIRouter(prefix="/mcp", tags=["Model Context Protocol"])
+
+@router.get("/status")
+def mcp_proxy_status():
+    """Returns MCP gateway proxy configuration and fail-closed operational status."""
+    upstream = (os.getenv("SENTINEL_MCP_UPSTREAM_URL") or "").strip()
+    return {
+        "protocol_version": "2024-11-05",
+        "transport": "JSON-RPC 2.0 (HTTP + stdio)",
+        "mode": "upstream_proxy" if upstream else "local_mock",
+        "upstream_configured": bool(upstream),
+        "fail_closed": True,
+    }
 
 @router.post("")
 @router.post("/")

@@ -5,13 +5,16 @@ export interface BypassFinding {
   timestamp: string;
   ip_address: string;
   text_hash: string;
-  document_preview: string;
+  document_preview?: string;
+  document_snippet?: string;
   action_tool: string;
   action_args: string;
   gateway_decision: string;
-  pass_through_decision: string;
-  phrase_filter_decision: string;
-  reason: string;
+  pass_through_decision?: string;
+  phrase_filter_decision?: string;
+  reason?: string;
+  gateway_reason?: string;
+  bypass_category?: string;
 }
 
 export interface FindingsResponse {
@@ -49,13 +52,15 @@ export const BypassReports: React.FC = () => {
           const json = await res.json();
           if (isMounted) {
             setData(json);
-            setIsLoading(false);
             return;
           }
         }
       } catch (err: any) {
         if (isMounted) {
           setError('Failed to load community findings.');
+        }
+      } finally {
+        if (isMounted) {
           setIsLoading(false);
         }
       }
@@ -174,7 +179,7 @@ export const BypassReports: React.FC = () => {
                 </div>
                 <div className="text-slate-300">
                   <span className="text-slate-500">Document: </span>
-                  <span className="italic">{f.document_preview}</span>
+                  <span className="italic">{f.document_preview || f.document_snippet || 'N/A'}</span>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px] pt-1">
                   <div>
@@ -187,17 +192,17 @@ export const BypassReports: React.FC = () => {
                   </div>
                   <div>
                     <span className="text-slate-500">Phrase Filter: </span>
-                    <span className="text-slate-300">{f.phrase_filter_decision}</span>
+                    <span className="text-slate-300">{f.phrase_filter_decision || f.bypass_category || 'n/a'}</span>
                   </div>
                   <div>
                     <span className="text-slate-500">Pass-Through: </span>
-                    <span className="text-slate-300">{f.pass_through_decision}</span>
+                    <span className="text-slate-300">{f.pass_through_decision || 'allow'}</span>
                   </div>
                 </div>
-                {f.reason && (
+                {(f.reason || f.gateway_reason) && (
                   <div className="text-[11px] text-amber-300/90 pt-1">
                     <span className="text-slate-500">Note: </span>
-                    {f.reason}
+                    {f.reason || f.gateway_reason}
                   </div>
                 )}
               </div>

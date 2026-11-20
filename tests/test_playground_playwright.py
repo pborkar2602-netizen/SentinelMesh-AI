@@ -84,6 +84,24 @@ EXPECTED_PRESETS = [
 ]
 
 
+def _kill_proc(proc):
+    if not proc:
+        return
+    try:
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=10,
+            )
+        else:
+            proc.terminate()
+            proc.wait(timeout=10)
+    except Exception:
+        pass
+
+
 def wait_for_url(url: str, timeout: float = 15.0) -> bool:
     start = time.time()
     while time.time() - start < timeout:
@@ -111,8 +129,8 @@ def test_playground_presets_and_api_verification():
             [sys.executable, "-m", "uvicorn", "backend.app.main:app", "--port", "8000", "--host", "127.0.0.1"],
             cwd=str(ROOT_DIR),
             env=backend_env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         assert wait_for_url(f"{BACKEND_URL}/api/v1/health", timeout=15.0), "Backend failed to start!"
         print("Backend started successfully.")
@@ -146,27 +164,25 @@ def test_playground_presets_and_api_verification():
                         pass
 
             page.on("response", handle_response)
-            page.goto(FRONTEND_URL, wait_until="domcontentloaded")
+            page.goto(f"{FRONTEND_URL}/playground", wait_until="domcontentloaded")
             page.wait_for_selector("[data-testid='playground-section']", timeout=15000)
-            page.wait_for_timeout(1000)
+            page.wait_for_timeout(800)
 
             # -----------------------------------------------------------------
             # VIEWPORT 1: 1440x900 (Desktop Primary)
             # -----------------------------------------------------------------
             vp_label = "1440x900"
             page.set_viewport_size({"width": 1440, "height": 900})
-            page.wait_for_timeout(500)
+            page.wait_for_timeout(400)
 
             print(f"\n==========================================")
             print(f"Testing All 6 Presets on Viewport: 1440x900")
             print(f"==========================================")
 
-            # Scroll to Playground section
             playground_section = page.locator("[data-testid='playground-section']")
-            assert playground_section.is_visible(), "Playground section not visible on page!"
-            playground_section.scroll_into_view_if_needed()
+            assert playground_section.is_visible(), "Playground section not visible on /playground!"
             page.wait_for_selector("[data-testid='preset-btn-preset-1']", state="visible", timeout=15000)
-            page.wait_for_timeout(500)
+            page.wait_for_timeout(400)
 
             # 1. Test All 6 Presets
             for preset in EXPECTED_PRESETS:
@@ -217,24 +233,37 @@ def test_playground_presets_and_api_verification():
                 hash_text = page.locator("[data-testid='result-text-hash']").inner_text().strip()
                 assert len(hash_text) > 10, "Hash is missing or too short!"
 
-            # Capture Viewport Screenshot of Playground (1440x900)
+            # Capture Screenshot of Playground (1440x900)
             screenshot_path_1440 = ARTIFACTS_DIR / f"playground_{vp_label}.png"
             playground_section.screenshot(path=str(screenshot_path_1440))
             print(f"Saved playground screenshot: {screenshot_path_1440}")
 
-            # Test Evidence Page "Bypass Reports" Tab (1440x900)
-            print("Testing Evidence Page Bypass Reports Tab (1440x900)...")
-            evidence_section = page.locator("[data-testid='evidence-section']")
-            evidence_section.scroll_into_view_if_needed()
-            page.wait_for_timeout(500)
+            # Navigate to Benchmarks page & test Bypass Reports Tab (1440x900)
+            print("Testing Benchmarks Page Bypass Reports Tab (1440x900)...")
+            findings_errors = []
+            page.on("response", lambda r: findings_errors.append(f"{r.status} {r.url}") if "findings" in r.url else None)
+            page.on("requestfailed", lambda req: findings_errors.append(f"reqfailed {req.url}: {req.failure}"))
+            page.on("pageerror", lambda err: findings_errors.append(f"pageerror: {err}"))
 
-            tab_bypasses = page.locator("[data-testid='tab-bypasses']")
-            assert tab_bypasses.is_visible(), "Bypass Reports tab button not visible in Evidence section!"
-            tab_bypasses.click()
+            page.goto(f"{FRONTEND_URL}/benchmarks", wait_until="domcontentloaded")
+            page.wait_for_selector("[data-testid='headline-counters']", state="visible", timeout=15000)
+            page.wait_for_selector("[data-testid='wording-crossover-chart']", state="visible", timeout=15000)
             page.wait_for_timeout(500)
+            page.wait_for_selector("[data-testid='tab-bypasses']", state="visible", timeout=15000)
+            tab_bypasses = page.locator("[data-testid='tab-bypasses']")
+            tab_bypasses.evaluate("el => el.scrollIntoView({ block: 'center', behavior: 'instant' })")
+            page.wait_for_timeout(200)
+            tab_bypasses.click()
 
             bypass_container = page.locator("[data-testid='bypass-reports-container']")
-            assert bypass_container.is_visible(), "Bypass reports container not visible!"
+            try:
+                bypass_container.wait_for(state="visible", timeout=15000)
+            except Exception as exc:
+                detail_txt = page.locator("[data-testid='evidence-detail-blocks']").inner_text()[:400]
+                tab_cls = tab_bypasses.get_attribute("class")
+                raise AssertionError(
+                    f"bypass-reports-container not visible; tab_class={tab_cls}; errors={findings_errors}; detail_txt={detail_txt!r}"
+                ) from exc
 
             bypass_badge = page.locator("[data-testid='bypass-count-badge']")
             assert bypass_badge.is_visible(), "Bypass count badge not visible!"
@@ -254,11 +283,8 @@ def test_playground_presets_and_api_verification():
             print(f"Testing Viewport & Capturing Screenshots: 1366x768")
             print(f"==========================================")
             page.set_viewport_size({"width": 1366, "height": 768})
-            page.wait_for_timeout(600)
-
-            # Scroll to Playground section
-            playground_section.scroll_into_view_if_needed()
-            page.wait_for_timeout(400)
+            page.goto(f"{FRONTEND_URL}/playground", wait_until="domcontentloaded")
+            page.wait_for_selector("[data-testid='preset-btn-preset-1']", state="visible", timeout=15000)
 
             # Run Preset 1 on 1366x768
             btn_p1 = page.locator("[data-testid='preset-btn-preset-1']")
@@ -268,25 +294,29 @@ def test_playground_presets_and_api_verification():
             page.wait_for_timeout(400)
 
             screenshot_path_1366 = ARTIFACTS_DIR / f"playground_{vp_label}.png"
-            playground_section.screenshot(path=str(screenshot_path_1366))
+            page.locator("[data-testid='playground-section']").screenshot(path=str(screenshot_path_1366))
             print(f"Saved playground screenshot: {screenshot_path_1366}")
 
-            # Scroll to Evidence Section & capture bypass report on 1366x768
-            evidence_section.scroll_into_view_if_needed()
-            page.wait_for_timeout(400)
+            # Navigate to Benchmarks & capture bypass report on 1366x768
+            page.goto(f"{FRONTEND_URL}/benchmarks", wait_until="domcontentloaded")
+            page.wait_for_selector("[data-testid='headline-counters']", state="visible", timeout=15000)
+            page.wait_for_selector("[data-testid='wording-crossover-chart']", state="visible", timeout=15000)
+            page.wait_for_timeout(500)
+            tab_bypasses_1366 = page.locator("[data-testid='tab-bypasses']")
+            tab_bypasses_1366.wait_for(state="visible", timeout=15000)
+            tab_bypasses_1366.evaluate("el => el.scrollIntoView({ block: 'center', behavior: 'instant' })")
+            page.wait_for_timeout(200)
+            tab_bypasses_1366.click()
+            page.wait_for_selector("[data-testid='bypass-reports-container']", state="visible", timeout=15000)
             evidence_screenshot_path_1366 = ARTIFACTS_DIR / f"evidence_bypasses_{vp_label}.png"
-            bypass_container.screenshot(path=str(evidence_screenshot_path_1366))
+            page.locator("[data-testid='bypass-reports-container']").screenshot(path=str(evidence_screenshot_path_1366))
             print(f"Saved evidence bypass screenshot: {evidence_screenshot_path_1366}")
 
             browser.close()
 
     finally:
-        if backend_proc:
-            backend_proc.terminate()
-            backend_proc.wait()
-        if frontend_proc:
-            frontend_proc.terminate()
-            frontend_proc.wait()
+        _kill_proc(backend_proc)
+        _kill_proc(frontend_proc)
 
 
 if __name__ == "__main__":

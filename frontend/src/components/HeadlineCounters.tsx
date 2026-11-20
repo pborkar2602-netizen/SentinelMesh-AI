@@ -66,12 +66,12 @@ export const HeadlineCounters: React.FC = () => {
               <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500/40 via-teal-400/40 to-sky-500/40 opacity-70 group-hover:opacity-100 transition-opacity" />
               
               <div>
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400 font-semibold truncate">
+                <div className="mb-2 space-y-0.5">
+                  <span className="block text-[11px] font-mono uppercase tracking-wider text-slate-300 font-semibold leading-snug">
                     {c.title}
                   </span>
                   {c.source_report && (
-                    <span className="text-[9px] font-mono text-slate-500 shrink-0">
+                    <span className="block text-[9px] font-mono text-slate-500 truncate">
                       {c.source_report.replace('.json', '')}
                     </span>
                   )}

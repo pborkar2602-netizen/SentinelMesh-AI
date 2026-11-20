@@ -1,37 +1,39 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { TOUR_STEPS, TourStep } from './steps';
-import { useDetailLevel } from '../context/DetailContext';
 
 interface TourOverlayProps {
   isOpen: boolean;
+  currentRoute: string;
+  onNavigate: (path: string) => void;
   onClose: () => void;
 }
 
-export const TourOverlay: React.FC<TourOverlayProps> = ({ isOpen, onClose }) => {
-  const { detailLevel } = useDetailLevel();
-  const activeSteps = TOUR_STEPS.filter(
-    (s) => !s.levels || s.levels.includes(detailLevel)
-  );
-
+export const TourOverlay: React.FC<TourOverlayProps> = ({
+  isOpen,
+  currentRoute,
+  onNavigate,
+  onClose,
+}) => {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const [measuredCardHeight, setMeasuredCardHeight] = useState(280);
 
-  // Reset index when detailLevel changes
+  const safeIndex = Math.min(currentStepIndex, Math.max(0, TOUR_STEPS.length - 1));
+  const step: TourStep = TOUR_STEPS[safeIndex] || TOUR_STEPS[0];
+
+  // Reset to step 0 when reopened cleanly
   useEffect(() => {
-    setCurrentStepIndex(0);
-  }, [detailLevel]);
+    if (!isOpen) {
+      setCurrentStepIndex(0);
+    }
+  }, [isOpen]);
 
-  const safeIndex = Math.min(currentStepIndex, Math.max(0, activeSteps.length - 1));
-  const step: TourStep = activeSteps[safeIndex] || TOUR_STEPS[0];
-
-  // When tour is open, ensure document.body has .tour-active and all .rv elements are revealed
+  // Body tour class cleanup
   useEffect(() => {
     if (isOpen) {
       document.body.classList.add('tour-active');
-      document.querySelectorAll('.rv').forEach((el) => el.classList.add('in'));
     } else {
       document.body.classList.remove('tour-active');
     }
@@ -39,6 +41,14 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({ isOpen, onClose }) => 
       document.body.classList.remove('tour-active');
     };
   }, [isOpen]);
+
+  // Auto-navigate when step belongs to a different route
+  useEffect(() => {
+    if (!isOpen) return;
+    if (step.route !== currentRoute) {
+      onNavigate(step.route);
+    }
+  }, [isOpen, step.route, currentRoute, onNavigate]);
 
   // Measure card height
   useEffect(() => {
@@ -50,34 +60,19 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({ isOpen, onClose }) => 
       }
     };
     measure();
-    const t = setTimeout(measure, 50);
+    const t = setTimeout(measure, 60);
     return () => clearTimeout(t);
   }, [safeIndex, isOpen, step]);
 
-  // Target element resolution & scrolling
+  // Resolve target bounding box on active route
   useEffect(() => {
     if (!isOpen) return;
 
-    let el = document.getElementById(step.targetId);
-    if (!el && (step.targetId === 'hero-badge' || step.targetId === 'hd')) {
-      el = document.getElementById('hero-badge') || document.getElementById('hd') || document.getElementById('home');
-    }
-
-    if (el) {
-      el.classList.add('in');
-      let parent = el.parentElement;
-      while (parent) {
-        if (parent.classList.contains('rv')) parent.classList.add('in');
-        parent = parent.parentElement;
-      }
-      el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
-    }
-
     const updateBoundingBox = () => {
-      let element = document.getElementById(step.targetId);
-      if (!element && (step.targetId === 'hero-badge' || step.targetId === 'hd')) {
-        element = document.getElementById('hero-badge') || document.getElementById('hd') || document.getElementById('home');
-      }
+      const element =
+        document.getElementById(step.targetId) ||
+        document.getElementById('hero-badge') ||
+        document.getElementById('home');
       if (element) {
         const rect = element.getBoundingClientRect();
         if (rect.width > 0 && rect.height > 0) {
@@ -88,47 +83,32 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({ isOpen, onClose }) => 
       setTargetRect(null);
     };
 
-    updateBoundingBox();
-    const t1 = setTimeout(updateBoundingBox, 100);
-    const t2 = setTimeout(updateBoundingBox, 300);
-    const t3 = setTimeout(updateBoundingBox, 600);
+    const scrollAndMeasure = () => {
+      const el = document.getElementById(step.targetId);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+      }
+      updateBoundingBox();
+    };
+
+    const t0 = setTimeout(scrollAndMeasure, 80);
+    const t1 = setTimeout(updateBoundingBox, 260);
+    const t2 = setTimeout(updateBoundingBox, 520);
 
     window.addEventListener('resize', updateBoundingBox);
     window.addEventListener('scroll', updateBoundingBox, { passive: true });
 
     return () => {
+      clearTimeout(t0);
       clearTimeout(t1);
       clearTimeout(t2);
-      clearTimeout(t3);
       window.removeEventListener('resize', updateBoundingBox);
       window.removeEventListener('scroll', updateBoundingBox);
     };
-  }, [safeIndex, isOpen, step.targetId]);
-
-  // Keyboard controls
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      } else if (e.key === 'ArrowRight' || e.key === ' ') {
-        e.preventDefault();
-        handleNext();
-      } else if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        handlePrev();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, safeIndex, activeSteps.length]);
-
-  if (!isOpen) return null;
+  }, [safeIndex, isOpen, step.targetId, currentRoute]);
 
   const handleNext = () => {
-    if (safeIndex < activeSteps.length - 1) {
+    if (safeIndex < TOUR_STEPS.length - 1) {
       setCurrentStepIndex((prev) => prev + 1);
     } else {
       onClose();
@@ -141,7 +121,26 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({ isOpen, onClose }) => 
     }
   };
 
-  // Safe clamping calculations
+  // Keyboard controls
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      } else if (e.key === 'ArrowRight' || e.key === ' ') {
+        e.preventDefault();
+        handleNext();
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        handlePrev();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, safeIndex]);
+
+  if (!isOpen) return null;
+
   const PADDING = 16;
   const CARD_WIDTH = Math.min(420, window.innerWidth - PADDING * 2);
   const cardH = Math.max(200, Math.min(window.innerHeight - PADDING * 2, measuredCardHeight));
@@ -161,7 +160,7 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({ isOpen, onClose }) => 
 
   if (targetRect) {
     let computedTop = PADDING;
-    let computedLeft = targetRect.left + (targetRect.width / 2) - (CARD_WIDTH / 2);
+    let computedLeft = targetRect.left + targetRect.width / 2 - CARD_WIDTH / 2;
 
     const roomBelow = winH - targetRect.bottom >= cardH + PADDING;
     const roomAbove = targetRect.top >= cardH + PADDING;
@@ -183,34 +182,28 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({ isOpen, onClose }) => 
     } else if (roomAbove) {
       computedTop = targetRect.top - cardH - PADDING;
     } else {
-      // Pick direction with more available vertical room
-      computedTop = (winH - targetRect.bottom >= targetRect.top)
-        ? targetRect.bottom + PADDING
-        : targetRect.top - cardH - PADDING;
+      computedTop =
+        winH - targetRect.bottom >= targetRect.top
+          ? targetRect.bottom + PADDING
+          : targetRect.top - cardH - PADDING;
     }
 
-    // Absolute viewport clamp: Never allow card to cross viewport edges
-    const clampedTop = Math.max(PADDING, Math.min(maxTop, computedTop));
-    const clampedLeft = Math.max(PADDING, Math.min(maxLeft, computedLeft));
-
-    cardStyle.top = `${clampedTop}px`;
-    cardStyle.left = `${clampedLeft}px`;
+    cardStyle.top = `${Math.max(PADDING, Math.min(maxTop, computedTop))}px`;
+    cardStyle.left = `${Math.max(PADDING, Math.min(maxLeft, computedLeft))}px`;
   } else {
-    // Center if element not found
     cardStyle.top = `${Math.max(PADDING, (winH - cardH) / 2)}px`;
     cardStyle.left = `${Math.max(PADDING, (winW - CARD_WIDTH) / 2)}px`;
   }
 
   return (
-    <div ref={overlayRef} className="fixed inset-0 z-[99990] pointer-events-auto" data-testid="guided-tour-overlay">
-      {/* Click outside to close */}
-      <div 
-        className="absolute inset-0 cursor-default"
-        onClick={onClose}
-      />
+    <div
+      ref={overlayRef}
+      className="fixed inset-0 z-[99990] pointer-events-auto"
+      data-testid="guided-tour-overlay"
+    >
+      <div className="absolute inset-0 cursor-default" onClick={onClose} />
 
-      {/* Spotlight Cutout with soft glow and clear backdrop */}
-      {targetRect && (
+      {targetRect ? (
         <div
           className="fixed pointer-events-none rounded-2xl transition-all duration-300 ring-2 ring-emerald-400/80 shadow-[0_0_0_9999px_rgba(8,12,24,0.65),0_0_30px_rgba(52,211,153,0.35)] z-[99992]"
           style={{
@@ -220,12 +213,10 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({ isOpen, onClose }) => 
             height: `${Math.max(20, targetRect.height + 12)}px`,
           }}
         />
-      )}
-      {!targetRect && (
+      ) : (
         <div className="fixed inset-0 bg-[#080C18]/65 backdrop-blur-[2px] z-[99991]" />
       )}
 
-      {/* Tour Step Card */}
       <div
         ref={cardRef}
         data-testid="tour-card"
@@ -233,31 +224,24 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({ isOpen, onClose }) => 
         className="bg-[#0B101D]/95 border border-white/20 rounded-2xl p-5 shadow-2xl backdrop-blur-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header with badge and step counter */}
         <div className="flex items-center justify-between gap-2 mb-3">
           <span className="text-[11px] font-mono tracking-wider uppercase px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-semibold">
             {step.badge || `Step ${safeIndex + 1}`}
           </span>
           <span className="text-xs text-slate-400 font-mono">
-            {safeIndex + 1} / {activeSteps.length}
+            {safeIndex + 1} / {TOUR_STEPS.length}
           </span>
         </div>
 
-        {/* Title */}
-        <h3 className="text-base font-semibold text-white tracking-tight mb-2">
-          {step.title}
-        </h3>
+        <h3 className="text-base font-semibold text-white tracking-tight mb-2">{step.title}</h3>
 
-        {/* Description */}
-        <p className="text-sm text-slate-300 leading-relaxed mb-5">
-          {step.description}
-        </p>
+        <p className="text-sm text-slate-300 leading-relaxed mb-5">{step.description}</p>
 
-        {/* Action Controls */}
         <div className="flex items-center justify-between pt-3 border-t border-white/10">
           <button
             onClick={onClose}
             className="text-xs font-mono text-slate-400 hover:text-white transition-colors px-2 py-1 rounded hover:bg-white/5"
+            data-testid="tour-close-btn"
           >
             Skip tour (Esc)
           </button>
@@ -267,6 +251,7 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({ isOpen, onClose }) => 
               <button
                 onClick={handlePrev}
                 className="text-xs font-medium px-3 py-1.5 rounded-lg border border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 transition-colors"
+                data-testid="tour-prev-btn"
               >
                 Back
               </button>
@@ -274,8 +259,9 @@ export const TourOverlay: React.FC<TourOverlayProps> = ({ isOpen, onClose }) => 
             <button
               onClick={handleNext}
               className="text-xs font-medium px-3.5 py-1.5 rounded-lg bg-emerald-500 text-slate-950 font-semibold hover:bg-emerald-400 transition-colors shadow-lg shadow-emerald-500/20"
+              data-testid="tour-next-btn"
             >
-              {safeIndex === activeSteps.length - 1 ? 'Finish' : 'Next →'}
+              {safeIndex === TOUR_STEPS.length - 1 ? 'Finish' : 'Next →'}
             </button>
           </div>
         </div>

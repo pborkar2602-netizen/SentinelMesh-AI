@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from backend.app.privacy.vault import PrivacyVault, VaultRetentionExpiredError
 from backend.app.db.database import save_audit_event
 from backend.app.api.websocket import ws_manager
-from backend.app.api.auth import get_current_user_and_role
+from backend.app.api.auth import get_current_user_and_role, is_demo_mode
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/privacy", tags=["Privacy"])
@@ -42,10 +42,10 @@ def request_raw_pii_access(
     Only users with verified role 'privacy_officer' and a non-empty compliance reason are permitted.
     Every raw access request is logged to the immutable append-only hash chain.
     """
-    # 1. Authenticate identity and role via signed JWT (or legacy header during migration)
+    # 1. Authenticate identity and role via signed JWT (legacy header allowed ONLY in DEMO_MODE)
     if authorization:
         user, role = get_current_user_and_role(authorization)
-    elif legacy_role:
+    elif legacy_role and is_demo_mode():
         role = legacy_role.lower().strip()
         user = legacy_user or "compliance-officer"
     else:

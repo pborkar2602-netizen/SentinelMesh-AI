@@ -107,22 +107,27 @@ export const AgentMesh: React.FC<AgentMeshProps> = ({
         : o.n;
 
       for (let i = 0; i < cnt; i++) {
+        const hasLabel = Boolean(o.l && i < 5);
+        const minX = hasLabel ? 20 : 0;
+        const maxX = hasLabel ? Math.max(minX + 40, W - 120) : W;
+        const minY = hasLabel ? 18 : 0;
+        const maxY = hasLabel ? Math.max(minY + 30, H - 18) : H;
         N.push({
-          x: Math.random() * W,
-          y: Math.random() * H,
+          x: minX + Math.random() * Math.max(1, maxX - minX),
+          y: minY + Math.random() * Math.max(1, maxY - minY),
           vx: (Math.random() - 0.5) * 0.4,
           vy: (Math.random() - 0.5) * 0.4,
-          n: o.l && i < 5 ? AGENT_NAMES[i] : null,
+          n: hasLabel ? AGENT_NAMES[i] : null,
           h: 0,
         });
       }
 
       if (o.l) {
-        N[0].x = W * 0.14;
+        N[0].x = Math.max(24, W * 0.14);
         N[0].y = H * 0.5;
         N[0].f = 1;
         N.push({
-          x: W * 0.88,
+          x: Math.max(120, Math.min(W * 0.84, W - 84)),
           y: H * 0.5,
           vx: 0,
           vy: 0,
@@ -197,8 +202,24 @@ export const AgentMesh: React.FC<AgentMeshProps> = ({
         if (!n.f) {
           n.x += n.vx;
           n.y += n.vy;
-          if (n.x < 0 || n.x > W) n.vx *= -1;
-          if (n.y < 0 || n.y > H) n.vy *= -1;
+          const minX = o.l && n.n ? 14 : 0;
+          const maxX = o.l && n.n ? Math.max(minX + 40, W - 115) : W;
+          const minY = o.l && n.n ? 16 : 0;
+          const maxY = o.l && n.n ? Math.max(minY + 20, H - 16) : H;
+          if (n.x < minX) {
+            n.x = minX;
+            n.vx = Math.abs(n.vx);
+          } else if (n.x > maxX) {
+            n.x = maxX;
+            n.vx = -Math.abs(n.vx);
+          }
+          if (n.y < minY) {
+            n.y = minY;
+            n.vy = Math.abs(n.vy);
+          } else if (n.y > maxY) {
+            n.y = maxY;
+            n.vy = -Math.abs(n.vy);
+          }
           if (o.m) {
             const dx = n.x - mx;
             const dy = n.y - my;
@@ -355,9 +376,13 @@ export const AgentMesh: React.FC<AgentMeshProps> = ({
         }
 
         if (big) {
+          const label = n.n || '';
+          const tw = cx.measureText(label).width;
+          const labelX = n.x + 12 + tw > W - 8 ? Math.max(8, n.x - 9 - tw) : n.x + 9;
+          const labelY = Math.max(14, Math.min(H - 8, n.y + 4));
           cx.fillStyle = K.ink;
           cx.globalAlpha = 0.85;
-          cx.fillText(n.n || '', n.x + 9, n.y + 4);
+          cx.fillText(label, labelX, labelY);
           cx.globalAlpha = 1;
         }
       }

@@ -316,20 +316,19 @@ export const PlaygroundSection: React.FC = () => {
   const activePreset = presets.find((p) => p.id === selectedPresetId);
 
   return (
-    <section id="lab" className="xs py-16" data-testid="playground-section">
-      <div className="w max-w-7xl mx-auto px-4 sm:px-6">
-        {/* Section Header */}
-        <div className="eb rv mb-2 text-xs font-mono tracking-widest text-emerald-400 uppercase">
-          Interactive Gateway Sandbox
-        </div>
-        <h2 className="rv text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white tracking-tight mb-4">
-          Try to break it.
-        </h2>
-        <p className="sub rv text-slate-300 text-sm sm:text-base max-w-3xl leading-relaxed mb-8">
-          Feed any adversarial document and tool action into the sandbox. Compare real execution
-          traces across three parallel lanes: <b>Pass-through</b> (no defense), <b>6-Phrase Filter</b>{' '}
-          (static regex baseline), and the <b>SentinelMesh Gateway</b> (deterministic defense-in-depth).
-        </p>
+    <div id="lab" className="w xs" data-testid="playground-section">
+      {/* Section Header */}
+      <div className="eb mb-2 text-xs font-mono tracking-widest text-emerald-400 uppercase">
+        Interactive Gateway Sandbox
+      </div>
+      <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white tracking-tight mb-4">
+        Try to break it.
+      </h2>
+      <p className="sub text-slate-300 text-sm sm:text-base max-w-3xl leading-relaxed mb-8">
+        Feed any adversarial document and tool action into the sandbox. Compare real execution
+        traces across three parallel lanes: <b>Pass-through</b> (no defense), <b>6-Phrase Filter</b>{' '}
+        (static regex baseline), and the <b>SentinelMesh Gateway</b> (deterministic defense-in-depth).
+      </p>
 
         {/* 6 Preset Selector Buttons */}
         <div id="sws" className="mb-8" data-testid="presets-container">
@@ -823,14 +822,13 @@ export const PlaygroundSection: React.FC = () => {
               <div className="p-4 rounded-xl bg-black/40 border border-white/10 text-xs font-mono text-slate-300 flex items-start gap-3">
                 <span className="text-base shrink-0">💡</span>
                 <div>
-                  <span className="text-white font-bold block mb-0.5">Scientific Takeaway:</span>
+                  <span className="text-white font-bold block mb-0.5">Takeaway:</span>
                   <p className="leading-relaxed text-slate-300">{activePreset.educational_note}</p>
                 </div>
               </div>
             )}
           </div>
         )}
-      </div>
-    </section>
+    </div>
   );
 };

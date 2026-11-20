@@ -1,7 +1,9 @@
 import os
 import re
+import json
 import email.utils
 import urllib.parse
+from pathlib import Path
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional, Set, Tuple
 
@@ -16,18 +18,16 @@ class Finding:
     evidence: str
     owasp_category: str
 
-# Configurable Approved Email Domains (exact-or-dot-boundary matching)
-APPROVED_EMAIL_DOMAINS = [
+_DEFAULT_APPROVED_EMAIL_DOMAINS = [
     "company.com",
     "approved-vendor.com",
     "verified-client.org",
     "internal.local",
     "sentinelmesh.internal",
-    "vendor-corp.com"
+    "vendor-corp.com",
 ]
 
-# Configurable Approved External API Hosts & Domains
-APPROVED_API_DOMAINS = [
+_DEFAULT_APPROVED_API_DOMAINS = [
     "localhost",
     "127.0.0.1",
     "::1",
@@ -38,8 +38,36 @@ APPROVED_API_DOMAINS = [
     "verified-client.org",
     "api.github.com",
     "partner.org",
-    "sentinelmesh.internal"
+    "sentinelmesh.internal",
 ]
+
+
+def load_policy_config() -> Dict[str, Any]:
+    """Loads declarative policy-as-code configuration with deterministic fallbacks."""
+    default_path = Path(__file__).resolve().parent.parent / "policies_config.json"
+    cfg_path = Path(os.getenv("SENTINEL_POLICY_CONFIG_PATH") or str(default_path))
+    if cfg_path.exists():
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+        except Exception:
+            pass
+    return {}
+
+
+_POLICY_CONFIG = load_policy_config()
+
+# Configurable Approved Email Domains (exact-or-dot-boundary matching)
+APPROVED_EMAIL_DOMAINS = list(
+    _POLICY_CONFIG.get("approved_email_domains") or _DEFAULT_APPROVED_EMAIL_DOMAINS
+)
+
+# Configurable Approved External API Hosts & Domains
+APPROVED_API_DOMAINS = list(
+    _POLICY_CONFIG.get("approved_api_domains") or _DEFAULT_APPROVED_API_DOMAINS
+)
 
 def extract_email_domain(email_str: str) -> Optional[str]:
     """

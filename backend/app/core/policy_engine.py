@@ -47,6 +47,8 @@ class PolicyEngine:
         untrusted_literals: Optional[Set[str]] = None,
         task_description: Optional[str] = None,
         session_tainted_before_call: Optional[bool] = None,
+        mode_override: Optional[str] = None,
+        high_sensitivity_action_override: Optional[str] = None,
     ) -> Tuple[str, str]:
         """
         Evaluates active security policies against session context, detection findings,
@@ -58,7 +60,13 @@ class PolicyEngine:
         The Intent Judge may raise risk or escalate to require_approval,
         but can NEVER downgrade or override a block determined by rules or taint.
         """
-        mode = cls.get_mode()
+        raw_mode = (mode_override if mode_override is not None else cls.get_mode()).lower().strip()
+        mode = raw_mode if raw_mode in ("enforce", "monitor") else cls.get_mode()
+        high_sens_action = (
+            high_sensitivity_action_override
+            if high_sensitivity_action_override is not None
+            else cls._high_sensitivity_external_action
+        ).lower().strip()
 
         # Check if destination is unapproved external
         has_unapproved_recipient = any(f.name == "unapproved_external_recipient" for f in findings)
@@ -128,7 +136,7 @@ class PolicyEngine:
                         )
 
         if is_external_destination and has_sensitive_pii and not is_financial_transaction:
-            if cls._high_sensitivity_external_action == "require_approval" or is_tainted:
+            if high_sens_action == "require_approval" or is_tainted:
                 if mode == "enforce":
                     return (
                         "require_approval",

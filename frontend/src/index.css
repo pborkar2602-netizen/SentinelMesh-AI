@@ -7,6 +7,8 @@
 
 :root {
   --bg: #04050a;
+  --bg1: #070a14;
+  --bg2: #0a0e1a;
   --ink: #eaf0ff;
   --mut: #8b93ad;
   --line: rgba(255, 255, 255, 0.09);
@@ -23,6 +25,8 @@
 
 :root[data-theme="light"] {
   --bg: #f5f6fb;
+  --bg1: #eef1f8;
+  --bg2: #ffffff;
   --ink: #0b1020;
   --mut: #566079;
   --line: rgba(10, 16, 32, 0.1);
@@ -36,6 +40,8 @@
 
 :root[data-theme="dark"] {
   --bg: #04050a;
+  --bg1: #070a14;
+  --bg2: #0a0e1a;
   --ink: #eaf0ff;
   --mut: #8b93ad;
   --line: rgba(255, 255, 255, 0.09);
@@ -50,6 +56,8 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #04050a;
+    --bg1: #070a14;
+    --bg2: #0a0e1a;
     --ink: #eaf0ff;
     --mut: #8b93ad;
     --line: rgba(255, 255, 255, 0.09);
@@ -461,12 +469,20 @@ h1 {
 }
 
 section {
-  padding: 110px 0;
+  padding: 32px 0;
+}
+
+.page-shell {
+  padding: 88px 0 64px;
+  min-height: calc(100vh - 110px);
 }
 
 @media (max-height: 850px) {
   section {
-    padding: 60px 0;
+    padding: 24px 0;
+  }
+  .page-shell {
+    padding: 84px 0 48px;
   }
   .hero {
     padding: 100px 0 60px;
@@ -844,12 +860,59 @@ footer {
   gap: 12px;
 }
 
-.rv {
-  opacity: 0;
-  transform: translateY(20px);
-  transition: 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+.t-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font: 600 10px "JetBrains Mono", monospace;
+  letter-spacing: 0.06em;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--mut);
 }
 
+.t-badge.gr {
+  color: var(--gr);
+  border-color: color-mix(in srgb, var(--gr) 40%, transparent);
+  background: color-mix(in srgb, var(--gr) 12%, transparent);
+}
+
+.t-badge.ro {
+  color: var(--ro);
+  border-color: color-mix(in srgb, var(--ro) 40%, transparent);
+  background: color-mix(in srgb, var(--ro) 12%, transparent);
+}
+
+.t-badge.am {
+  color: var(--am);
+  border-color: color-mix(in srgb, var(--am) 40%, transparent);
+  background: color-mix(in srgb, var(--am) 12%, transparent);
+}
+
+.t-badge.cy {
+  color: var(--cy);
+  border-color: color-mix(in srgb, var(--cy) 40%, transparent);
+  background: color-mix(in srgb, var(--cy) 12%, transparent);
+}
+
+@keyframes pageIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.page-enter {
+  animation: pageIn 0.24s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.rv,
 .rv.in,
 body.tour-active .rv {
   opacity: 1 !important;

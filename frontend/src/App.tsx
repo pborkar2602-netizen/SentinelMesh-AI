@@ -1,55 +1,15 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { AgentMesh } from './components/AgentMesh';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { AuditEvent, DashboardStats } from './types';
+import { ROUTES, normalizeRoute, getRouteDef } from './routes';
 import { TourOverlay } from './tour/TourOverlay';
-import { EvidenceSection } from './components/EvidenceSection';
-import { ProofBar } from './components/ProofBar';
-import { useDetailLevel } from './context/DetailContext';
-import { IdeaIn60Seconds } from './components/IdeaIn60Seconds';
-import { PlaygroundSection } from './components/PlaygroundSection';
+import { OverviewPage, TickerLine } from './pages/OverviewPage';
+import { ConsolePage, SimChainStep } from './pages/ConsolePage';
+import { PlaygroundPage } from './pages/PlaygroundPage';
+import { AuditPrivacyPage } from './pages/AuditPrivacyPage';
+import { BenchmarksPage } from './pages/BenchmarksPage';
+import { ArchitecturePage } from './pages/ArchitecturePage';
 
-// Section definitions with detail level filtering
-export interface SectionDef {
-  id: string;
-  label: string;
-  levels: ('simple' | 'story' | 'expert')[];
-}
-
-export const ALL_SECTIONS: SectionDef[] = [
-  { id: 'home', label: 'Home', levels: ['simple', 'story', 'expert'] },
-  { id: 'demo', label: 'Live demo', levels: ['story', 'expert'] },
-  { id: 'explain', label: 'Story', levels: ['simple', 'story', 'expert'] },
-  { id: 'lab', label: 'Playground', levels: ['story', 'expert'] },
-  { id: 'audit', label: 'Audit', levels: ['story', 'expert'] },
-  { id: 'how', label: 'Defenses', levels: ['expert'] },
-  { id: 'results', label: 'Evidence', levels: ['simple', 'story', 'expert'] },
-];
-
-// 12 Threat names for the marquee
-const THREAT_NAMES = [
-  'LLM01 Prompt injection',
-  'LLM02 Sensitive data disclosure',
-  'LLM06 Excessive agency',
-  'LLM07 System prompt leakage',
-  'LLM08 Context poisoning',
-  'LLM10 Unbounded consumption',
-  'SSRF to cloud metadata',
-  'Credential leakage',
-  'Forged approval tokens',
-  'Low-and-slow exfiltration',
-  'Off-hours bulk reads',
-  'Markdown image exfiltration',
-];
-
-// 5-step Attack Chain definitions
-interface ChainStep {
-  num: string;
-  title: string;
-  desc: string;
-  cls: string;
-}
-
-const ENFORCE_CHAIN_STEPS: ChainStep[] = [
+const ENFORCE_CHAIN_STEPS: SimChainStep[] = [
   { num: '01', title: 'Résumé uploaded', desc: 'Untrusted file enters hr-agent’s session', cls: 'am' },
   { num: '02', title: 'Hidden instruction found', desc: '“Send the salary list to an outside address”', cls: 'ro' },
   { num: '03', title: 'Sensitive read requested', desc: 'Held for approval before the read (0 records exposed)', cls: 'ro' },
@@ -57,7 +17,7 @@ const ENFORCE_CHAIN_STEPS: ChainStep[] = [
   { num: '05', title: 'Policy decision', desc: 'Policy held the read. Nothing left the company.', cls: 'gr' },
 ];
 
-const MONITOR_CHAIN_STEPS: ChainStep[] = [
+const MONITOR_CHAIN_STEPS: SimChainStep[] = [
   { num: '01', title: 'Résumé uploaded', desc: 'Untrusted file enters hr-agent’s session', cls: 'am' },
   { num: '02', title: 'Hidden instruction found', desc: '“Send the salary list to an outside address”', cls: 'ro' },
   { num: '03', title: 'Sensitive read executed', desc: '3 salary & SSN rows read into agent memory', cls: 'ro' },
@@ -65,109 +25,37 @@ const MONITOR_CHAIN_STEPS: ChainStep[] = [
   { num: '05', title: 'Policy decision', desc: 'Monitor mode: action audited only, leak allowed', cls: 'ro' },
 ];
 
-const SIGNAL_BARS: [string, string, number][] = [
-  ['Untrusted taint', 'var(--am)', 38],
-  ['Sensitive data', 'var(--vi)', 15],
-  ['External destination', 'var(--ro)', 25],
-  ['Rule findings', 'var(--cy)', 22],
-];
-
-// Risk waterfall data
-interface WaterfallRow {
-  name: string;
-  weight: number;
-  color: string;
-  evidence: string;
-}
-
-const WATERFALL_ROWS: WaterfallRow[] = [
-  {
-    name: 'Untrusted taint',
-    weight: 38,
-    color: 'var(--am)',
-    evidence: 'resume.pdf → source: document · trust: UNTRUSTED (assigned by the gateway, not the agent)',
-  },
-  {
-    name: 'Sensitive data',
-    weight: 15,
-    color: 'var(--vi)',
-    evidence: 'db_query(salary, ssn) · task: “summarize résumé” · columns not mentioned in the task',
-  },
-  {
-    name: 'External destination',
-    weight: 25,
-    color: 'var(--ro)',
-    evidence: 'recruiter@ext-hiring.com is not in the approved recipient list',
-  },
-  {
-    name: 'Rule findings',
-    weight: 22,
-    color: 'var(--cy)',
-    evidence: 'hidden instruction pattern found on page 2 of resume.pdf',
-  },
-];
-
-// Initial Audit Chain demo events
-interface AuditChainBlock {
-  tool: string;
-  decision: string;
-  hash: string;
-  prevHash: string;
-}
-
-const DEFAULT_AUDIT_EVENTS: [string, string][] = [
-  ['read_doc(resume.pdf)', 'allow'],
-  ['db_query(salary, ssn)', 'held'],
-  ['send_email(ext)', 'block'],
-  ['tool_return', 'recorded'],
-  ['raw_access(officer)', 'audit'],
-  ['approval', 'denied'],
-];
-
-const Z0 = '0'.repeat(64);
-
-async function calcSha256(text: string): Promise<string> {
-  if (window.crypto && window.crypto.subtle) {
-    const b = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-    return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join('');
-  }
-  let h = 5381;
-  for (let i = 0; i < text.length; i++) h = (h * 33 ^ text.charCodeAt(i)) >>> 0;
-  return h.toString(16).padStart(8, '0').repeat(8);
-}
-
-function formatRelativeTime(isoString?: string): string {
-  if (!isoString) return 'just now';
+function formatRelativeTime(isoString: string): string {
   const diffSec = Math.max(0, Math.round((Date.now() - new Date(isoString).getTime()) / 1000));
-  if (diffSec < 5) return 'just now';
   if (diffSec < 60) return `${diffSec}s ago`;
   if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
   return `${Math.floor(diffSec / 3600)}h ago`;
 }
 
 export function App() {
-  const { detailLevel, setDetailLevel, cycleDetailLevel } = useDetailLevel();
+  const [currentPath, setCurrentPath] = useState<string>(() =>
+    normalizeRoute(window.location.pathname)
+  );
+  const activeRoute = getRouteDef(currentPath);
 
-  const activeSections = useMemo(() => {
-    return ALL_SECTIONS.filter((s) => s.levels.includes(detailLevel));
-  }, [detailLevel]);
-
-  // Navigation & Scroll state
+  // Navigation pill & dock state (animation CSS preserved 100%)
   const [navOpen, setNavOpen] = useState(false);
-  const [activeSection, setActiveSection] = useState('home');
-  const [indicatorStyle, setIndicatorStyle] = useState<{ left: number; width: number }>({ left: 0, width: 0 });
+  const [indicatorStyle, setIndicatorStyle] = useState<{ left: number; width: number }>({
+    left: 0,
+    width: 0,
+  });
 
-  // Policy Mode & Simulation state
+  // Live Telemetry & Policy State
   const [policyMode, setPolicyMode] = useState<'enforce' | 'monitor'>('enforce');
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [events, setEvents] = useState<AuditEvent[]>([]);
-  const [feedLines, setFeedLines] = useState<{ id: string; badge: string; cls: string; text: string }[]>([]);
-  const [tickerLines, setTickerLines] = useState<{ id: string; badge: string; cls: string; text: string }[]>([]);
+  const [feedLines, setFeedLines] = useState<TickerLine[]>([]);
+  const [tickerLines, setTickerLines] = useState<TickerLine[]>([]);
   const [showToolReturn, setShowToolReturn] = useState(false);
   const [liveAttackRunning, setLiveAttackRunning] = useState(false);
 
-  // Attack chain interactive state (defaults to real blocked incident in Enforce mode)
-  const [chainSteps, setChainSteps] = useState<ChainStep[]>(ENFORCE_CHAIN_STEPS);
+  // Attack chain replay state
+  const [chainSteps, setChainSteps] = useState<SimChainStep[]>(ENFORCE_CHAIN_STEPS);
   const [stepActive, setStepActive] = useState<boolean[]>([true, true, true, false, true]);
   const [stepClasses, setStepClasses] = useState<string[]>(['am', 'ro', 'ro', 'ro', 'gr']);
   const [riskGauge, setRiskGauge] = useState(96);
@@ -179,25 +67,10 @@ export function App() {
   });
   const [attackPulseTrigger, setAttackPulseTrigger] = useState<{ blocked: boolean; seq: number } | null>(null);
 
-  // Explain section state
-  const [waterfallOpen, setWaterfallOpen] = useState<Record<number, boolean>>({});
-  const [waterfallTotal, setWaterfallTotal] = useState(0);
-  const [flow1State, setFlow1State] = useState<'idle' | 'running' | 'hold' | 'block' | 'leak'>('hold');
-
-  // Guided tour state
-  const [tourOpen, setTourOpen] = useState(false);
-
-  // Auto-start guided tour if ?tour=1 is in URL
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('tour') === '1') {
-      setTourOpen(true);
-    }
-  }, []);
-
-  // Audit Chain state
-  const [chainBlocks, setChainBlocks] = useState<AuditChainBlock[]>([]);
-  const [tamperedIdx, setTamperedIdx] = useState<number>(-1);
+  // Guided Tour state
+  const [tourOpen, setTourOpen] = useState<boolean>(() => {
+    return new URLSearchParams(window.location.search).get('tour') === '1';
+  });
 
   // Refs
   const navCloseTimerRef = useRef<any>(null);
@@ -206,29 +79,80 @@ export function App() {
   const upAccumulatorRef = useRef(0);
   const animTimersRef = useRef<any[]>([]);
 
-  // 1. Initial Data Fetching from real backend
+  // Indicator positioning
+  const updateIndicator = useCallback((routeId: string) => {
+    const btn = buttonsRef.current[routeId];
+    if (btn) {
+      setIndicatorStyle({ left: btn.offsetLeft, width: btn.offsetWidth });
+    }
+  }, []);
+
+  const openNav = useCallback(() => {
+    if (navCloseTimerRef.current) clearTimeout(navCloseTimerRef.current);
+    setNavOpen(true);
+    requestAnimationFrame(() => updateIndicator(activeRoute.id));
+  }, [activeRoute.id, updateIndicator]);
+
+  const closeNav = useCallback((delayMs = 0) => {
+    if (navCloseTimerRef.current) clearTimeout(navCloseTimerRef.current);
+    if (delayMs <= 0) {
+      setNavOpen(false);
+    } else {
+      navCloseTimerRef.current = setTimeout(() => setNavOpen(false), delayMs);
+    }
+  }, []);
+
+  // Client-side SPA Navigation
+  const navigate = useCallback(
+    (path: string) => {
+      const target = normalizeRoute(path);
+      if (target !== normalizeRoute(window.location.pathname)) {
+        window.history.pushState({}, '', target);
+      }
+      setCurrentPath(target);
+      window.scrollTo({ top: 0, behavior: 'auto' });
+      const route = getRouteDef(target);
+      requestAnimationFrame(() => updateIndicator(route.id));
+      closeNav(220);
+    },
+    [closeNav, updateIndicator]
+  );
+
+  useEffect(() => {
+    const onPopState = () => {
+      const norm = normalizeRoute(window.location.pathname);
+      setCurrentPath(norm);
+      const route = getRouteDef(norm);
+      requestAnimationFrame(() => updateIndicator(route.id));
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [updateIndicator]);
+
+  useEffect(() => {
+    requestAnimationFrame(() => updateIndicator(activeRoute.id));
+  }, [activeRoute.id, navOpen, updateIndicator]);
+
+  // Fetch initial telemetry from backend via Vite /api proxy
   const fetchStats = useCallback(async () => {
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/v1/stats');
+      const res = await fetch('/api/v1/stats');
       if (res.ok) {
         const data = await res.json();
         setStats(data);
-        if (data.policy_mode) {
-          setPolicyMode(data.policy_mode);
-        }
+        if (data.policy_mode) setPolicyMode(data.policy_mode);
       }
     } catch {
-      // Backend might be offline during development; graceful fallback
+      // Offline fallback cleanly handled
     }
   }, []);
 
   const fetchEvents = useCallback(async () => {
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/v1/events?limit=30&order=desc&exclude_benchmark=true');
+      const res = await fetch('/api/v1/events?limit=30&order=desc&exclude_benchmark=true');
       if (res.ok) {
         const data: AuditEvent[] = await res.json();
         setEvents(data);
-        // Seed initial feed
         const lines = data.slice(0, 10).map((ev) => {
           let b = 'ALLOW';
           let cls = 'gr';
@@ -255,7 +179,6 @@ export function App() {
         setTickerLines(lines.slice(0, 4));
       }
     } catch {
-      // Fallback initial feed lines
       const initial = [
         { id: '1', badge: 'ALLOW', cls: 'gr', text: 'hr-agent · read_doc(policy.pdf) (just now · 4.2ms)' },
         { id: '2', badge: 'MASK', cls: 'cy', text: 'PII tokenized before logging [PERSON_1, SALARY_1]' },
@@ -271,14 +194,15 @@ export function App() {
     fetchEvents();
   }, [fetchStats, fetchEvents]);
 
-  // WebSocket for real-time live events and mesh packets
+  // WebSocket live event stream
   useEffect(() => {
     let ws: WebSocket | null = null;
     let reconnectTimeout: any = null;
 
     const connect = () => {
       try {
-        ws = new WebSocket('ws://127.0.0.1:8000/ws/events');
+        const wsProto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+        ws = new WebSocket(`${wsProto}://${window.location.host}/ws/events`);
         ws.onmessage = (event) => {
           try {
             const msg = JSON.parse(event.data);
@@ -310,7 +234,6 @@ export function App() {
               setFeedLines((prev) => [newLine, ...prev.slice(0, 11)]);
               setTickerLines((prev) => [newLine, ...prev.slice(0, 3)]);
 
-              // Trigger mesh action
               if (dec === 'block' || dec === 'would_block') {
                 setAttackPulseTrigger({ blocked: true, seq: Date.now() });
               } else if (dec === 'allow') {
@@ -318,14 +241,14 @@ export function App() {
               }
             }
           } catch {
-            // Ignore parse errors
+            // Ignore malformed socket frames
           }
         };
         ws.onclose = () => {
-          reconnectTimeout = setTimeout(connect, 3000);
+          reconnectTimeout = setTimeout(connect, 3500);
         };
       } catch {
-        reconnectTimeout = setTimeout(connect, 3000);
+        reconnectTimeout = setTimeout(connect, 3500);
       }
     };
 
@@ -336,13 +259,11 @@ export function App() {
     };
   }, []);
 
-  // 2. Cursor glow & card spotlight tracking
+  // Cursor glow & card spotlight tracking
   useEffect(() => {
     const cur = document.getElementById('cur');
     const onMove = (e: PointerEvent) => {
-      if (cur) {
-        cur.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
-      }
+      if (cur) cur.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
       const target = e.target as HTMLElement | null;
       const card = target?.closest?.('.card') as HTMLElement | null;
       if (card) {
@@ -355,108 +276,47 @@ export function App() {
     return () => window.removeEventListener('pointermove', onMove);
   }, []);
 
-  // 3. Navigation Indicator & Scroll-spy
-  const updateIndicator = useCallback((secId: string) => {
-    const btn = buttonsRef.current[secId];
-    if (btn) {
-      setIndicatorStyle({
-        left: btn.offsetLeft,
-        width: btn.offsetWidth,
-      });
-    }
-  }, []);
-
-  const openNav = useCallback(() => {
-    if (navCloseTimerRef.current) clearTimeout(navCloseTimerRef.current);
-    setNavOpen(true);
-    requestAnimationFrame(() => updateIndicator(activeSection));
-  }, [activeSection, updateIndicator]);
-
-  const closeNav = useCallback((delayMs = 0) => {
-    if (navCloseTimerRef.current) clearTimeout(navCloseTimerRef.current);
-    if (delayMs <= 0) {
-      setNavOpen(false);
-    } else {
-      navCloseTimerRef.current = setTimeout(() => {
-        setNavOpen(false);
-      }, delayMs);
-    }
-  }, []);
-
-  const jumpTo = useCallback(
-    (id: string) => {
-      const el = document.getElementById(id);
-      if (el) {
-        el.classList.add('in');
-        el.querySelectorAll('.rv').forEach((r) => r.classList.add('in'));
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-      closeNav(900);
-    },
-    [closeNav]
-  );
-
+  // Scroll progress line + upward-scroll nav auto-reveal
   useEffect(() => {
     const onScroll = () => {
       const y = window.scrollY;
       const docHeight = Math.max(1, document.body.scrollHeight - window.innerHeight);
       const scrollFraction = Math.min(1, Math.max(0, y / docHeight));
-
       const pg = document.getElementById('pg');
-      if (pg) {
-        pg.style.transform = `scaleX(${scrollFraction})`;
-      }
+      if (pg) pg.style.transform = `scaleX(${scrollFraction})`;
 
-      // Sustained scroll up detection (>200px)
       if (y < lastScrollYRef.current) {
         upAccumulatorRef.current += lastScrollYRef.current - y;
       } else {
         upAccumulatorRef.current = 0;
       }
-
       if (upAccumulatorRef.current > 200 && y > 200) {
         openNav();
         closeNav(2200);
         upAccumulatorRef.current = 0;
       }
       lastScrollYRef.current = y;
-
-      // Scroll-spy active section
-      let current = activeSections[0]?.id || 'home';
-      for (const sec of activeSections) {
-        const el = document.getElementById(sec.id);
-        if (el && el.getBoundingClientRect().top < window.innerHeight * 0.4) {
-          current = sec.id;
-        }
-      }
-
-      if (current !== activeSection) {
-        setActiveSection(current);
-        updateIndicator(current);
-      }
     };
 
     window.addEventListener('scroll', onScroll, { passive: true });
     onScroll();
     return () => window.removeEventListener('scroll', onScroll);
-  }, [activeSection, activeSections, openNav, closeNav, updateIndicator]);
+  }, [openNav, closeNav]);
 
-  // Keyboard navigation hotkeys (N, 1-9, Escape)
+  // Keyboard navigation hotkeys (N, T, 1-6, Escape)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (/INPUT|TEXTAREA/.test((e.target as HTMLElement)?.tagName || '')) return;
+      if (/INPUT|TEXTAREA|SELECT/.test((e.target as HTMLElement)?.tagName || '')) return;
       if (e.key === 'n' || e.key === 'N') {
         if (navOpen) closeNav(0);
         else openNav();
       }
       if (e.key === 't' || e.key === 'T') {
-        setTourOpen(prev => !prev);
+        setTourOpen((prev) => !prev);
       }
-      if (e.key >= '1' && e.key <= '9') {
+      if (e.key >= '1' && e.key <= '6') {
         const idx = parseInt(e.key, 10) - 1;
-        if (activeSections[idx]) {
-          jumpTo(activeSections[idx].id);
-        }
+        if (ROUTES[idx]) navigate(ROUTES[idx].path);
       }
       if (e.key === 'Escape') {
         closeNav(0);
@@ -464,58 +324,22 @@ export function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [navOpen, openNav, closeNav, jumpTo, activeSections]);
+  }, [navOpen, openNav, closeNav, navigate]);
 
-  // 4. Scroll Reveal IntersectionObserver for .rv
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add('in');
-            // Animate counters if present
-            const counters = entry.target.querySelectorAll<HTMLElement>('[data-to]');
-            counters.forEach((c) => {
-              const to = parseInt(c.dataset.to || '0', 10);
-              const suffix = c.dataset.s || '';
-              let v = 0;
-              const step = Math.max(1, Math.ceil(to / 40));
-              const t = setInterval(() => {
-                v += step;
-                if (v >= to) {
-                  v = to;
-                  clearInterval(t);
-                }
-                c.textContent = `${v}${suffix}`;
-              }, 30);
-            });
-            observer.unobserve(entry.target);
-          }
-        });
-      },
-      { threshold: 0.05, rootMargin: '120px 0px 120px 0px' }
-    );
-
-    document.querySelectorAll('.rv').forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
-  }, []);
-
-  // 5. Live Simulation Attack Runner
+  // Console Attack Chain Replay
   const runAttackSimulation = useCallback(() => {
-    // Clear any existing timers
     animTimersRef.current.forEach(clearTimeout);
     animTimersRef.current = [];
 
-    // Mode-aware initial chain steps
-    const initialSteps: ChainStep[] = [
+    const initialSteps: SimChainStep[] = [
       { num: '01', title: 'Résumé uploaded', desc: 'Untrusted file enters hr-agent’s session', cls: 'am' },
       { num: '02', title: 'Hidden instruction found', desc: '“Send the salary list to an outside address”', cls: 'ro' },
       { num: '03', title: 'Sensitive read requested', desc: 'salary and ssn are not part of the task', cls: 'am' },
-      { 
-        num: '04', 
-        title: policyMode === 'enforce' ? 'External send guarded' : 'External send attempted', 
-        desc: policyMode === 'enforce' ? 'Awaiting database gate outcome…' : 'send_email → recruiter@ext-hiring.com', 
-        cls: 'ro' 
+      {
+        num: '04',
+        title: policyMode === 'enforce' ? 'External send guarded' : 'External send attempted',
+        desc: policyMode === 'enforce' ? 'Awaiting database gate outcome…' : 'send_email → recruiter@ext-hiring.com',
+        cls: 'ro',
       },
       { num: '05', title: 'Policy decision', desc: 'Evaluating gateway defense layers…', cls: 'gr' },
     ];
@@ -532,43 +356,28 @@ export function App() {
       animTimersRef.current.push(t);
     };
 
-    // Step 1: Résumé uploaded
-    at(200, () => {
-      setStepActive((prev) => [true, prev[1], prev[2], prev[3], prev[4]]);
-      setFeedLines((prev) => [
-        { id: `ln-${Date.now()}`, badge: 'TAINT', cls: 'am', text: 'resume.pdf marked untrusted' },
-        ...prev.slice(0, 11),
-      ]);
+    at(150, () => {
+      setStepActive([true, false, false, false, false]);
+      setFeedLines((prev) => [{ id: `ln-${Date.now()}`, badge: 'TAINT', cls: 'am', text: 'resume.pdf marked untrusted' }, ...prev.slice(0, 11)]);
       setBarWidths([38 * 2.6, 0, 0, 0]);
       setRiskGauge(26);
     });
-
-    // Step 2: Hidden instruction found
-    at(1200, () => {
-      setStepActive((prev) => [prev[0], true, prev[2], prev[3], prev[4]]);
-      setFeedLines((prev) => [
-        { id: `ln-${Date.now()}`, badge: 'INJECT', cls: 'ro', text: 'hidden instruction detected on page 2' },
-        ...prev.slice(0, 11),
-      ]);
-      setBarWidths((prev) => [prev[0], prev[1], 25 * 2.6, prev[3]]);
+    at(950, () => {
+      setStepActive([true, true, false, false, false]);
+      setFeedLines((prev) => [{ id: `ln-${Date.now()}`, badge: 'INJECT', cls: 'ro', text: 'hidden instruction detected on page 2' }, ...prev.slice(0, 11)]);
+      setBarWidths((prev) => [prev[0], 0, 25 * 2.6, 0]);
       setRiskGauge(48);
     });
-
-    // Step 3: Sensitive read requested
-    at(2300, () => {
-      setStepActive((prev) => [prev[0], prev[1], true, prev[3], prev[4]]);
-      setFeedLines((prev) => [
-        { id: `ln-${Date.now()}`, badge: 'READ', cls: 'am', text: 'salary, ssn requested outside task scope' },
-        ...prev.slice(0, 11),
-      ]);
-      setBarWidths((prev) => [prev[0], 15 * 2.6, prev[2], prev[3]]);
+    at(1800, () => {
+      setStepActive([true, true, true, false, false]);
+      setFeedLines((prev) => [{ id: `ln-${Date.now()}`, badge: 'READ', cls: 'am', text: 'salary, ssn requested outside task scope' }, ...prev.slice(0, 11)]);
+      setBarWidths((prev) => [prev[0], 15 * 2.6, prev[2], 0]);
       setRiskGauge(64);
       setAttackPulseTrigger({ blocked: policyMode === 'enforce', seq: Date.now() });
     });
 
     if (policyMode === 'enforce') {
-      at(3100, () => {
-        // Enforce: stopped at DB read
+      at(2500, () => {
         setStepClasses((prev) => [prev[0], prev[1], 'ro', prev[3], 'gr']);
         setStepActive([true, true, true, false, true]);
         setChainSteps((prev) => [
@@ -580,10 +389,7 @@ export function App() {
         ]);
         setBarWidths((prev) => [prev[0], prev[1], prev[2], 22 * 2.6]);
         setRiskGauge(96);
-        setFeedLines((prev) => [
-          { id: `ln-${Date.now()}`, badge: 'HOLD', cls: 'ro', text: 'db_query held · 0 records exposed' },
-          ...prev.slice(0, 11),
-        ]);
+        setFeedLines((prev) => [{ id: `ln-${Date.now()}`, badge: 'HOLD', cls: 'ro', text: 'db_query held · 0 records exposed' }, ...prev.slice(0, 11)]);
         setVerdict({
           show: true,
           ok: true,
@@ -591,18 +397,13 @@ export function App() {
         });
       });
     } else {
-      // Monitor mode: leaks
-      at(3300, () => {
-        setStepActive((prev) => [prev[0], prev[1], prev[2], true, prev[4]]);
-        setFeedLines((prev) => [
-          { id: `ln-${Date.now()}`, badge: 'SEND', cls: 'am', text: 'send_email → recruiter@ext-hiring.com' },
-          ...prev.slice(0, 11),
-        ]);
+      at(2600, () => {
+        setStepActive([true, true, true, true, false]);
+        setFeedLines((prev) => [{ id: `ln-${Date.now()}`, badge: 'SEND', cls: 'am', text: 'send_email → recruiter@ext-hiring.com' }, ...prev.slice(0, 11)]);
         setBarWidths((prev) => [prev[0], prev[1], prev[2], 22 * 2.6]);
         setRiskGauge(88);
       });
-
-      at(4400, () => {
+      at(3400, () => {
         setStepClasses((prev) => [prev[0], prev[1], prev[2], prev[3], 'ro']);
         setStepActive([true, true, true, true, true]);
         setChainSteps((prev) => [
@@ -613,169 +414,90 @@ export function App() {
           { ...prev[4], desc: 'Monitor mode: alert only, action allowed' },
         ]);
         setRiskGauge(98);
-        setFeedLines((prev) => [
-          { id: `ln-${Date.now()}`, badge: 'LEAK', cls: 'ro', text: '1 record sent outside · alert only' },
-          ...prev.slice(0, 11),
-        ]);
+        setFeedLines((prev) => [{ id: `ln-${Date.now()}`, badge: 'LEAK', cls: 'ro', text: '3 records sent outside · alert only' }, ...prev.slice(0, 11)]);
         setVerdict({
           show: true,
           ok: false,
-          text: 'LEAKED: 3 records exposed to external recipient (Monitor mode · derived from demo engineering roster)',
+          text: 'LEAKED: 3 records exposed to external recipient (Monitor mode · demo roster)',
         });
       });
     }
   }, [policyMode]);
 
-  // Real Gateway Live Attack Runner (for DEMO_MODE=true or manual trigger)
   const triggerRealLiveAttack = useCallback(async () => {
     setLiveAttackRunning(true);
     runAttackSimulation();
     try {
-      await fetch(`http://127.0.0.1:8000/api/v1/demo/run_attack?mode=${policyMode}`, {
-        method: 'POST',
-      });
+      await fetch(`/api/v1/demo/run_attack?mode=${policyMode}`, { method: 'POST' });
     } catch {
       // Offline fallback continues UI simulation
     } finally {
-      setTimeout(() => setLiveAttackRunning(false), 5000);
+      setTimeout(() => {
+        setLiveAttackRunning(false);
+        fetchStats();
+      }, 4500);
     }
-  }, [policyMode, runAttackSimulation]);
+  }, [policyMode, runAttackSimulation, fetchStats]);
 
-  const switchMode = useCallback(
-    (newMode: 'enforce' | 'monitor') => {
-      setPolicyMode(newMode);
-      // Cancel any running simulation timers
-      animTimersRef.current.forEach(clearTimeout);
-      animTimersRef.current = [];
+  const switchMode = useCallback((newMode: 'enforce' | 'monitor') => {
+    setPolicyMode(newMode);
+    animTimersRef.current.forEach(clearTimeout);
+    animTimersRef.current = [];
 
-      fetch('http://127.0.0.1:8000/api/v1/policies/mode', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: newMode }),
-      }).catch(() => {});
+    fetch('/api/v1/policies/mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: newMode }),
+    }).catch(() => {});
 
-      if (newMode === 'enforce') {
-        setChainSteps(ENFORCE_CHAIN_STEPS);
-        setStepActive([true, true, true, false, true]);
-        setStepClasses(['am', 'ro', 'ro', 'ro', 'gr']);
-        setBarWidths([95, 75, 80, 85]);
-        setRiskGauge(96);
-        setVerdict({
-          show: true,
-          ok: true,
-          text: 'BLOCKED: 0 records exposed (Enforce mode) · Held at sensitive database read',
-        });
-      } else {
-        setChainSteps(MONITOR_CHAIN_STEPS);
-        setStepActive([true, true, true, true, true]);
-        setStepClasses(['am', 'ro', 'ro', 'ro', 'ro']);
-        setBarWidths([95, 75, 80, 85]);
-        setRiskGauge(96);
-        setVerdict({
-          show: true,
-          ok: false,
-          text: 'LEAKED: 3 records exposed to external recipient (Monitor mode · derived from demo engineering roster)',
-        });
-      }
-    },
-    []
-  );
-
-  // 6. Explain section: Waterfall & Flow SVG
-  useEffect(() => {
-    let current = 0;
-    const interval = setInterval(() => {
-      current += 2;
-      if (current >= 100) {
-        current = 100;
-        clearInterval(interval);
-      }
-      setWaterfallTotal(current);
-    }, 22);
-    return () => clearInterval(interval);
-  }, []);
-
-  const replayExplainFlow = useCallback(() => {
-    setFlow1State('idle');
-    setTimeout(() => setFlow1State('hold'), 100);
-  }, []);
-
-  // 8. Audit Chain Tamper Demo
-  const initAuditChain = useCallback(async () => {
-    let p = Z0;
-    const blocks: AuditChainBlock[] = [];
-    for (const [tool, dec] of DEFAULT_AUDIT_EVENTS) {
-      const h = await calcSha256(`${tool}|${dec}|${p}`);
-      blocks.push({ tool, decision: dec, hash: h, prevHash: p });
-      p = h;
+    if (newMode === 'enforce') {
+      setChainSteps(ENFORCE_CHAIN_STEPS);
+      setStepActive([true, true, true, false, true]);
+      setStepClasses(['am', 'ro', 'ro', 'ro', 'gr']);
+      setBarWidths([95, 75, 80, 85]);
+      setRiskGauge(96);
+      setVerdict({
+        show: true,
+        ok: true,
+        text: 'BLOCKED: 0 records exposed (Enforce mode) · Held at sensitive database read',
+      });
+    } else {
+      setChainSteps(MONITOR_CHAIN_STEPS);
+      setStepActive([true, true, true, true, true]);
+      setStepClasses(['am', 'ro', 'ro', 'ro', 'ro']);
+      setBarWidths([95, 75, 80, 85]);
+      setRiskGauge(96);
+      setVerdict({
+        show: true,
+        ok: false,
+        text: 'LEAKED: 3 records exposed to external recipient (Monitor mode · demo roster)',
+      });
     }
-    setChainBlocks(blocks);
-    setTamperedIdx(-1);
   }, []);
-
-  const tamperEvent3 = useCallback(async () => {
-    if (chainBlocks.length < 3) return;
-    const tampered = [...chainBlocks];
-    tampered[2] = { ...tampered[2], decision: 'allow' };
-    setChainBlocks(tampered);
-
-    // Verify chain and locate mismatch
-    setTimeout(async () => {
-      let p = Z0;
-      let bad = -1;
-      for (let i = 0; i < tampered.length; i++) {
-        const h = await calcSha256(`${tampered[i].tool}|${tampered[i].decision}|${p}`);
-        if (h !== tampered[i].hash && bad < 0) {
-          bad = i;
-        }
-        p = h;
-      }
-      setTamperedIdx(bad);
-    }, 400);
-  }, [chainBlocks]);
-
-  useEffect(() => {
-    initAuditChain();
-  }, [initAuditChain]);
-
-  // Filtered feed events
-  const displayedFeed = showToolReturn
-    ? feedLines
-    : feedLines.filter((l) => !l.text.toLowerCase().includes('tool_return'));
 
   return (
     <>
-      {/* Ambient cursor glow */}
       <div className="cursor" id="cur" aria-hidden="true" />
-
-      {/* Top 2px scroll progress line */}
       <div id="pg" aria-hidden="true" />
+      <div id="hz" onMouseEnter={openNav} aria-hidden="true" />
 
-      {/* 58px top hover zone for nav expansion */}
-      <div
-        id="hz"
-        onMouseEnter={openNav}
-        aria-hidden="true"
-      />
-
-      {/* Collapsible Floating Navigation */}
+      {/* Collapsible Floating Navigation (EXACT morph & animation preserved) */}
       <div id="nv" className={navOpen ? 'open' : ''}>
         <button
           id="hd"
           aria-label="Open navigation"
+          onMouseEnter={openNav}
           onClick={openNav}
           data-testid="nav-pill"
         >
           <i />
-          <span id="hl">
-            {activeSections.find((s) => s.id === activeSection)?.label || 'Home'}
-          </span>
-          <s>{detailLevel} · hover · N</s>
+          <span id="hl">{activeRoute.label}</span>
+          <s>hover · N</s>
         </button>
 
         <nav
           id="bar"
-          aria-label="Sections"
+          aria-label="Primary pages"
           onMouseEnter={() => {
             if (navCloseTimerRef.current) clearTimeout(navCloseTimerRef.current);
           }}
@@ -789,667 +511,103 @@ export function App() {
               width: `${indicatorStyle.width}px`,
             }}
           />
-          {activeSections.map((sec, i) => (
+          {ROUTES.map((route, i) => (
             <button
-              key={sec.id}
+              key={route.id}
               ref={(el) => {
-                buttonsRef.current[sec.id] = el;
+                buttonsRef.current[route.id] = el;
               }}
-              data-id={sec.id}
-              className={activeSection === sec.id ? 'on' : ''}
+              data-id={route.id}
+              data-testid={`nav-link-${route.id}`}
+              className={activeRoute.id === route.id ? 'on' : ''}
               style={{ '--i': i } as React.CSSProperties}
-              onClick={() => jumpTo(sec.id)}
+              onClick={() => navigate(route.path)}
             >
-              {sec.label}
+              {route.label}
               <kbd>{i + 1}</kbd>
             </button>
           ))}
 
-          {/* Depth Level Switcher in Nav Bar */}
-          <div
-            className="flex items-center gap-1 ml-2 pl-2 border-l border-white/10"
-            data-testid="nav-depth-selector"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {(['simple', 'story', 'expert'] as const).map((lvl) => (
-              <button
-                key={lvl}
-                type="button"
-                onClick={() => setDetailLevel(lvl)}
-                className={`px-2 py-0.5 rounded text-[10px] font-mono capitalize transition-all ${
-                  detailLevel === lvl
-                    ? 'bg-emerald-500/25 text-emerald-300 font-bold border border-emerald-500/40'
-                    : 'text-slate-400 hover:text-white border border-transparent'
-                }`}
-                data-testid={`nav-depth-btn-${lvl}`}
-              >
-                {lvl}
-              </button>
-            ))}
-            <span className="text-[9px] font-mono text-slate-500 pl-0.5">· D</span>
+          <div className="flex items-center pl-2 ml-1 border-l border-white/10">
+            <button
+              type="button"
+              style={{ '--i': ROUTES.length } as React.CSSProperties}
+              onClick={() => {
+                closeNav(0);
+                setTourOpen(true);
+              }}
+              data-testid="nav-tour-btn"
+            >
+              Tour
+              <kbd>T</kbd>
+            </button>
           </div>
         </nav>
       </div>
 
-      {/* 1. Hero Section */}
-      <header className="hero" id="home">
-        <div className="rays" aria-hidden="true" />
-        <AgentMesh
-          mode="hero"
-          canvasId="hc"
-          className="absolute inset-0 w-full h-full"
-          events={events}
-          attackPulseTrigger={attackPulseTrigger}
-        />
-
-        <div className="w">
-          <span className="pill" id="hero-badge">
-            <i />
-            Autonomous, privacy-preserving security for AI agents
-          </span>
-
-          <h1>
-            Every agent action, <span className="gt">inspected</span> before it happens.
-          </h1>
-
-          <p className="lead">
-            AI agents read documents, query databases and send email on your behalf.
-            SentinelMesh sits in the middle, rebuilds the attack chain, and stops the action
-            that should never run.
-          </p>
-
-          <div className="cta">
-            <a
-              className="btn"
-              href="#demo"
-              id="go"
-              onClick={(e) => {
-                e.preventDefault();
-                jumpTo('demo');
-                setTimeout(runAttackSimulation, 800);
-              }}
-            >
-              Watch an attack get stopped →
-            </a>
-            <a
-              className="btn g"
-              href="#how"
-              onClick={(e) => {
-                e.preventDefault();
-                jumpTo('how');
-              }}
-            >
-              How it works
-            </a>
-            <button
-              className="btn g"
-              onClick={() => setTourOpen(true)}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
-            >
-              <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#34d399' }} />
-              Guided tour (T)
-            </button>
-            <button
-              className="btn g mono"
-              onClick={cycleDetailLevel}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
-              title="Press D to cycle detail level (Simple / Story / Expert)"
-              data-testid="cycle-depth-btn"
-            >
-              <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#38bdf8' }} />
-              Depth: <span className="text-sky-300 font-bold uppercase">{detailLevel}</span> (D)
-            </button>
-          </div>
-
-          <div className="tick mono" id="tick">
-            {tickerLines.map((line) => (
-              <div key={line.id} className="ln">
-                <b className={`t ${line.cls}`}>{line.badge}</b> {line.text}
-              </div>
-            ))}
-          </div>
-        </div>
-      </header>
-
-      {/* Threat Marquee */}
-      <div className="mq" aria-hidden="true">
-        <div id="m1">
-          {THREAT_NAMES.concat(THREAT_NAMES).map((t, idx) => (
-            <span key={`m1-${idx}`}>{t}</span>
-          ))}
-        </div>
-        <div id="m2">
-          {THREAT_NAMES.concat(THREAT_NAMES).map((t, idx) => (
-            <span key={`m2-${idx}`}>{t}</span>
-          ))}
-        </div>
-      </div>
-
-      {/* Proof Bar Under Hero */}
-      <ProofBar onJumpToEvidence={() => jumpTo('results')} />
-
-      {/* 2. Live Simulation Section (Hidden in Simple mode) */}
-      {detailLevel !== 'simple' && (
-        <section id="demo">
-          <div className="w">
-            <div className="eb rv">Live simulation</div>
-            <h2 className="rv">Watch a poisoned résumé try to steal payroll.</h2>
-            <p className="sub rv">
-              Same attack, two modes. In Monitor the agent succeeds. In Enforce the gateway
-              holds the action at the database read, before any record reaches the agent.
-            </p>
-
-            <div className="con rv">
-              {/* Card A: 5-step Attack Chain */}
-              <div className="card A" id="chain-card">
-                <div className="hd">
-                  <div className="seg" id="mode-seg">
-                    <button
-                      id="mM"
-                      className={policyMode === 'monitor' ? 'on' : ''}
-                      onClick={() => switchMode('monitor')}
-                    >
-                      Monitor
-                    </button>
-                    <button
-                      id="mE"
-                      className={policyMode === 'enforce' ? 'on' : ''}
-                      onClick={() => switchMode('enforce')}
-                    >
-                      Enforce
-                    </button>
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button
-                      className="btn s"
-                      id="run"
-                      onClick={runAttackSimulation}
-                      title="Simulate 5-step chain animation"
-                    >
-                      Run attack ▶
-                    </button>
-                    {stats?.demo_mode && (
-                      <button
-                        className="btn s g"
-                        onClick={triggerRealLiveAttack}
-                        disabled={liveAttackRunning}
-                        title="Execute real demo agents against real gateway"
-                      >
-                        {liveAttackRunning ? 'Executing…' : 'Run real agent ▶'}
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div id="chain">
-                  {chainSteps.map((s, i) => (
-                    <div
-                      key={s.num}
-                      id={`s${i}`}
-                      className={`st ${stepClasses[i]} ${stepActive[i] ? 'on' : ''}`}
-                    >
-                      <i>{s.num}</i>
-                      <div>
-                        <b>{s.title}</b>
-                        <small id={`d${i}`}>{s.desc}</small>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div
-                  id="vd"
-                  className={`vd ${verdict.show ? 'show' : ''} ${verdict.ok ? 'ok' : 'bad'}`}
-                >
-                  {verdict.text}
-                </div>
-              </div>
-
-              {/* Card B: Mini-mesh & Risk Gauge */}
-              <div className="card B">
-                <AgentMesh
-                  mode="console"
-                  canvasId="mc"
-                  className="w-full"
-                  events={events}
-                  attackPulseTrigger={attackPulseTrigger}
-                />
-                <div className="rw" id="gauge-box">
-                  <div className="ga">
-                    <svg width="116" height="116" viewBox="0 0 116 116">
-                      <circle cx="58" cy="58" r="50" stroke="var(--line)" />
-                      <circle
-                        className="fg"
-                        id="fg"
-                        cx="58"
-                        cy="58"
-                        r="50"
-                        stroke={riskGauge > 70 ? 'var(--ro)' : riskGauge > 35 ? 'var(--am)' : 'var(--cy)'}
-                        style={{
-                          strokeDashoffset: 314 * (1 - riskGauge / 100),
-                        }}
-                      />
-                    </svg>
-                    <div>
-                      <strong id="sc">{riskGauge}</strong>
-                      <span>risk</span>
-                    </div>
-                  </div>
-
-                  <div id="bars">
-                    {SIGNAL_BARS.map(([label, color], i) => (
-                      <div key={label} className="br">
-                        {label}
-                        <u>
-                          <i
-                            id={`b${i}`}
-                            style={{
-                              background: color,
-                              width: `${barWidths[i]}%`,
-                            }}
-                          />
-                        </u>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Card C: Terminal Feed */}
-              <div className="card C mono">
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    paddingBottom: '8px',
-                    borderBottom: '1px solid var(--line)',
-                    marginBottom: '8px',
-                    fontSize: '11px',
-                  }}
-                >
-                  <span style={{ color: 'var(--mut)' }}>Live gateway event stream</span>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={showToolReturn}
-                      onChange={(e) => setShowToolReturn(e.target.checked)}
-                    />
-                    <span>tool_return</span>
-                  </label>
-                </div>
-                <div className="fd" id="fd">
-                  {displayedFeed.map((line) => (
-                    <div key={line.id} className="ln">
-                      <b className={`t ${line.cls}`}>{line.badge}</b> {line.text}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* 3. Explain / Story Section: Visible at EVERY depth */}
-      <section id="explain" className="xs">
-        <div className="w">
-          <div className="eb rv">Explain & Story</div>
-          <h2 className="rv">Why was it held? Follow the evidence.</h2>
-          <p className="sub rv">
-            A file marked{' '}
-            <span
-              className="gl"
-              data-tip="Taint: once an agent reads content from outside the company, everything it does next in that session is treated with suspicion."
-            >
-              untrusted
-            </span>{' '}
-            told hr-agent to read payroll and email it out. The{' '}
-            <span
-              className="gl"
-              data-tip="Gateway: the checkpoint every agent tool call must pass through before it runs."
-            >
-              gateway
-            </span>{' '}
-            held the read, so nothing was exposed.
-          </p>
-
-          {/* The Idea in 60 Seconds: 4 beats, animated scene, tech chips, and Because... chips */}
-          <div className="mt-8 mb-10">
-            <IdeaIn60Seconds incidentEvidence={WATERFALL_ROWS} initialMode={policyMode} />
-          </div>
-
-          {/* Detailed Forensic Waterfall & 3-Card Analysis: Story & Expert modes */}
-          {detailLevel !== 'simple' && (
-            <>
-              <div className="g2 rv">
-                <div className="card">
-                  <h3>Where the attack was cut</h3>
-                  <div id="f1">
-                    <svg
-                      viewBox="0 0 640 290"
-                      width="100%"
-                      role="img"
-                      aria-label="Data flow from untrusted file to agent, gateway, then database or email"
-                    >
-                      <path className="pa" d="M118 150H192" />
-                      <path className="pa" d="M268 150H348" />
-                      <path className="pa" d="M432 150C480 150 495 70 528 70" />
-                      <path className="pa" d="M432 150C480 150 495 230 528 230" />
-                      <g className="nd">
-                        <rect x="12" y="122" width="106" height="56" rx="14" style={{ stroke: 'var(--am)' }} />
-                        <text x="65" y="146" textAnchor="middle" fontSize="11">resume.pdf</text>
-                        <text x="65" y="162" textAnchor="middle" fontSize="9" style={{ fill: 'var(--am)' }}>untrusted</text>
-
-                        <rect x="192" y="122" width="76" height="56" rx="14" />
-                        <text x="230" y="154" textAnchor="middle" fontSize="11">hr-agent</text>
-
-                        <rect
-                          className="nb"
-                          x="528"
-                          y="42"
-                          width="104"
-                          height="56"
-                          rx="14"
-                          style={{ stroke: flow1State === 'block' || flow1State === 'leak' ? 'var(--am)' : '' }}
-                        />
-                        <text x="580" y="66" textAnchor="middle" fontSize="11">payroll DB</text>
-                        <text className="ns" x="580" y="82" textAnchor="middle" fontSize="9" style={{ fill: 'var(--mut)' }}>
-                          {flow1State === 'hold' ? 'idle (0 exposed)' : '3 rows read'}
-                        </text>
-
-                        <rect
-                          className="nm"
-                          x="528"
-                          y="202"
-                          width="104"
-                          height="56"
-                          rx="14"
-                          style={{ stroke: flow1State === 'leak' ? 'var(--ro)' : '' }}
-                        />
-                        <text x="580" y="226" textAnchor="middle" fontSize="11">outside email</text>
-                        <text className="nl" x="580" y="242" textAnchor="middle" fontSize="9" style={{ fill: 'var(--mut)' }}>
-                          {flow1State === 'leak' ? '3 rows received' : 'never reached'}
-                        </text>
-                      </g>
-                      <circle className="rg" cx="390" cy="150" r="40" />
-                      <circle className="gw" cx="390" cy="150" r="40" />
-                      <text x="390" y="146" textAnchor="middle" fontSize="10" style={{ fontWeight: 700 }}>SENTINEL</text>
-                      <text x="390" y="160" textAnchor="middle" fontSize="9" style={{ fill: 'var(--cy)' }}>gateway</text>
-                      <text
-                        className="stt"
-                        x="390"
-                        y="214"
-                        textAnchor="middle"
-                        fontSize="12"
-                        style={{ fontWeight: 700, fill: flow1State === 'hold' ? 'var(--gr)' : 'var(--ro)' }}
-                      >
-                        {flow1State === 'hold' ? 'HELD AT READ' : 'DATA LEAKED'}
-                      </text>
-                    </svg>
-                  </div>
-                  <button className="btn g" id="rp" onClick={replayExplainFlow}>
-                    Replay ↻
-                  </button>
-                </div>
-
-                <div className="card">
-                  <h3>Why it scored 100 / 100</h3>
-                  <p>Click a row to see the evidence behind it.</p>
-                  <div id="wf">
-                    {WATERFALL_ROWS.map((row, idx) => {
-                      const leftAccum = WATERFALL_ROWS.slice(0, idx).reduce((sum, r) => sum + r.weight, 0);
-                      const isOpen = !!waterfallOpen[idx];
-                      return (
-                        <div
-                          key={row.name}
-                          className={`wf ${isOpen ? 'o' : ''}`}
-                          onClick={() =>
-                            setWaterfallOpen((prev) => ({ ...prev, [idx]: !prev[idx] }))
-                          }
-                        >
-                          <span>{row.name}</span>
-                          <div className="tr">
-                            <i
-                              style={{
-                                left: `${leftAccum}%`,
-                                width: `${row.weight}%`,
-                                background: row.color,
-                              }}
-                            />
-                          </div>
-                          <b>+{row.weight}</b>
-                          <div className="ev">{row.evidence}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="big" id="tot">
-                    {waterfallTotal}
-                  </div>
-                </div>
-              </div>
-
-              <div className="g3 rv">
-                <div className="card">
-                  <h3>What happened</h3>
-                  <ul>
-                    <li>resume.pdf was read and marked untrusted by the gateway.</li>
-                    <li>Page 2 hid an instruction to email payroll data.</li>
-                    <li>hr-agent asked for salary and ssn.</li>
-                    <li>The read was held before it ran.</li>
-                  </ul>
-                </div>
-
-                <div className="card">
-                  <h3>Why SentinelMesh acted</h3>
-                  <p>
-                    Three independent signals agreed: untrusted input in the session, a read the
-                    task never asked for, and an unapproved destination. No single signal had to be perfect.
-                  </p>
-                </div>
-
-                <div className="card">
-                  <h3>Without SentinelMesh</h3>
-                  <p>
-                    hr-agent reads three salary rows and emails them to recruiter@ext-hiring.com.
-                    The email is delivered, and the only trace is an ordinary tool call.
-                  </p>
-                </div>
-              </div>
-
-              <p className="note rv">
-                Illustrative incident based on the poisoned-résumé benchmark scenario. Numbers are
-                simulated in this prototype.
-              </p>
-            </>
-          )}
-        </div>
-      </section>
-
-      {/* 4. Policy Lab / Playground Section */}
-      {detailLevel !== 'simple' && (
-        <PlaygroundSection />
-      )}
-
-      {/* 5. Audit Section */}
-      {detailLevel !== 'simple' && (
-      <section id="audit" className="xs">
-        <div className="w">
-          <div className="eb rv">Audit</div>
-          <h2 className="rv">Change one row. The chain tells on you.</h2>
-          <p className="sub rv">
-            Every decision is linked to the one before it with SHA-256. Edit history and every later
-            link fails verification.
-          </p>
-
-          <div className="card rv">
-            <div className="chain" id="ch">
-              {chainBlocks.map((b, i) => {
-                const isBad = tamperedIdx >= 0 && i >= tamperedIdx;
-                const isOk = tamperedIdx < 0;
-                const decCls =
-                  b.decision === 'block' || b.decision === 'denied'
-                    ? 'var(--ro)'
-                    : b.decision === 'held'
-                    ? 'var(--am)'
-                    : 'var(--gr)';
-
-                return (
-                  <React.Fragment key={`block-${i}`}>
-                    <div className={`blk ${isBad ? 'bad' : isOk ? 'ok' : ''}`}>
-                      <b>
-                        #{i + 1} {b.tool}
-                      </b>
-                      <span style={{ color: decCls }}>{b.decision}</span>
-                      <br />
-                      hash {b.hash.slice(0, 6)}…{b.hash.slice(-4)}
-                      <br />
-                      prev {b.prevHash.slice(0, 6)}…{b.prevHash.slice(-4)}
-                    </div>
-                    {i < chainBlocks.length - 1 && <div className="lk" />}
-                  </React.Fragment>
-                );
-              })}
-            </div>
-
-            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', margin: '6px 0 14px' }}>
-              <button className="btn" id="tp" onClick={tamperEvent3}>
-                Tamper with event 3
-              </button>
-              <button className="btn g" id="rs" onClick={initAuditChain}>
-                Restore
-              </button>
-            </div>
-
-            <div className={`msg ${tamperedIdx < 0 ? 'ok' : 'bad'}`} id="vm">
-              {tamperedIdx < 0
-                ? `Chain valid · ${chainBlocks.length} events verified`
-                : `Hash mismatch at event ${tamperedIdx + 1}. Events ${
-                    tamperedIdx + 1
-                  }–${chainBlocks.length} can no longer be trusted.`}
-            </div>
-          </div>
-        </div>
-      </section>
-      )}
-
-      {/* 6. Defenses Section */}
-      {detailLevel === 'expert' && (
-      <section id="how">
-        <div className="w">
-          <div className="eb rv">Defense in depth</div>
-          <h2 className="rv">Six layers. No single point of trust.</h2>
-          <p className="sub rv">
-            Each layer is independent, measured, and can be switched off to show what it adds.
-          </p>
-
-          <div className="bn">
-            <div className="card c4 rv">
-              <div className="ico">01</div>
-              <h3>Taint tracking</h3>
-              <p>
-                Anything an agent reads from outside marks the session as untrusted, and the
-                gateway assigns that label itself. A lying agent cannot clear it.
-              </p>
-              <div className="code">
-                <span className="am">read_doc</span>(resume.pdf) → session{' '}
-                <span className="ro">TAINTED</span>
-                <br />
-                <span className="am">send_email</span>(ext) → <span className="ro">BLOCK</span> risk 100
-              </div>
-            </div>
-
-            <div className="card c2 rv">
-              <div className="ico">02</div>
-              <h3>Policy gateway</h3>
-              <p>Allow, redact, hold for approval or block, inline.</p>
-              <div className="code">
-                <span className="gr">allow</span> · <span className="cy">redact</span> ·{' '}
-                <span className="am">approve</span> · <span className="ro">block</span>
-              </div>
-            </div>
-
-            <div className="card c2 rv">
-              <div className="ico">03</div>
-              <h3>Privacy vault</h3>
-              <p>PII is tokenized before logging. Raw access is role-gated and audited.</p>
-              <div className="code">
-                [EMAIL_1] [PERSON_2]
-                <br />
-                [SALARY_1]
-              </div>
-            </div>
-
-            <div className="card c4 rv">
-              <div className="ico">04</div>
-              <h3>Hash-chained audit</h3>
-              <p>
-                Every decision joins a tamper-evident SHA-256 chain. Change one row and
-                verification fails at that exact event.
-              </p>
-              <div className="code">
-                0000…a91f → 7c2e…b04d → 51d8…0e3a
-                <br />
-                <span className="gr">chain valid</span> · {stats?.total_actions || 12} events verified
-              </div>
-            </div>
-
-            <div className="card c3 rv">
-              <div className="ico">05</div>
-              <h3>Learned baseline</h3>
-              <p>
-                Volume, timing and destinations are compared with each agent’s own normal behavior.
-              </p>
-              <div className="code">
-                rows 9004 vs median 667
-                <br />
-                <span className="am">anomaly</span> · off-hours · new destination
-              </div>
-            </div>
-
-            <div className="card c3 rv">
-              <div className="ico">06</div>
-              <h3>Signed approvals</h3>
-              <p>
-                Privileged actions need a one-time HMAC token bound to the exact action.
-              </p>
-              <div className="code">
-                forged · expired · replayed · wrong-action
-                <br />→ <span className="ro">all blocked</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-      )}
-
-      {/* 7. Results & Evidence Section */}
-      <section id="results" className="xs">
-        <div id="evidence" style={{ position: 'relative', top: '-80px' }} />
-        <div className="w">
-          <div className="eb rv">Evidence & Rigor Showcase</div>
-          <h2 className="rv">Measured on Scenarios Written After Rules Were Frozen</h2>
-          <p className="sub rv" style={{ marginBottom: '24px' }}>
-            Empirical evaluation on preregistered holdout test partitions across InjecAgent, AgentDojo, and ai4privacy with exact cluster sign-flip permutation tests and honest failure accounting.
-          </p>
-
-          <EvidenceSection />
-        </div>
-      </section>
+      {/* Active Route View */}
+      <main key={currentPath} className="page-enter">
+        {activeRoute.id === 'overview' && (
+          <OverviewPage
+            events={events}
+            attackPulseTrigger={attackPulseTrigger}
+            tickerLines={tickerLines}
+            onNavigate={navigate}
+            onStartTour={() => setTourOpen(true)}
+          />
+        )}
+        {activeRoute.id === 'console' && (
+          <ConsolePage
+            stats={stats}
+            policyMode={policyMode}
+            events={events}
+            attackPulseTrigger={attackPulseTrigger}
+            feedLines={feedLines}
+            showToolReturn={showToolReturn}
+            onToggleToolReturn={setShowToolReturn}
+            liveAttackRunning={liveAttackRunning}
+            chainSteps={chainSteps}
+            stepActive={stepActive}
+            stepClasses={stepClasses}
+            riskGauge={riskGauge}
+            barWidths={barWidths}
+            verdict={verdict}
+            onSwitchMode={switchMode}
+            onRunSimulation={runAttackSimulation}
+            onTriggerRealAttack={triggerRealLiveAttack}
+            onRefreshStats={fetchStats}
+          />
+        )}
+        {activeRoute.id === 'playground' && <PlaygroundPage />}
+        {activeRoute.id === 'audit' && (
+          <AuditPrivacyPage
+            stats={stats}
+            policyMode={policyMode}
+            events={events}
+            onSwitchMode={switchMode}
+          />
+        )}
+        {activeRoute.id === 'benchmarks' && <BenchmarksPage />}
+        {activeRoute.id === 'architecture' && <ArchitecturePage stats={stats} />}
+      </main>
 
       {/* Footer */}
       <div className="w">
         <footer>
           <span>
-            <b>SentinelMesh AI</b> · internship project
+            <b>SentinelMesh AI</b> · Runtime Security Gateway for AI Agents
           </span>
-          <span>Simulated data only · no real personal information</span>
+          <span>Synthetic demo telemetry · Zero real personal data</span>
         </footer>
       </div>
 
-      {/* Guided Interactive Product Tour */}
-      <TourOverlay isOpen={tourOpen} onClose={() => setTourOpen(false)} />
+      {/* Cross-Page Interactive Guided Tour */}
+      <TourOverlay
+        isOpen={tourOpen}
+        currentRoute={currentPath}
+        onNavigate={navigate}
+        onClose={() => setTourOpen(false)}
+      />
     </>
   );
 }

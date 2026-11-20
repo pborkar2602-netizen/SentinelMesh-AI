@@ -8,11 +8,17 @@ interface PayloadPreviewProps {
   apiBase?: string;
 }
 
+const ROLE_DEMO_CREDS: Record<'privacy_officer' | 'analyst' | 'viewer', { username: string; password: string }> = {
+  privacy_officer: { username: 'privacy_officer', password: 'officer123' },
+  analyst: { username: 'analyst', password: 'analyst123' },
+  viewer: { username: 'viewer', password: 'viewer123' },
+};
+
 export const PayloadPreview: React.FC<PayloadPreviewProps> = ({
   payload = {},
   affectedData = 'Confidential Enterprise Data',
   sessionId = 'sess-active',
-  apiBase = 'http://localhost:8000',
+  apiBase = '',
 }) => {
   const [unmaskedPayload, setUnmaskedPayload] = useState<Record<string, any> | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -29,18 +35,28 @@ export const PayloadPreview: React.FC<PayloadPreviewProps> = ({
     setErrorMsg(null);
     setLoading(true);
     try {
+      const creds = ROLE_DEMO_CREDS[selectedRole];
+      const loginRes = await fetch(`${apiBase}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(creds),
+      });
+      const authData = await loginRes.json();
+      if (!loginRes.ok || !authData.access_token) {
+        throw new Error(authData.detail || `Authentication failed with HTTP ${loginRes.status}`);
+      }
+
       const res = await fetch(`${apiBase}/api/v1/privacy/raw-access`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Sentinel-Role': selectedRole,
-          'X-Sentinel-User': 'sec-audit-officer'
+          Authorization: `Bearer ${authData.access_token}`,
         },
         body: JSON.stringify({
           session_id: sessionId,
           masked_payload: payload,
-          reason: reason
-        })
+          reason: reason,
+        }),
       });
 
       const data = await res.json();

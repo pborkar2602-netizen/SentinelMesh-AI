@@ -33,6 +33,13 @@ from pydantic import BaseModel, Field
 
 from backend.app.schemas.gateway import ToolCallRequest, ContextSource
 from backend.app.core.gateway import GatewayCore
+from backend.app.core.taint_tracker import clear_session_provenance
+from backend.app.db.database import (
+    get_connection,
+    set_request_connection,
+    reset_request_connection,
+    init_db,
+)
 from backend.app.detection.rules import (
     PROMPT_INJECTION_PATTERNS,
     CREDENTIAL_PATTERNS,
@@ -233,73 +240,78 @@ def get_sandbox_conn() -> sqlite3.Connection:
     return conn
 
 def init_sandbox_db() -> None:
+    # Ensure full gateway schema exists in isolated sandbox DB (never touching sentinelmesh.db)
+    init_db(db_path=str(SANDBOX_DB_PATH))
     conn = get_sandbox_conn()
-    with conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS fake_payroll (
-                id INTEGER PRIMARY KEY,
-                name TEXT NOT NULL,
-                role TEXT NOT NULL,
-                salary INTEGER NOT NULL,
-                ssn TEXT NOT NULL
-            );
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS fake_employees (
-                id INTEGER PRIMARY KEY,
-                name TEXT NOT NULL,
-                email TEXT NOT NULL,
-                department TEXT NOT NULL
-            );
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS playground_attempts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT NOT NULL,
-                ip_address TEXT NOT NULL,
-                text_hash TEXT NOT NULL,
-                document_preview TEXT NOT NULL,
-                action_tool TEXT NOT NULL,
-                action_preview TEXT NOT NULL,
-                decision_pass_through TEXT NOT NULL,
-                decision_phrase_filter TEXT NOT NULL,
-                decision_gateway TEXT NOT NULL,
-                is_bypass INTEGER NOT NULL DEFAULT 0
-            );
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS playground_findings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT NOT NULL,
-                ip_address TEXT NOT NULL,
-                text_hash TEXT NOT NULL,
-                document_snippet TEXT NOT NULL,
-                action_tool TEXT NOT NULL,
-                action_args TEXT NOT NULL,
-                gateway_decision TEXT NOT NULL,
-                gateway_reason TEXT NOT NULL,
-                bypass_category TEXT NOT NULL
-            );
-        """)
+    try:
+        with conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS fake_payroll (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    salary INTEGER NOT NULL,
+                    ssn TEXT NOT NULL
+                );
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS fake_employees (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    email TEXT NOT NULL,
+                    department TEXT NOT NULL
+                );
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS playground_attempts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    ip_address TEXT NOT NULL,
+                    text_hash TEXT NOT NULL,
+                    document_preview TEXT NOT NULL,
+                    action_tool TEXT NOT NULL,
+                    action_preview TEXT NOT NULL,
+                    decision_pass_through TEXT NOT NULL,
+                    decision_phrase_filter TEXT NOT NULL,
+                    decision_gateway TEXT NOT NULL,
+                    is_bypass INTEGER NOT NULL DEFAULT 0
+                );
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS playground_findings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    ip_address TEXT NOT NULL,
+                    text_hash TEXT NOT NULL,
+                    document_snippet TEXT NOT NULL,
+                    action_tool TEXT NOT NULL,
+                    action_args TEXT NOT NULL,
+                    gateway_decision TEXT NOT NULL,
+                    gateway_reason TEXT NOT NULL,
+                    bypass_category TEXT NOT NULL
+                );
+            """)
 
-        # Seed fake data if empty
-        cur = conn.execute("SELECT COUNT(*) as cnt FROM fake_payroll")
-        if cur.fetchone()["cnt"] == 0:
-            conn.executemany(
-                "INSERT INTO fake_payroll (id, name, role, salary, ssn) VALUES (?, ?, ?, ?, ?);",
-                [
-                    (1, "Fake Candidate Alpha", "Senior Engineer", 140000, "000-11-2222"),
-                    (2, "Fake Candidate Beta", "Principal Architect", 165000, "000-33-4444"),
-                    (3, "Fake Candidate Gamma", "Staff Developer", 192000, "000-55-6666"),
-                ]
-            )
-            conn.executemany(
-                "INSERT INTO fake_employees (id, name, email, department) VALUES (?, ?, ?, ?);",
-                [
-                    (101, "Alice HR", "alice@company.com", "Human Resources"),
-                    (102, "Bob Lead", "bob@company.com", "Engineering"),
-                ]
-            )
+            # Seed fake data if empty
+            cur = conn.execute("SELECT COUNT(*) as cnt FROM fake_payroll")
+            if cur.fetchone()["cnt"] == 0:
+                conn.executemany(
+                    "INSERT INTO fake_payroll (id, name, role, salary, ssn) VALUES (?, ?, ?, ?, ?);",
+                    [
+                        (1, "Fake Candidate Alpha", "Senior Engineer", 140000, "000-11-2222"),
+                        (2, "Fake Candidate Beta", "Principal Architect", 165000, "000-33-4444"),
+                        (3, "Fake Candidate Gamma", "Staff Developer", 192000, "000-55-6666"),
+                    ]
+                )
+                conn.executemany(
+                    "INSERT INTO fake_employees (id, name, email, department) VALUES (?, ?, ?, ?);",
+                    [
+                        (101, "Alice HR", "alice@company.com", "Human Resources"),
+                        (102, "Bob Lead", "bob@company.com", "Engineering"),
+                    ]
+                )
+    finally:
+        conn.close()
 
 # Initialize on import
 init_sandbox_db()
@@ -313,9 +325,13 @@ _request_history: Dict[str, List[float]] = defaultdict(list)
 
 def check_rate_limit(client_ip: str) -> None:
     now = time.time()
+    cutoff = now - RATE_LIMIT_WINDOW_SECONDS
+    if len(_request_history) > 2000:
+        stale_ips = [ip for ip, ts_list in _request_history.items() if not any(t > cutoff for t in ts_list)]
+        for ip in stale_ips:
+            _request_history.pop(ip, None)
     timestamps = _request_history[client_ip]
     # Prune timestamps older than window
-    cutoff = now - RATE_LIMIT_WINDOW_SECONDS
     _request_history[client_ip] = [ts for ts in timestamps if ts > cutoff]
     if len(_request_history[client_ip]) >= RATE_LIMIT_MAX_REQUESTS:
         raise HTTPException(
@@ -478,6 +494,10 @@ def evaluate_gateway(doc_text: str, action: ActionPayload) -> LaneResult:
     session_id = f"playground-sess-{hashlib.sha256(doc_text.encode('utf-8')).hexdigest()[:12]}"
     agent_id = "hr-agent" if action.tool in ["read_doc", "db_query"] else "ops-agent"
 
+    if not SANDBOX_DB_PATH.exists():
+        init_sandbox_db()
+    sandbox_conn = get_connection(str(SANDBOX_DB_PATH))
+    conn_token = set_request_connection(sandbox_conn)
     try:
         # Construct synthetic context source representing the untrusted document
         sources = [
@@ -537,7 +557,7 @@ def evaluate_gateway(doc_text: str, action: ActionPayload) -> LaneResult:
         layer_verdicts = {
             "taint_tracking": "tainted" if breakdown.get("is_tainted", True) else "clean",
             "pre_read_protection": "held" if is_blocked and action.tool == "db_query" else "idle",
-            "domain_rules": "blocked" if any(f.name in ["unapproved_email_recipient", "unapproved_api_domain", "cloud_metadata_ssrf"] for f in findings) else "passed",
+            "domain_rules": "blocked" if any(f.name in ["unapproved_external_recipient", "unapproved_email_recipient", "unapproved_api_domain", "ssrf_metadata_target", "cloud_metadata_ssrf"] for f in findings) else "passed",
             "learned_baseline": "anomaly" if risk_score >= 70 else "normal",
             "privacy_vault": "protected" if any(f.name == "credential_leak" for f in findings) else "clean"
         }
@@ -577,6 +597,13 @@ def evaluate_gateway(doc_text: str, action: ActionPayload) -> LaneResult:
             risk_score=100,
             layer_verdicts={"fail_closed": "active"}
         )
+    finally:
+        reset_request_connection(conn_token)
+        clear_session_provenance(session_id)
+        try:
+            sandbox_conn.close()
+        except Exception:
+            pass
 
 # -----------------------------------------------------------------------------
 # 7. Helper: Detect If Attempt is Malicious
@@ -632,23 +659,26 @@ def get_presets() -> Dict[str, Any]:
 def get_findings() -> Dict[str, Any]:
     """Returns all recorded bypass reports where Gateway allowed a malicious action."""
     conn = get_sandbox_conn()
-    cur = conn.execute("""
-        SELECT id, timestamp, ip_address, text_hash, document_snippet,
-               action_tool, action_args, gateway_decision, gateway_reason, bypass_category
-        FROM playground_findings
-        ORDER BY id DESC
-        LIMIT 50;
-    """)
-    rows = [dict(r) for r in cur.fetchall()]
+    try:
+        cur = conn.execute("""
+            SELECT id, timestamp, ip_address, text_hash, document_snippet,
+                   action_tool, action_args, gateway_decision, gateway_reason, bypass_category
+            FROM playground_findings
+            ORDER BY id DESC
+            LIMIT 50;
+        """)
+        rows = [dict(r) for r in cur.fetchall()]
 
-    cur_stats = conn.execute("SELECT COUNT(*) as total_attempts, SUM(is_bypass) as total_bypasses FROM playground_attempts;")
-    stat_row = cur_stats.fetchone()
+        cur_stats = conn.execute("SELECT COUNT(*) as total_attempts, SUM(is_bypass) as total_bypasses FROM playground_attempts;")
+        stat_row = cur_stats.fetchone()
 
-    return {
-        "total_attempts": stat_row["total_attempts"] if stat_row else 0,
-        "total_bypasses": stat_row["total_bypasses"] if (stat_row and stat_row["total_bypasses"]) else len(rows),
-        "findings": rows
-    }
+        return {
+            "total_attempts": stat_row["total_attempts"] if stat_row else 0,
+            "total_bypasses": stat_row["total_bypasses"] if (stat_row and stat_row["total_bypasses"]) else len(rows),
+            "findings": rows
+        }
+    finally:
+        conn.close()
 
 @router.post("/run", response_model=PlaygroundRunResponse)
 def run_playground(req: PlaygroundRunRequest, request: Request) -> PlaygroundRunResponse:
@@ -690,43 +720,46 @@ def run_playground(req: PlaygroundRunRequest, request: Request) -> PlaygroundRun
 
     # 6. Log attempt and findings into sandbox DB
     conn = get_sandbox_conn()
-    with conn:
-        conn.execute("""
-            INSERT INTO playground_attempts (
-                timestamp, ip_address, text_hash, document_preview,
-                action_tool, action_preview, decision_pass_through,
-                decision_phrase_filter, decision_gateway, is_bypass
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-        """, (
-            now_iso,
-            client_ip,
-            text_hash,
-            req.document_text[:120].replace("\n", " "),
-            req.action.tool,
-            action_str[:120],
-            lane_a.decision,
-            lane_b.decision,
-            lane_c.decision,
-            1 if is_bypass else 0
-        ))
-
-        if is_bypass:
+    try:
+        with conn:
             conn.execute("""
-                INSERT INTO playground_findings (
-                    timestamp, ip_address, text_hash, document_snippet,
-                    action_tool, action_args, gateway_decision, gateway_reason, bypass_category
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+                INSERT INTO playground_attempts (
+                    timestamp, ip_address, text_hash, document_preview,
+                    action_tool, action_preview, decision_pass_through,
+                    decision_phrase_filter, decision_gateway, is_bypass
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """, (
                 now_iso,
                 client_ip,
                 text_hash,
-                req.document_text[:300],
+                req.document_text[:120].replace("\n", " "),
                 req.action.tool,
-                action_str,
+                action_str[:120],
+                lane_a.decision,
+                lane_b.decision,
                 lane_c.decision,
-                lane_c.reason,
-                category
+                1 if is_bypass else 0
             ))
+
+            if is_bypass:
+                conn.execute("""
+                    INSERT INTO playground_findings (
+                        timestamp, ip_address, text_hash, document_snippet,
+                        action_tool, action_args, gateway_decision, gateway_reason, bypass_category
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """, (
+                    now_iso,
+                    client_ip,
+                    text_hash,
+                    req.document_text[:300],
+                    req.action.tool,
+                    action_str,
+                    lane_c.decision,
+                    lane_c.reason,
+                    category
+                ))
+    finally:
+        conn.close()
 
     # 7. Format summary text
     if is_bypass:

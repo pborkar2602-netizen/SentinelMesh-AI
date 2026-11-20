@@ -2,8 +2,9 @@ import os
 import threading
 import logging
 from typing import Any, Dict, Optional
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, HTTPException, status
 
+from backend.app.api.auth import is_demo_mode
 from backend.app.core.policy_engine import PolicyEngine
 from backend.app.db.database import get_dashboard_stats
 from backend.app.api.websocket import ws_manager
@@ -21,7 +22,7 @@ def read_dashboard_stats(
     for every counter on the SentinelMesh dashboard.
     """
     stats = get_dashboard_stats(exclude_benchmark=exclude_benchmark)
-    demo_mode = os.getenv("DEMO_MODE", "false").lower() in ("true", "1", "yes")
+    demo_mode = is_demo_mode()
     stats["policy_mode"] = PolicyEngine.get_mode()
     stats["demo_mode"] = demo_mode
     return stats
@@ -33,6 +34,11 @@ def reset_demo_database() -> Dict[str, Any]:
     Resets the demo database to the clean seed state (8 benign allowed calls,
     3 blocked attacks, 1 pending approval, 0 false positives).
     """
+    if not is_demo_mode():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Demo endpoints are disabled outside DEMO_MODE."
+        )
     from scripts.demo_reset import seed_clean_demo_db
 
     res = seed_clean_demo_db()
@@ -47,6 +53,11 @@ def run_live_attack_demo(mode: Optional[str] = Query(None, description="Policy m
     against the real gateway inline. Events are logged to the database and broadcasted
     live via WebSocket to the dashboard.
     """
+    if not is_demo_mode():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Demo endpoints are disabled outside DEMO_MODE."
+        )
     if mode in ("enforce", "monitor"):
         PolicyEngine.set_mode(mode)
 
