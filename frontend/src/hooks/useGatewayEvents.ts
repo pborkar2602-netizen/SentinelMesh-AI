@@ -11,19 +11,31 @@ function formatRelativeTime(isoString: string): string {
 
 interface UseGatewayEventsOptions {
   onAuditEvent?: (ev: AuditEvent) => void;
+  onIncidentAlert?: () => void;
+  onDemoReset?: () => void;
 }
 
-export function useGatewayEvents({ onAuditEvent }: UseGatewayEventsOptions = {}) {
+export function useGatewayEvents({ onAuditEvent, onIncidentAlert, onDemoReset }: UseGatewayEventsOptions = {}) {
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [feedLines, setFeedLines] = useState<TickerLine[]>([]);
   const [tickerLines, setTickerLines] = useState<TickerLine[]>([]);
   const [attackPulseTrigger, setAttackPulseTrigger] = useState<{ blocked: boolean; seq: number } | null>(null);
   const [wsConnected, setWsConnected] = useState<boolean>(false);
   const onAuditEventRef = useRef(onAuditEvent);
+  const onIncidentAlertRef = useRef(onIncidentAlert);
+  const onDemoResetRef = useRef(onDemoReset);
 
   useEffect(() => {
     onAuditEventRef.current = onAuditEvent;
   }, [onAuditEvent]);
+
+  useEffect(() => {
+    onIncidentAlertRef.current = onIncidentAlert;
+  }, [onIncidentAlert]);
+
+  useEffect(() => {
+    onDemoResetRef.current = onDemoReset;
+  }, [onDemoReset]);
 
   const fetchEvents = useCallback(async () => {
     try {
@@ -126,6 +138,11 @@ export function useGatewayEvents({ onAuditEvent }: UseGatewayEventsOptions = {})
               if (onAuditEventRef.current) {
                 onAuditEventRef.current(ev);
               }
+            } else if (msg.type === 'INCIDENT_ALERT') {
+              onIncidentAlertRef.current?.();
+            } else if (msg.type === 'DEMO_RESET') {
+              fetchEvents();
+              onDemoResetRef.current?.();
             }
           } catch {
             // Ignore malformed socket frames
@@ -151,7 +168,7 @@ export function useGatewayEvents({ onAuditEvent }: UseGatewayEventsOptions = {})
       if (ws) ws.close();
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
     };
-  }, []);
+  }, [fetchEvents]);
 
   return {
     events,

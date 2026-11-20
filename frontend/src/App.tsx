@@ -22,6 +22,8 @@ export function App() {
 
   const gatewayEvents = useGatewayEvents({
     onAuditEvent: processAuditEventForChain,
+    onIncidentAlert: fetchStats,
+    onDemoReset: fetchStats,
   });
 
   const {

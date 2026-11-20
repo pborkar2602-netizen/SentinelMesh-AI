@@ -75,10 +75,12 @@ def run_live_attack_demo(
             elif selected_scenario == "atk-003":
                 from demo_agents.agent_runner import run_ops_attack_scenario
                 run_ops_attack_scenario(gateway_url=gateway_endpoint, delay=0.35)
-            else:
-                from demo_agents.agent_runner import run_attack_scenario, run_benign_scenario
-                run_attack_scenario(gateway_url=gateway_endpoint, delay=0.35)
+            elif selected_scenario == "ben-001":
+                from demo_agents.agent_runner import run_benign_scenario
                 run_benign_scenario(gateway_url=gateway_endpoint, delay=0.35)
+            else:
+                from demo_agents.agent_runner import run_attack_scenario
+                run_attack_scenario(gateway_url=gateway_endpoint, delay=0.35)
         except Exception as e:
             logger.warning(f"Error running demo attack scenario: {e}")
 

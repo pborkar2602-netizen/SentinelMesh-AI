@@ -25,6 +25,7 @@ class GatewayClient:
         self.agent_id = agent_id
         self.session_id = session_id or f"sess-{uuid.uuid4().hex[:8]}"
         self.http_client = http_client
+        self._shared_client = httpx.Client(timeout=2.0, trust_env=False) if http_client is None else None
         self.async_http_client = async_http_client
         self.proxy_execution = proxy_execution
 
@@ -66,8 +67,7 @@ class GatewayClient:
                 response = self.http_client.post(self.gateway_url, json=payload)
             else:
                 try:
-                    with httpx.Client(timeout=2.0) as client:
-                        response = client.post(self.gateway_url, json=payload)
+                    response = self._shared_client.post(self.gateway_url, json=payload)
                 except httpx.ConnectError as e:
                     # In unit tests without running server or explicit client: fallback to direct in-process client
                     if not os.getenv("SENTINEL_GATEWAY_URL"):
@@ -159,8 +159,7 @@ class GatewayClient:
                 self.http_client.post(return_url, json=return_payload)
             else:
                 try:
-                    with httpx.Client(timeout=2.0) as client:
-                        client.post(return_url, json=return_payload)
+                    self._shared_client.post(return_url, json=return_payload)
                 except Exception:
                     from backend.app.db.database import record_tool_return_event
                     record_tool_return_event(session_id=self.session_id, trace_id=trace_id, records_returned=records_returned)

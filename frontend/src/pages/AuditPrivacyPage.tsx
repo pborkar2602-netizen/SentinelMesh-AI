@@ -127,7 +127,7 @@ export const AuditPrivacyPage: React.FC<AuditPrivacyPageProps> = ({
 
   useEffect(() => {
     loadChainFromBackend();
-  }, [loadChainFromBackend]);
+  }, [loadChainFromBackend, events.length]);
 
   useEffect(() => {
     if (subTab === 'replay' && !policyConfig) {

@@ -274,6 +274,7 @@ export function usePolicyRuntime() {
             ? `LEAKED: $48,500 wire sent to ${dest} (Monitor mode · alert only)`
             : `LEAKED: Data exposed to ${dest} (Monitor mode · alert only)`,
         });
+        setLiveAttackRunning(false);
       } else if (dec === 'block') {
         setStepActive([true, true, true, true, true]);
         setStepClasses(['am', 'ro', 'ro', 'ro', 'gr']);
@@ -312,9 +313,11 @@ export function usePolicyRuntime() {
             ? 'BLOCKED: Fraudulent wire transfer halted by gateway policy ($0 transferred)'
             : 'BLOCKED: External egress halted by gateway policy',
         });
+        setLiveAttackRunning(false);
       }
     }
-  }, []);
+    fetchStats();
+  }, [fetchStats]);
 
   const triggerRealLiveAttack = useCallback(
     async (scenarioId: string = 'atk-001') => {
@@ -373,36 +376,10 @@ export function usePolicyRuntime() {
       }
 
       if (apiOk) {
-        // After 5s: if WebSocket events haven't resolved a verdict yet, apply the deterministic fallback
         setTimeout(() => {
-          setVerdict((prev) => {
-            if (prev.show) return prev; // already set by real events — keep it
-            // Deterministic fallback based on scenario + mode
-            if (scenarioId === 'atk-003') {
-              return isEnforce
-                ? { show: true, ok: true, text: 'BLOCKED: Cloud metadata SSRF halted inline — zero IAM credentials leaked (Enforce mode)' }
-                : { show: true, ok: false, text: 'LEAKED: AWS IAM credentials exposed via SSRF to 169.254.169.254 (Monitor mode · audit only)' };
-            }
-            if (scenarioId === 'atk-002') {
-              return isEnforce
-                ? { show: true, ok: true, text: 'BLOCKED: Fraudulent wire transfer halted by gateway — $0 transferred (Enforce mode)' }
-                : { show: true, ok: false, text: 'LEAKED: $48,500 wire sent to attacker-disbursement.ru (Monitor mode · audit only)' };
-            }
-            // atk-001
-            return isEnforce
-              ? { show: true, ok: true, text: 'BLOCKED: 0 records exposed — egress held by policy (Enforce mode)' }
-              : { show: true, ok: false, text: 'LEAKED: 3 salary & SSN records sent to recruiter@ext-hiring.com (Monitor mode · audit only)' };
-          });
-          // Activate all chain steps if still dormant
-          setStepActive((prev) => {
-            if (prev.some(Boolean)) return prev;
-            return [true, true, true, true, true];
-          });
-          setRiskGauge((prev) => (prev === 0 ? 94 : prev));
-          setBarWidths((prev) => (prev.every((w) => w === 0) ? [95, 75, 80, 85] : prev));
           setLiveAttackRunning(false);
           fetchStats();
-        }, 5500);
+        }, 5000);
       }
     },
     [policyMode, fetchStats]

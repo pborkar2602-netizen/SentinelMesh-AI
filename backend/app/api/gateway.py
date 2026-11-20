@@ -177,6 +177,7 @@ def execute_tool_call(
 
         # 6. Persist to Append-Only Audit Log with SHA-256 Hash Chaining (COVERING ONLY MASKED DATA)
         t_hash_start = time.perf_counter()
+        prelim_latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
         event_dict = {
             "trace_id": request.trace_id,
             "agent_id": request.agent_id,
@@ -188,7 +189,7 @@ def execute_tool_call(
             "reason": reason,
             "risk_score": risk_score,
             "risk_breakdown": risk_breakdown,
-            "latency_ms": 0.0,
+            "latency_ms": prelim_latency_ms,
             "timestamp": event_dt_iso
         }
         event_id, event_hash = save_audit_event(event_dict)

@@ -10,9 +10,6 @@ ARTIFACTS_DIR = Path(
     r"C:\Users\Vignaharta Computer\.gemini\antigravity\brain\a80c04ac-89ab-410e-9fde-75a990d41278"
 )
 
-# Wait longer than the 5.5s fallback timer in usePolicyRuntime
-SCENARIO_WAIT_MS = 7000
-
 
 def test_live_attacks_interactive():
     backend_env = dict(os.environ, DEMO_MODE="true")
@@ -54,10 +51,12 @@ def test_live_attacks_interactive():
             run_btn.click()
             print("Clicked Run Attack Scenario for ATK-001...")
 
-            # Wait >5.5s so the fallback timer can fire if WebSocket events don't arrive
-            page.wait_for_timeout(SCENARIO_WAIT_MS)
+            page.wait_for_selector("#vd.show", timeout=8000)
+            page.wait_for_timeout(300)
 
-            # Chain steps should be populated (either by WS events or fallback)
+            s0_classes = page.locator("#s0").get_attribute("class") or ""
+            assert "on" in s0_classes, f"ATK-001 Step 0 did not activate via WS! classes={s0_classes}"
+
             s0_text = page.locator("#s0").inner_text()
             s4_text = page.locator("#s4").inner_text()
             print(f"ATK-001 Step 0: {s0_text}")
@@ -65,12 +64,8 @@ def test_live_attacks_interactive():
 
             vd_text = page.locator("#vd").inner_text()
             print(f"Verdict ATK-001 (Monitor): {vd_text}")
-            assert vd_text.strip(), f"Verdict is empty after {SCENARIO_WAIT_MS}ms — fallback did not fire"
-            assert (
-                "LEAKED" in vd_text.upper()
-                or "BLOCKED" in vd_text.upper()
-                or "recruiter" in vd_text.lower()
-            ), f"Unexpected verdict text: {vd_text}"
+            assert vd_text.strip(), "Verdict is empty — real WS event did not populate verdict"
+            assert "LEAKED" in vd_text.upper(), f"Expected LEAKED verdict in Monitor mode, got: {vd_text}"
 
             shot1 = ARTIFACTS_DIR / "live_atk001_monitor_active_1440x900.png"
             page.screenshot(path=str(shot1))
@@ -89,23 +84,22 @@ def test_live_attacks_interactive():
             run_btn.click()
             print("Clicked Run Attack Scenario for ATK-002...")
 
-            page.wait_for_timeout(SCENARIO_WAIT_MS)
+            page.wait_for_selector("#vd.show", timeout=8000)
+            page.wait_for_timeout(300)
+
+            s0_classes_fin = page.locator("#s0").get_attribute("class") or ""
+            assert "on" in s0_classes_fin, f"ATK-002 Step 0 did not activate via WS! classes={s0_classes_fin}"
 
             s0_text_fin = page.locator("#s0").inner_text()
             s2_text_fin = page.locator("#s2").inner_text()
             print(f"ATK-002 Step 0: {s0_text_fin}")
             print(f"ATK-002 Step 2: {s2_text_fin}")
-            assert "Invoice" in s0_text_fin or "uploaded" in s0_text_fin or s0_text_fin.strip(), \
-                f"Step 0 empty: {s0_text_fin}"
+            assert "Invoice" in s0_text_fin or "vendor_invoice" in s0_text_fin, f"Step 0 mismatch: {s0_text_fin}"
 
             vd_text_fin = page.locator("#vd").inner_text()
             print(f"Verdict ATK-002 (Enforce): {vd_text_fin}")
-            assert vd_text_fin.strip(), f"Verdict empty after {SCENARIO_WAIT_MS}ms"
-            assert (
-                "BLOCKED" in vd_text_fin.upper()
-                or "LEAKED" in vd_text_fin.upper()
-                or "wire" in vd_text_fin.lower()
-            ), f"Unexpected verdict: {vd_text_fin}"
+            assert vd_text_fin.strip(), "Verdict empty for ATK-002"
+            assert "BLOCKED" in vd_text_fin.upper(), f"Expected BLOCKED verdict in Enforce mode, got: {vd_text_fin}"
 
             shot2 = ARTIFACTS_DIR / "live_atk002_finance_blocked_1440x900.png"
             page.screenshot(path=str(shot2))
@@ -121,7 +115,11 @@ def test_live_attacks_interactive():
             run_btn.click()
             print("Clicked Run Attack Scenario for ATK-003...")
 
-            page.wait_for_timeout(SCENARIO_WAIT_MS)
+            page.wait_for_selector("#vd.show", timeout=8000)
+            page.wait_for_timeout(300)
+
+            s0_classes_ops = page.locator("#s0").get_attribute("class") or ""
+            assert "on" in s0_classes_ops, f"ATK-003 Step 0 did not activate via WS! classes={s0_classes_ops}"
 
             s0_text_ops = page.locator("#s0").inner_text()
             s1_text_ops = page.locator("#s1").inner_text()
@@ -130,19 +128,14 @@ def test_live_attacks_interactive():
 
             vd_text_ops = page.locator("#vd").inner_text()
             print(f"Verdict ATK-003 (Enforce): {vd_text_ops}")
-            assert vd_text_ops.strip(), f"Verdict empty after {SCENARIO_WAIT_MS}ms"
-            assert (
-                "BLOCKED" in vd_text_ops.upper()
-                or "SSRF" in vd_text_ops.upper()
-                or "cloud" in vd_text_ops.lower()
-                or "IAM" in vd_text_ops
-            ), f"Unexpected verdict: {vd_text_ops}"
+            assert vd_text_ops.strip(), "Verdict empty for ATK-003"
+            assert "BLOCKED" in vd_text_ops.upper(), f"Expected BLOCKED verdict in Enforce mode, got: {vd_text_ops}"
 
             shot3 = ARTIFACTS_DIR / "live_atk003_ops_ssrf_blocked_1440x900.png"
             page.screenshot(path=str(shot3))
             print(f"Captured {shot3.name}")
 
-            print("\nALL 3 AGENT ATTACK SCENARIOS VERIFIED END-TO-END!")
+            print("\nALL 3 AGENT ATTACK SCENARIOS VERIFIED END-TO-END VIA REAL WEBSOCKET EVENTS!")
 
     finally:
         subprocess.run(

@@ -70,6 +70,8 @@ async def lifespan(app: FastAPI):
 
     logger.info("Initializing SentinelMesh AI Security Gateway...")
     init_db()
+    import asyncio
+    ws_manager.set_loop(asyncio.get_running_loop())
     logger.info("SentinelMesh Gateway ready to intercept agent tool calls.")
     yield
     logger.info("Shutting down SentinelMesh Gateway.")
