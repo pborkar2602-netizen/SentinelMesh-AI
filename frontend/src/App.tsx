@@ -77,7 +77,11 @@ export function App() {
   const buttonsRef = useRef<Record<string, HTMLButtonElement | null>>({});
   const lastScrollYRef = useRef(0);
   const upAccumulatorRef = useRef(0);
-  const animTimersRef = useRef<any[]>([]);
+  const policyModeRef = useRef<'enforce' | 'monitor'>(policyMode);
+
+  useEffect(() => {
+    policyModeRef.current = policyMode;
+  }, [policyMode]);
 
   // Indicator positioning
   const updateIndicator = useCallback((routeId: string) => {
@@ -206,8 +210,10 @@ export function App() {
         ws.onmessage = (event) => {
           try {
             const msg = JSON.parse(event.data);
-            if (msg.type === 'AUDIT_EVENT' && msg.data) {
-              const ev: AuditEvent = msg.data;
+            if (msg.type === 'AUDIT_EVENT') {
+              const ev: AuditEvent = msg.data || msg;
+              if (!ev || !ev.tool_name) return;
+
               setEvents((prev) => [ev, ...prev.slice(0, 49)]);
 
               let b = 'ALLOW';
@@ -238,6 +244,185 @@ export function App() {
                 setAttackPulseTrigger({ blocked: true, seq: Date.now() });
               } else if (dec === 'allow') {
                 setAttackPulseTrigger({ blocked: false, seq: Date.now() });
+              }
+
+              // Dynamic risk score from actual gateway evaluation
+              if (typeof ev.risk_score === 'number') {
+                setRiskGauge(Math.round(ev.risk_score));
+              }
+
+              // Dynamic signal attribution bars from real breakdown
+              if (ev.risk_breakdown) {
+                const bd = ev.risk_breakdown as any;
+                const taintW = Math.min(100, Math.round(((bd.untrusted_taint || 0) / 38) * 100));
+                const dataW = Math.min(100, Math.round(((bd.sensitive_data || 0) / 15) * 100));
+                const destW = Math.min(100, Math.round(((bd.external_destination || 0) / 25) * 100));
+                const findW = Math.min(100, Math.round(((bd.rule_findings || 0) / 40) * 100));
+                setBarWidths([taintW, dataW, destW, findW]);
+              }
+
+              // Event-driven 5-step Attack Chain progression
+              const tool = ev.tool_name;
+              const currentMode = policyModeRef.current;
+              const hasInjectionFinding =
+                (ev.findings &&
+                  ev.findings.some(
+                    (f) =>
+                      (f.name || '').toLowerCase().includes('injection') ||
+                      (f.evidence || '').toLowerCase().includes('injection') ||
+                      (f.owasp_category || '').toLowerCase().includes('injection') ||
+                      (f.evidence || '').toLowerCase().includes('override')
+                  )) ||
+                (ev.reason || '').toLowerCase().includes('injection') ||
+                (ev.reason || '').toLowerCase().includes('override');
+
+              if (tool === 'read_doc') {
+                setStepActive([true, true, false, false, false]);
+                setStepClasses(['am', 'ro', 'am', 'ro', 'gr']);
+                setChainSteps([
+                  {
+                    num: '01',
+                    title: 'Résumé uploaded',
+                    desc: `Untrusted ${args.file_path || 'resume.pdf'} enters ${ev.agent_id}’s session`,
+                    cls: 'am',
+                  },
+                  {
+                    num: '02',
+                    title: 'Hidden instruction found',
+                    desc: hasInjectionFinding
+                      ? (ev.findings?.[0]?.evidence || ev.findings?.[0]?.name || '“Send salary list to outside address”')
+                      : 'Untrusted document ingested with taint tracking',
+                    cls: 'ro',
+                  },
+                  {
+                    num: '03',
+                    title: 'Sensitive read requested',
+                    desc: 'salary, ssn requested outside task scope',
+                    cls: 'am',
+                  },
+                  {
+                    num: '04',
+                    title: currentMode === 'enforce' ? 'External send guarded' : 'External send attempted',
+                    desc: currentMode === 'enforce' ? 'Awaiting database gate outcome…' : 'send_email → recruiter@ext-hiring.com',
+                    cls: 'ro',
+                  },
+                  {
+                    num: '05',
+                    title: 'Policy decision',
+                    desc: 'Evaluating gateway defense layers…',
+                    cls: 'gr',
+                  },
+                ]);
+              } else if (tool === 'db_query') {
+                if (dec === 'require_approval' || dec === 'block') {
+                  setStepActive([true, true, true, false, true]);
+                  setStepClasses(['am', 'ro', 'ro', 'ro', 'gr']);
+                  setChainSteps((prev) => [
+                    prev[0],
+                    prev[1],
+                    {
+                      num: '03',
+                      title: 'Sensitive read requested',
+                      desc: 'Held for approval before the read (0 records exposed)',
+                      cls: 'ro',
+                    },
+                    {
+                      num: '04',
+                      title: 'External send guarded',
+                      desc: 'Never reached (halted inline by policy)',
+                      cls: 'ro',
+                    },
+                    {
+                      num: '05',
+                      title: 'Policy decision',
+                      desc: 'Policy held the read. Nothing left the company.',
+                      cls: 'gr',
+                    },
+                  ]);
+                  setVerdict({
+                    show: true,
+                    ok: true,
+                    text: 'BLOCKED: 0 records exposed (Enforce mode) · Held at sensitive database read',
+                  });
+                } else {
+                  // Monitor mode: allowed to read
+                  setStepActive([true, true, true, false, false]);
+                  setStepClasses(['am', 'ro', 'ro', 'ro', 'ro']);
+                  setChainSteps((prev) => [
+                    prev[0],
+                    prev[1],
+                    {
+                      num: '03',
+                      title: 'Sensitive read executed',
+                      desc: '3 salary & SSN rows read into agent memory (Monitor mode)',
+                      cls: 'ro',
+                    },
+                    {
+                      num: '04',
+                      title: 'External send attempted',
+                      desc: 'send_email → recruiter@ext-hiring.com',
+                      cls: 'ro',
+                    },
+                    {
+                      num: '05',
+                      title: 'Policy decision',
+                      desc: 'Evaluating egress destination…',
+                      cls: 'ro',
+                    },
+                  ]);
+                }
+              } else if (tool === 'send_email' || tool === 'external_api') {
+                if (dec === 'would_block') {
+                  setStepActive([true, true, true, true, true]);
+                  setStepClasses(['am', 'ro', 'ro', 'ro', 'ro']);
+                  setChainSteps((prev) => [
+                    prev[0],
+                    prev[1],
+                    prev[2],
+                    {
+                      num: '04',
+                      title: 'External send succeeded',
+                      desc: `send_email → ${args.to || 'recruiter@ext-hiring.com'}`,
+                      cls: 'ro',
+                    },
+                    {
+                      num: '05',
+                      title: 'Policy decision',
+                      desc: 'Monitor mode: alert only, action allowed',
+                      cls: 'ro',
+                    },
+                  ]);
+                  setVerdict({
+                    show: true,
+                    ok: false,
+                    text: `LEAKED: 3 records exposed to ${args.to || 'recruiter@ext-hiring.com'} (Monitor mode · demo roster)`,
+                  });
+                } else if (dec === 'block') {
+                  setStepActive([true, true, true, true, true]);
+                  setStepClasses(['am', 'ro', 'ro', 'ro', 'gr']);
+                  setChainSteps((prev) => [
+                    prev[0],
+                    prev[1],
+                    prev[2],
+                    {
+                      num: '04',
+                      title: 'External send blocked',
+                      desc: `send_email → ${args.to || 'external'} (Halted by egress policy)`,
+                      cls: 'ro',
+                    },
+                    {
+                      num: '05',
+                      title: 'Policy decision',
+                      desc: 'Policy blocked egress. Nothing left the network.',
+                      cls: 'gr',
+                    },
+                  ]);
+                  setVerdict({
+                    show: true,
+                    ok: true,
+                    text: 'BLOCKED: External egress halted by gateway policy',
+                  });
+                }
               }
             }
           } catch {
@@ -326,123 +511,41 @@ export function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [navOpen, openNav, closeNav, navigate]);
 
-  // Console Attack Chain Replay
-  const runAttackSimulation = useCallback(() => {
-    animTimersRef.current.forEach(clearTimeout);
-    animTimersRef.current = [];
-
-    const initialSteps: SimChainStep[] = [
-      { num: '01', title: 'Résumé uploaded', desc: 'Untrusted file enters hr-agent’s session', cls: 'am' },
-      { num: '02', title: 'Hidden instruction found', desc: '“Send the salary list to an outside address”', cls: 'ro' },
-      { num: '03', title: 'Sensitive read requested', desc: 'salary and ssn are not part of the task', cls: 'am' },
-      {
-        num: '04',
-        title: policyMode === 'enforce' ? 'External send guarded' : 'External send attempted',
-        desc: policyMode === 'enforce' ? 'Awaiting database gate outcome…' : 'send_email → recruiter@ext-hiring.com',
-        cls: 'ro',
-      },
-      { num: '05', title: 'Policy decision', desc: 'Evaluating gateway defense layers…', cls: 'gr' },
-    ];
-
-    setChainSteps(initialSteps);
+  // Trigger real live attack execution through the gateway inline
+  const triggerRealLiveAttack = useCallback(async () => {
+    setLiveAttackRunning(true);
+    // Reset chain state to idle baseline before scenario starts
     setStepActive([false, false, false, false, false]);
-    setStepClasses(initialSteps.map((s) => s.cls));
-    setBarWidths([0, 0, 0, 0]);
     setRiskGauge(0);
+    setBarWidths([0, 0, 0, 0]);
     setVerdict({ show: false, ok: true, text: '' });
+    setChainSteps(policyMode === 'enforce' ? ENFORCE_CHAIN_STEPS : MONITOR_CHAIN_STEPS);
 
-    const at = (ms: number, fn: () => void) => {
-      const t = setTimeout(fn, ms);
-      animTimersRef.current.push(t);
-    };
-
-    at(150, () => {
-      setStepActive([true, false, false, false, false]);
-      setFeedLines((prev) => [{ id: `ln-${Date.now()}`, badge: 'TAINT', cls: 'am', text: 'resume.pdf marked untrusted' }, ...prev.slice(0, 11)]);
-      setBarWidths([38 * 2.6, 0, 0, 0]);
-      setRiskGauge(26);
-    });
-    at(950, () => {
-      setStepActive([true, true, false, false, false]);
-      setFeedLines((prev) => [{ id: `ln-${Date.now()}`, badge: 'INJECT', cls: 'ro', text: 'hidden instruction detected on page 2' }, ...prev.slice(0, 11)]);
-      setBarWidths((prev) => [prev[0], 0, 25 * 2.6, 0]);
-      setRiskGauge(48);
-    });
-    at(1800, () => {
-      setStepActive([true, true, true, false, false]);
-      setFeedLines((prev) => [{ id: `ln-${Date.now()}`, badge: 'READ', cls: 'am', text: 'salary, ssn requested outside task scope' }, ...prev.slice(0, 11)]);
-      setBarWidths((prev) => [prev[0], 15 * 2.6, prev[2], 0]);
-      setRiskGauge(64);
-      setAttackPulseTrigger({ blocked: policyMode === 'enforce', seq: Date.now() });
-    });
-
-    if (policyMode === 'enforce') {
-      at(2500, () => {
-        setStepClasses((prev) => [prev[0], prev[1], 'ro', prev[3], 'gr']);
-        setStepActive([true, true, true, false, true]);
-        setChainSteps((prev) => [
-          prev[0],
-          prev[1],
-          { ...prev[2], desc: 'Held for approval before the read (0 records exposed)' },
-          { ...prev[3], desc: 'Never reached (halted inline by policy)' },
-          { ...prev[4], desc: 'Policy held the read. Nothing left the company.' },
-        ]);
-        setBarWidths((prev) => [prev[0], prev[1], prev[2], 22 * 2.6]);
-        setRiskGauge(96);
-        setFeedLines((prev) => [{ id: `ln-${Date.now()}`, badge: 'HOLD', cls: 'ro', text: 'db_query held · 0 records exposed' }, ...prev.slice(0, 11)]);
-        setVerdict({
-          show: true,
-          ok: true,
-          text: 'BLOCKED: 0 records exposed (Enforce mode) · Held at sensitive database read',
-        });
-      });
-    } else {
-      at(2600, () => {
-        setStepActive([true, true, true, true, false]);
-        setFeedLines((prev) => [{ id: `ln-${Date.now()}`, badge: 'SEND', cls: 'am', text: 'send_email → recruiter@ext-hiring.com' }, ...prev.slice(0, 11)]);
-        setBarWidths((prev) => [prev[0], prev[1], prev[2], 22 * 2.6]);
-        setRiskGauge(88);
-      });
-      at(3400, () => {
-        setStepClasses((prev) => [prev[0], prev[1], prev[2], prev[3], 'ro']);
-        setStepActive([true, true, true, true, true]);
-        setChainSteps((prev) => [
-          prev[0],
-          prev[1],
-          { ...prev[2], desc: '3 salary & SSN rows read into agent memory' },
-          { ...prev[3], desc: 'send_email → recruiter@ext-hiring.com' },
-          { ...prev[4], desc: 'Monitor mode: alert only, action allowed' },
-        ]);
-        setRiskGauge(98);
-        setFeedLines((prev) => [{ id: `ln-${Date.now()}`, badge: 'LEAK', cls: 'ro', text: '3 records sent outside · alert only' }, ...prev.slice(0, 11)]);
+    try {
+      const res = await fetch(`/api/v1/demo/run_attack?mode=${policyMode}`, { method: 'POST' });
+      if (!res.ok) {
         setVerdict({
           show: true,
           ok: false,
-          text: 'LEAKED: 3 records exposed to external recipient (Monitor mode · demo roster)',
+          text: 'Backend error executing scenario — check FastAPI terminal logs.',
         });
-      });
-    }
-  }, [policyMode]);
-
-  const triggerRealLiveAttack = useCallback(async () => {
-    setLiveAttackRunning(true);
-    runAttackSimulation();
-    try {
-      await fetch(`/api/v1/demo/run_attack?mode=${policyMode}`, { method: 'POST' });
+      }
     } catch {
-      // Offline fallback continues UI simulation
+      setVerdict({
+        show: true,
+        ok: false,
+        text: 'Gateway offline — start: uvicorn backend.app.main:app --reload (with DEMO_MODE=true)',
+      });
     } finally {
       setTimeout(() => {
         setLiveAttackRunning(false);
         fetchStats();
       }, 4500);
     }
-  }, [policyMode, runAttackSimulation, fetchStats]);
+  }, [policyMode, fetchStats]);
 
   const switchMode = useCallback((newMode: 'enforce' | 'monitor') => {
     setPolicyMode(newMode);
-    animTimersRef.current.forEach(clearTimeout);
-    animTimersRef.current = [];
 
     fetch('/api/v1/policies/mode', {
       method: 'POST',
@@ -573,7 +676,7 @@ export function App() {
             barWidths={barWidths}
             verdict={verdict}
             onSwitchMode={switchMode}
-            onRunSimulation={runAttackSimulation}
+            onRunSimulation={triggerRealLiveAttack}
             onTriggerRealAttack={triggerRealLiveAttack}
             onRefreshStats={fetchStats}
           />

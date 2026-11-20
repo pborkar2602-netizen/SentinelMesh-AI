@@ -245,12 +245,10 @@ export const ConsolePage: React.FC<ConsolePageProps> = ({
                 {verdict.text}
               </div>
 
-              {/* Explain animation vs live */}
+              {/* Event-driven pipeline note */}
               <div className="px-1 pt-2">
                 <p className="text-[11px] text-slate-500 font-sans leading-relaxed">
-                  <span className="text-slate-400 font-semibold">Animation:</span> always plays client-side. &nbsp;
-                  <span className="text-slate-400 font-semibold">Real events</span> (live feed strip, KPI counters) require the backend server.
-                  Switch mode then re-run to compare Enforce vs Monitor outcomes.
+                  <span className="text-slate-400 font-semibold">Live Event Pipeline:</span> Steps, signal bars, and risk gauge update dynamically as real <code className="font-mono text-cyan-300">AUDIT_EVENT</code> frames arrive via WebSocket from the gateway. Switch mode to compare Enforce vs Monitor execution outcomes.
                 </p>
               </div>
             </div>
